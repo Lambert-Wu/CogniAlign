@@ -51,16 +51,39 @@ def set_up(config, train_dataloader, device, fold=0):
     wandb.watch(model)
     return model, optimizer, lossfn, lr_scheduler
 
+def _resume_enabled():
+    """是否开启续跑。设 COGNIALIGN_RESUME=1 时，已经存过权重的折直接跳过。
+
+    训练没有"从某个 epoch 接着训"的能力（权重只在每折结束时才存盘），
+    所以"续跑"的粒度是**折**：中断时正在跑的那一折白跑，已跑完的折保留。
+    """
+    return os.environ.get('COGNIALIGN_RESUME', '0').strip().lower() in ('1', 'true', 'yes')
+
+
 def main(config):
     """Main function to train and save model, supporting cross-validation."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log_path = os.path.join('logs', config.path_name)
     os.makedirs(log_path, exist_ok=True)
-    
+
+    resume = _resume_enabled()
+    if resume:
+        print('[续跑] 已开启：存在 model_fold_<n>.pth 的折会被跳过')
+
     if config.train.cross_validation:
         log_file = os.path.join(log_path, 'cross_fold_summary.txt')
-        with open(log_file, "w", encoding='utf-8') as log:
+        # buffering=1 = 行缓冲：每折写完立刻落盘，另开终端 tail -f 能实时看到
+        # 续跑用追加（不清掉上次的记录），全新跑用覆盖（避免和旧结果混在一起）
+        mode = 'a' if resume else 'w'
+        skipped = 0
+        with open(log_file, mode, encoding='utf-8', buffering=1) as log:
             for fold in range(config.train.cross_validation_folds):
+                ckpt = os.path.join(log_path, f'model_fold_{fold}.pth')
+                if resume and os.path.exists(ckpt):
+                    print(f'[续跑] 第 {fold} 折的权重已存在，跳过')
+                    skipped += 1
+                    continue
+
                 train_dataloader, validation_dataloader = get_dataloaders(config, kfold_number=fold)
                 
                 model, optimizer, lossfn, lr_scheduler = set_up(config, train_dataloader, device, fold)
@@ -73,7 +96,7 @@ def main(config):
                 log.write(f'Fold {fold}: Best Value = {best_value}\n')
                 log.write(f'Best F1: {rest_best_values[0]}\nBest Recall: {rest_best_values[1]}\nBest Precision: {rest_best_values[2]}\n')
                 
-                torch.save(model.state_dict(), os.path.join(log_path, f'model_fold_{fold}.pth'))
+                torch.save(model.state_dict(), ckpt)
                 print(f'Model for fold {fold} saved')
                 wandb.log({
                     "best_value": best_value,
@@ -82,7 +105,15 @@ def main(config):
                     "best_precision": rest_best_values[2],
                 })
                 wandb.finish()
+
+        if resume and skipped == config.train.cross_validation_folds:
+            print(f'[续跑] 5 折的权重都在，没有要跑的了 —— 结果见 {log_file}')
     else:
+        model_save_path = os.path.join(log_path, 'model.pt')
+        if resume and os.path.exists(model_save_path):
+            print(f'[续跑] {model_save_path} 已存在，跳过（不跑交叉验证时只有一个模型）')
+            return
+
         train_dataloader, validation_dataloader = get_dataloaders(config)
         
         model, optimizer, lossfn, lr_scheduler = set_up(config, train_dataloader, device)
@@ -92,7 +123,6 @@ def main(config):
             config.train.early_stopping_patience
         )
         
-        model_save_path = os.path.join(log_path, 'model.pt')
         torch.save(model.state_dict(), model_save_path)
         print('Model saved')
         wandb.finish()

@@ -39,7 +39,17 @@ import sys
 import soundfile as sf
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'modules'))
-from paths import TEXT_DIR, AUDIO_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV
+from paths import (TEXT_DIR, AUDIO_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV,
+                   TEST_TEXT_DIR, TEST_AUDIO_DIR, TEST_LABELS_CSV,
+                   TEST_TRANSCRIPTIONS_CSV)
+
+# 两个 split 各用哪套路径；要改只需要动这张表。
+SPLIT_PATHS = {
+    'train': {'labels': LABELS_CSV, 'audio': AUDIO_DIR,
+              'text': TEXT_DIR, 'trans': TRANSCRIPTIONS_CSV},
+    'test': {'labels': TEST_LABELS_CSV, 'audio': TEST_AUDIO_DIR,
+             'text': TEST_TEXT_DIR, 'trans': TEST_TRANSCRIPTIONS_CSV},
+}
 
 # 源词表的本机默认路径。换机器（Linux 服务器等）用 --src 或
 # 环境变量 SUBJECT_WORDS_CSV 指过来，不要改这一行。
@@ -52,28 +62,40 @@ DURATION_TOL = 0.5
 
 
 def remove_non_english(text):
-    """与脚本①里的同名函数一字不差。"""
-    return re.sub(r'[^a-zA-Z0-9\s.,!?\'"-]', '', text)
+    """与脚本①里的同名函数保持一致。
+
+    原来只保留 `[a-zA-Z0-9 ...]` —— 那是给英文语料写的。但本数据集的 test 集
+    是**中文**（lang 全是 zh），旧规则会把汉字全删光（实测 '猫' -> ''，逐词表全空）。
+    改成保留 Unicode 的字母数字（`\\w` 在 Unicode 模式下含汉字）+ 空白 +
+    常见中英文标点。**对英文数据结果完全不变**（已逐词比对验证）。
+    """
+    return re.sub(r"[^\w\s.,!?'\"\-，。！？、；：]", '', text, flags=re.UNICODE)
 
 
 def clean_word(raw):
-    """与脚本①完全相同的清洗：先去掉 . , ; 和空格并转小写，再过滤非法字符。"""
-    return remove_non_english(raw.replace('.', '').replace(',', '')
-                              .replace(';', '').replace(' ', '').lower())
+    """与脚本①完全相同的清洗：先去掉标点空格、转小写，再过滤非法字符。
+
+    标点要同时覆盖半角和全角 —— 中文转写的标点是全角的（，。！？、）。
+    """
+    for ch in '.,;，。；、！？ ':
+        raw = raw.replace(ch, '')
+    return remove_non_english(raw.lower())
 
 
-def load_source(src_path):
+def load_source(src_path, split='train'):
     """读 subject_words.csv，按 uid 分组。返回 ({uid: [row, ...]}, 被丢弃的行)。
 
+    只取 `split` 对应的那些行（源词表里 train 和 test 混在一起）。
+
     会丢掉 `new_start`/`new_end` 缺失的行：这类词正好卡在切割边界上（有起点没终点），
-    拿不到可靠时间。全库只有 6 行，丢掉后从**逐词表和 transcription 里同时去掉**，
+    拿不到可靠时间。全库只有 6 行（都在 train），丢掉后从**逐词表和 transcription 里同时去掉**，
     保证两边词序列一致（这是脚本②对齐能通过的前提）。
     """
     per_uid = {}
     dropped = []
     with open(src_path, encoding='utf-8-sig', newline='') as f:
         for r in csv.DictReader(f):
-            if r['split'] != 'train':
+            if r['split'] != split:
                 continue
             try:
                 float(r['new_start'])
@@ -163,6 +185,9 @@ def main():
     ap.add_argument('--src', default=os.environ.get('SUBJECT_WORDS_CSV', DEFAULT_SRC),
                     help='subject_words.csv 路径；默认取环境变量 SUBJECT_WORDS_CSV，'
                          '再退回本机默认值（换机器必改这项）')
+    ap.add_argument('--split', choices=['train', 'test'], default='train',
+                    help='处理哪个 split（默认 train）。test 的 uid 是纯数字串（"0002"），'
+                         '本脚本全程按字符串处理，不会被转成整数')
     ap.add_argument('--check', action='store_true', help='只校验，不写文件')
     args = ap.parse_args()
 
@@ -170,13 +195,18 @@ def main():
         raise SystemExit('找不到源文件: %s\n（换机器时用 --src 或设环境变量 SUBJECT_WORDS_CSV）'
                          % args.src)
 
-    with open(LABELS_CSV, encoding='utf-8-sig', newline='') as f:
-        labels = list(csv.DictReader(f))
-    print('源词表      : %s' % args.src)
-    print('对照标签表  : %s（%d 条）' % (LABELS_CSV, len(labels)))
+    _p = SPLIT_PATHS[args.split]
+    labels_csv, audio_dir = _p['labels'], _p['audio']
+    text_dir, trans_csv = _p['text'], _p['trans']
 
-    src, dropped_rows = load_source(args.src)
-    print('源词表里 train 的样本数: %d' % len(src))
+    with open(labels_csv, encoding='utf-8-sig', newline='') as f:
+        labels = list(csv.DictReader(f))
+    print('处理的 split: %s' % args.split)
+    print('源词表      : %s' % args.src)
+    print('对照标签表  : %s（%d 条）' % (labels_csv, len(labels)))
+
+    src, dropped_rows = load_source(args.src, args.split)
+    print('源词表里 %s 的样本数: %d' % (args.split, len(src)))
     if dropped_rows:
         print('因切割边界拿不到可靠时间的词（已丢弃，逐词表和 transcription 同时去掉）: %d 个'
               % len(dropped_rows))
@@ -191,7 +221,7 @@ def main():
     n_drop_total = n_empty_spk = 0
     for i, r in enumerate(labels, 1):
         uid, dx = r['adressfname'], r['dx']
-        audio_path = os.path.join(AUDIO_DIR, dx, uid + '.wav')
+        audio_path = os.path.join(audio_dir, dx, uid + '.wav')
         if not os.path.exists(audio_path):
             raise SystemExit('找不到音频: %s' % audio_path)
 
@@ -200,7 +230,7 @@ def main():
         n_empty_spk += info['empty_speaker']
 
         if not args.check:
-            out = os.path.join(TEXT_DIR, dx, uid + '.csv')
+            out = os.path.join(text_dir, dx, uid + '.csv')
             os.makedirs(os.path.dirname(out), exist_ok=True)
             with open(out, 'w', encoding='utf-8', newline='') as f:
                 w = csv.DictWriter(f, fieldnames=WORD_COLUMNS)
@@ -215,14 +245,14 @@ def main():
         print('\n干跑结束，没写任何文件。')
         return
 
-    with open(TRANSCRIPTIONS_CSV, 'w', encoding='utf-8', newline='') as f:
+    with open(trans_csv, 'w', encoding='utf-8', newline='') as f:
         w = csv.DictWriter(f, fieldnames=TRANS_COLUMNS)
         w.writeheader()
         w.writerows(summaries)
 
     print('\n---- 完成 ----')
-    print('逐词表     : %s/<cn|ad>/<uid>.csv  共 %d 个' % (TEXT_DIR, len(summaries)))
-    print('汇总表     : %s  %d 行' % (TRANSCRIPTIONS_CSV, len(summaries)))
+    print('逐词表     : %s/<cn|ad>/<uid>.csv  共 %d 个' % (text_dir, len(summaries)))
+    print('汇总表     : %s  %d 行' % (trans_csv, len(summaries)))
     print('清洗后为空的词共丢掉 %d 个（总词数里）' % n_drop_total)
     print('沿用「说话人未标注」的词 %d 个（它们是受试者的话，只是 WhisperX 没标上）' % n_empty_spk)
     print('\n抽样看看第一条：')

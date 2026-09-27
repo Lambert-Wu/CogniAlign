@@ -177,6 +177,7 @@ def grab(src, name):
 TEXT_REPO = {
     "bert": "bert-base-uncased",
     "distil": "distilbert-base-uncased",
+    "chinese": "bert-base-chinese",
     "roberta": "roberta-base",
     "stella": "NovaSearch/stella_en_1.5B_v5",
     "mistral": "mistralai/Mistral-7B-v0.1",
@@ -212,8 +213,8 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
         info("本步骤只产出词级时间戳，不需要已提取的特征")
 
     # ---- 标签表 ----
-    if os.path.exists(paths.LABELS_CSV):
-        with open(paths.LABELS_CSV, encoding="utf-8-sig", newline="") as f:
+    if os.path.exists(paths.SPLIT_LABELS_CSV):
+        with open(paths.SPLIT_LABELS_CSV, encoding="utf-8-sig", newline="") as f:
             rows = list(csv.DictReader(f))
         label_uids = [r["adressfname"] for r in rows]
         ok("标签表 %d 条" % len(rows))
@@ -223,13 +224,13 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
         if dxs and set(dxs) - {"ad", "cn"}:
             bad("标签表 dx 列出现了 %s，代码只认 ad/cn（且 dx 会被当文件夹名用）" % dxs)
     else:
-        bad("找不到标签表: %s" % paths.LABELS_CSV)
+        bad("找不到标签表: %s" % paths.SPLIT_LABELS_CSV)
 
     # ---- 音频 ----
     if need_audio:
         n_wav = 0
         for dx in ("ad", "cn"):
-            d = os.path.join(paths.AUDIO_DIR, dx)
+            d = os.path.join(paths.SPLIT_AUDIO_DIR, dx)
             n = len([x for x in os.listdir(d) if x.endswith(".wav")]) if os.path.isdir(d) else 0
             if not os.path.isdir(d):
                 bad("音频目录不存在: %s（data 是否还没搬过来？）" % d)
@@ -241,7 +242,7 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
     if need_words:
         n_word = 0
         for dx in ("ad", "cn"):
-            d = os.path.join(paths.TEXT_DIR, dx)
+            d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
             n = len([x for x in os.listdir(d) if x.endswith(".csv")]) if os.path.isdir(d) else 0
             n_word += n
         if n_word:
@@ -251,22 +252,22 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
                 "       cd modules && python preprocess/preprocesswhisper.py\n"
                 "       或（秒级）python tools/convert_whisperx_words.py")
 
-        if os.path.exists(paths.TRANSCRIPTIONS_CSV):
-            with open(paths.TRANSCRIPTIONS_CSV, encoding="utf-8-sig", newline="") as f:
+        if os.path.exists(paths.SPLIT_TRANSCRIPTIONS_CSV):
+            with open(paths.SPLIT_TRANSCRIPTIONS_CSV, encoding="utf-8-sig", newline="") as f:
                 n_tx = len(list(csv.DictReader(f)))
             ok("汇总转写表 %d 行" % n_tx)
         else:
-            bad("找不到汇总转写表: %s（同上是脚本① 的产物）" % paths.TRANSCRIPTIONS_CSV)
+            bad("找不到汇总转写表: %s（同上是脚本① 的产物）" % paths.SPLIT_TRANSCRIPTIONS_CSV)
 
     # ---- 标签表里的 uid 是否真的都有文件（这一步最省事，能提前发现一半问题）----
     if label_uids:
         miss_wav = []
         miss_word = []
-        for r in (list(csv.DictReader(open(paths.LABELS_CSV, encoding="utf-8-sig", newline="")))):
+        for r in (list(csv.DictReader(open(paths.SPLIT_LABELS_CSV, encoding="utf-8-sig", newline="")))):
             u, dx = r["adressfname"], r["dx"]
-            if need_audio and not os.path.exists(os.path.join(paths.AUDIO_DIR, dx, u + ".wav")):
+            if need_audio and not os.path.exists(os.path.join(paths.SPLIT_AUDIO_DIR, dx, u + ".wav")):
                 miss_wav.append(u)
-            if need_words and not os.path.exists(os.path.join(paths.TEXT_DIR, dx, u + ".csv")):
+            if need_words and not os.path.exists(os.path.join(paths.SPLIT_TEXT_DIR, dx, u + ".csv")):
                 miss_word.append(u)
         if miss_wav:
             bad("标签表里有 %d 条找不到对应音频（例: %s）" % (len(miss_wav), ", ".join(miss_wav[:5])))
@@ -281,7 +282,7 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
     if need_pt or need_words:
         n_txt_pt = n_aud_pt = 0
         for dx in ("ad", "cn"):
-            d = os.path.join(paths.TEXT_DIR, dx)
+            d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
             if not os.path.isdir(d):
                 continue
             for x in os.listdir(d):

@@ -9,6 +9,12 @@
 #     bash run_train.sh -c                 # 只做自检，不跑
 #     bash run_train.sh -f configs/qwen.yaml   # 换配置文件
 #     bash run_train.sh -w offline         # 用 wandb 本地记录（默认完全不用 wandb）
+#     bash run_train.sh -r -b              # 续跑（已跑完的折跳过）+ 放到后台
+#
+# 关于续跑：训练中途断了（SSH 断开、被 kill、机器重启等）之后用 -r 重跑。
+#   粒度是"折"不是"epoch" —— 权重只在每折跑完时才存盘，所以断在半路的
+#   那一折会白跑、要重来，但**之前跑完的折会保留、不会被重跑**。
+#   判断依据：结果目录里有没有 model_fold_<n>.pth。
 #
 # 关于 wandb：main.py 顶层就直接调 wandb.login()，不配 API key 时会
 #   「提示你输入 key」→ 在终端里会一直卡着等人按。所以脚本默认
@@ -44,6 +50,7 @@ ENTRY="main.py"
 BG=0
 CHECK=0
 WORKER=0
+RESUME=0
 CONFIG="configs/default.yaml"
 WANDB_MODE_CHOICE="disabled"
 
@@ -56,12 +63,14 @@ CogniAlign 训练一键脚本
     bash run_train.sh -c                  只做自检，不跑
     bash run_train.sh -f configs/qwen.yaml   换配置文件
     bash run_train.sh -w offline          用 wandb 本地记录（默认 disabled）
+    bash run_train.sh -r                  续跑：已跑完的折跳过，只补剩下的
     bash run_train.sh -h                  看这段帮助
 
 说明：
   · 配置里的 cross_validation: True 会跑 5 折，每折存一个 model_fold_<n>.pth
   · 结果目录 = logs/<文本模型>_<音频模型>_<融合>_<池化>/，脚本开跑前会打印出来
   · 默认 WANDB_MODE=disabled（main.py 顶层会 wandb.login()，不设会卡在等输入 key）
+  · -r 续跑的粒度是"折"：断在半路的那一折要重跑，跑完的折不会重跑
 
 环境变量（都可不设）：
     PYTHON                 指定解释器，默认自动找 python3 / python
@@ -74,6 +83,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -b|--background) BG=1 ;;
         -c|--check)      CHECK=1 ;;
+        -r|--resume)     RESUME=1 ;;
         --_worker)       WORKER=1 ;;
         -f|--config)
             shift
@@ -120,6 +130,9 @@ fi
 export COGNIALIGN_PROJECT_ROOT="$HERE_PY"
 export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data/diagnosis}"
 export COGNIALIGN_MODELS_DIR="${COGNIALIGN_MODELS_DIR:-$HERE_PY/models}"
+
+# 续跑开关：main.py 读它来决定要不要跳过已存权重的折
+export COGNIALIGN_RESUME="$RESUME"
 
 # wandb：默认完全不启用，避免 main.py 顶层的 wandb.login() 卡在等输入 key
 export WANDB_MODE="$WANDB_MODE_CHOICE"
@@ -177,8 +190,26 @@ if [ "$WORKER" = 1 ]; then
     echo " 数据根   : $COGNIALIGN_DATA_ROOT"
     echo " 结果目录 : $RESULT_DIR"
     echo " wandb    : $WANDB_MODE_CHOICE"
+    echo " 续跑     : $COGNIALIGN_RESUME（1 = 已跑完的折跳过）"
     echo "======================================================"
     echo
+    if [ "$COGNIALIGN_RESUME" = 1 ]; then
+        _done="$(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l)"
+        echo "续跑：已完成 $_done 折，这次只补剩下的（断在半路的那一折要重跑）"
+        echo
+    else
+        _old="$(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l)"
+        if [ "$_old" -gt 0 ]; then
+            echo "##########################################################"
+            echo "# 注意：结果目录里已经有 $_old 个旧的 model_fold_*.pth"
+            echo "#   这次没加 -r，会把它们覆盖，但**只覆盖跑到的折** ——"
+            echo "#   如果中途又断了，剩下的仍是旧权重，新旧会混在一起。"
+            echo "#   要接着上次补跑就 Ctrl-C，改用：bash run_train.sh -r -b"
+            echo "#   要彻底重来就先删干净：rm -rf \"$RESULT_DIR\""
+            echo "##########################################################"
+            echo
+        fi
+    fi
     echo "注意：main.py 会连续跑 5 折；每个 epoch 的指标实时写进"
     echo "      $RESULT_DIR/train_stats_<折号>.txt"
     echo "      想看某折的进度就另开一个终端 tail -f 那个文件。"
@@ -192,6 +223,7 @@ if [ "$WORKER" = 1 ]; then
     echo "--- 结果核对 ---"
     if [ -d "$RESULT_DIR" ]; then
         echo "结果目录: $RESULT_DIR"
+        echo "   已完成折数: $(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l) / 5"
         for f in "$RESULT_DIR"/model_fold_*.pth; do
             [ -e "$f" ] && echo "   模型 $(basename "$f")  $(du -h "$f" | cut -f1)"
         done
@@ -253,7 +285,8 @@ fi
 # =====================================================================
 echo "步骤 1/2  环境自检"
 echo "------------------------------------------------------"
-if ! "$PYTHON" "$HERE/tools/check_env.py" --mode train; then
+echo "（要 import torch / transformers / wandb 这些大包，约 40 秒不动是正常的）"
+if ! "$PYTHON" -u "$HERE/tools/check_env.py" --mode train; then
     echo
     echo "自检没通过 —— 按上面标 [!!] 的项逐条解决，然后重跑。"
     echo "想单独再看一次自检（不跑）：bash run_train.sh -c"
@@ -286,6 +319,10 @@ echo "配置文件 : $CONFIG"
 echo "结果目录 : $RESULT_DIR"
 
 WORKER_ARGS=(--_worker -f "$CONFIG" -w "$WANDB_MODE_CHOICE")
+if [ "$RESUME" = 1 ]; then
+    WORKER_ARGS+=(-r)
+    echo "续跑模式   : 已跑完的折会跳过（判断依据：结果目录里有没有 model_fold_<n>.pth）"
+fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG="$LOG_DIR/train_$TS.log"

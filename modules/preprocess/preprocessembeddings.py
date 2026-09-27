@@ -21,22 +21,28 @@ import numpy as np
 
 # 路径集中在 modules/paths.py，本脚本在子目录里，先把上一层加进 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from paths import AUDIO_DIR, TEXT_DIR, TRANSCRIPTIONS_CSV, TRAIN_ROOT
+# SPLIT / TEXT_MODEL / SPLIT_* 都在 paths.py 里统一决定（读环境变量）
+from paths import (SPLIT, TEXT_MODEL, AUDIO_MODEL, SPLIT_ROOT, SPLIT_AUDIO_DIR,
+                   SPLIT_TEXT_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV)
 from hf_models import resolve
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Avaiable: bert, roberta, distil, stella, mistral, qwen
+# Avaiable: bert, roberta, distil, chinese, stella, mistral, qwen
 # 取值必须与 main.py 用的 configs/*.yaml 对齐，否则生成的特征文件名
 # 跟 dataset.py 要找的对不上（configs/default.yaml 是下面这两个值）。
-textual_model = 'distil'
-audio_model = 'wav2vec2'   # 音频侧走神经网络线（另一条是 'egemaps' / 'mel'）
+# 允许用环境变量覆盖 —— 同一份代码要跑 train（英文 distil）和
+# test（中文 chinese）两套配置：
+#     COGNIALIGN_SPLIT=test COGNIALIGN_TEXT_MODEL=chinese python preprocess/preprocessembeddings.py
+textual_model = TEXT_MODEL          # 来自 paths.py：test 默认 chinese，其余 distil
+audio_model = AUDIO_MODEL
 pauses = False
 
 pauses_data = '_pauses' if pauses else ''
 name_mapping_text = {
     'bert': '',
     'distil': 'distil',
+    'chinese': 'chinese',
     'roberta': 'roberta',
     'mistral': 'mistral',
     'qwen': 'qwen',
@@ -66,6 +72,13 @@ elif textual_model == 'distil':
     _path = resolve("distilbert-base-uncased")
     tokenizer = AutoTokenizer.from_pretrained(_path)
     model = DistilBertModel.from_pretrained(_path).to(device)
+elif textual_model == 'chinese':
+    # test 集是中文语料。bert-base-chinese 的 tokenizer 是**按字切分**的
+    # （一个汉字一个 token，且不带 ## 前缀），正好和逐词时间戳表里的单字对得上，
+    # 所以脚本② 的 token 分组逻辑不用改也能用。
+    _path = resolve("bert-base-chinese")
+    tokenizer = BertTokenizer.from_pretrained(_path)
+    model = BertModel.from_pretrained(_path).to(device)
 elif textual_model == 'stella':
     _path = resolve("NovaSearch/stella_en_1.5B_v5")
     tokenizer = AutoTokenizer.from_pretrained(_path, trust_remote_code=True)
@@ -98,10 +111,13 @@ elif audio_model == 'egemaps':
 else:
     segment_length = 50
 
-root_path = AUDIO_DIR + os.sep
-root_text_path = TEXT_DIR + os.sep
-
-textual_data = TRANSCRIPTIONS_CSV
+# 当前 split 对应的路径，在 paths.py 里统一决定（SPLIT_* 那一组）
+ROOT_DIR = SPLIT_ROOT
+root_path = SPLIT_AUDIO_DIR + os.sep
+root_text_path = SPLIT_TEXT_DIR + os.sep
+textual_data = SPLIT_TRANSCRIPTIONS_CSV
+LABELS_PATH = SPLIT_LABELS_CSV
+print(f"处理 split: {SPLIT}  |  文本模型: {textual_model}  |  数据根: {ROOT_DIR}")
 
 # 文本/音频统一对齐到这么长的序列。
 # 原代码是 200；本数据集真实分词后 token 数中位 129、最大 593，
@@ -494,7 +510,7 @@ def preprocess_text():
     if already_done:
         print(f"（其中 {already_done} 条是续跑跳过的已完成样本）")
     if skipped:
-        skip_path = os.path.join(TRAIN_ROOT, 'preprocess_skipped.csv')
+        skip_path = os.path.join(ROOT_DIR, 'preprocess_skipped.csv')
         with open(skip_path, 'w', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['uid', 'diagno', 'reason'])
@@ -502,7 +518,7 @@ def preprocess_text():
         print(f"跳过清单已写入: {skip_path}")
         print("这些样本没生成特征文件，训练前必须把它们从标签表里删掉，")
         print(f"否则 dataset.read_CSV 会因为找不到 .pt 直接报错：")
-        print(f"  {os.path.join(TRAIN_ROOT, 'adresso-train-mmse-scores.csv')}")
+        print(f"  {LABELS_PATH}")
         for uid, diagno, reason in skipped:
             print(f"  - {diagno}/{uid}: {reason}")
 

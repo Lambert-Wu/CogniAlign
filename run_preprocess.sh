@@ -235,7 +235,8 @@ fi
 # =====================================================================
 echo "步骤 1/2  环境自检"
 echo "------------------------------------------------------"
-if ! "$PYTHON" "$HERE/tools/check_env.py" --mode preprocess; then
+echo "（要 import torch / transformers 这些大包，约 30 秒不动是正常的）"
+if ! "$PYTHON" -u "$HERE/tools/check_env.py" --mode preprocess; then
     echo
     echo "自检没通过 —— 按上面标 [!!] 的项逐条解决，然后重跑。"
     echo "想单独再看一次自检（不跑）：bash run_preprocess.sh -c"

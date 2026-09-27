@@ -31,6 +31,7 @@ class AdressoDataset(Dataset):
 name_mapping_text = {
     'bert': '',
     'distil': 'distil',
+    'chinese': 'chinese',
     'roberta': 'roberta',
     'mistral': 'mistral',
     'qwen': 'qwen',

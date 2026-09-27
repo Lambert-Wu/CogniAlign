@@ -43,12 +43,6 @@ def get_config(config_file):
 
 def save_config(config):
     """Save the configuration to a YAML file, ensuring log directories exist."""
-    
-    log_path = os.path.join('logs', config.path_name)
-    os.makedirs(log_path, exist_ok=True)
-    
-    config_file_path = os.path.join(log_path, 'config.yaml')
-
 
     config.model.multimodality = config.model.textual_model != '' and config.model.audio_model != ''
 
@@ -61,10 +55,18 @@ def save_config(config):
 
     config.path_name = f"{config.model_name}_{config.model.pooling}"
 
-    
+    # ⚠️ log_path / config_file_path 必须在 path_name 更新**之后**才算。
+    # 原代码把这两行放在函数开头，而那时 path_name 还是 get_config() 里那个
+    # f"{空的 model_name}_{pooling}" = "_mean"，于是：
+    #   · 凭空建出一个 logs/_mean/ 垃圾目录
+    #   · config.yaml 被写进 logs/_mean/，真正的结果目录里反而没有配置文件
+    log_path = os.path.join('logs', config.path_name)
+    os.makedirs(log_path, exist_ok=True)
+    config_file_path = os.path.join(log_path, 'config.yaml')
+
     # Convert DotMap to a standard dictionary
     config_dict = config.toDict()
-    
+
     with open(config_file_path, 'w', encoding='utf-8') as f:
         yaml.dump(config_dict, f, default_flow_style=False)
 
@@ -90,13 +92,20 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
     
     log_path = f'logs/{model_name}/train_stats_{num_cross_val}.txt' if cross_val else f'logs/{model_name}/train_stats.txt'
     
-    best_value, patience = 0, 0
+    # best_value 必须从 -inf 起（原代码是 0）：
+    # 验证准确率有可能整轮都是 0（样本少 / 模型没学到东西），
+    # 那时 `validation_value > best_value` 永远不成立 → best_weights 始终是 None
+    # → 结尾 load_state_dict(None) 直接 TypeError 崩掉（实测踩过）。
+    best_value, patience = -float("inf"), 0
     best_epoch, best_weights, rest_best_values = 0, None, []
     
     num_training_steps = num_epochs * len(train_dataloader)
     progress_bar = tqdm(range(num_training_steps))
     
-    with open(log_path, "w", encoding='utf-8') as log:
+    # buffering=1 = 行缓冲，每写一行就落盘。
+    # 默认是块缓冲（8KB），而训练日志每 epoch 才几百字节，要攒约 30 个 epoch
+    # 才写一次盘 —— 另开一个终端 tail -f 会一直看不到内容，看起来像卡住了。
+    with open(log_path, "w", encoding='utf-8', buffering=1) as log:
         for epoch in range(num_epochs):
             model.train()
             total_true, total_pred, total_loss = [], [], 0
@@ -157,7 +166,10 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
         log.write(f'Best validation F1: {rest_best_values[0]}\nBest validation Recall: {rest_best_values[1]}\nBest validation Precision: {rest_best_values[2]}\n')
         log.write(f'Best epoch: {best_epoch}\n')
     
-    model.load_state_dict(best_weights)
+    # 兜底：理论上 best_weights 不会是 None（best_value 从 -inf 起，
+    # 第一个 epoch 必定会保存一次），但白跑一整折再崩不值得，这里再加一道保护。
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
     return model, best_value, rest_best_values
 
 def evaluation(model, dataloader, lossfn, log, test=False):
