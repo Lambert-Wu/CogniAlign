@@ -101,6 +101,16 @@ if audio_model == 'wav2vec2':
     _path = resolve("facebook/wav2vec2-base-960h")
     processor = Wav2Vec2Processor.from_pretrained(_path)
     wav2vec_model = Wav2Vec2Model.from_pretrained(_path).to(device)
+    # 🚨 必须显式切 eval —— 上面第 98 行那句 `model.eval()` 只作用到**文字**模型
+    # （变量叫 model），音频模型另叫 wav2vec_model、而且是在那句之后才建的，
+    # 从来没被切过。而 Wav2Vec2Model 从 HF 加载出来默认是 train 模式，此时：
+    #   · layerdrop=0.1  → 每次前向随机跳过约 10% 的 Transformer 层
+    #   · mask_time_prob=0.05 → 随机遮挡约 5% 的音频帧
+    #   · hidden/attention dropout=0.1 → 再加一层随机噪声
+    # 实测同一条录音连跑两次，特征平均差 84%（eval 模式下两次完全一致），
+    # 也就是说之前存盘的 235 套音频特征里混进了大量与标签无关的随机噪声。
+    # ⚠️ 改了这里必须**全量重跑**脚本②：旧的 <uid>distil_audio.pt 是脏的。
+    wav2vec_model.eval()
     segment_length = 50
 elif audio_model == 'egemaps':
     smile = opensmile.Smile(
