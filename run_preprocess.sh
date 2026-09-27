@@ -5,10 +5,15 @@
 # ---------------------------------------------------------------------
 # 用法：
 #     bash run_preprocess.sh              # 自检 → 前台开跑
-#     bash run_preprocess.sh -b           # 自检 → 后台跑（推荐，约 3 小时）
+#     bash run_preprocess.sh -b           # 自检 → 后台跑（推荐，约 1 小时）
 #     bash run_preprocess.sh -c           # 只做自检，不跑
 #     bash run_preprocess.sh -r           # 跳过已产出特征的样本（断点续跑）
 #     bash run_preprocess.sh -b -r        # 后台续跑
+#
+# 耗时取决于音频线路（见 preprocessembeddings.py 的 audio_model）：
+#     wav2vec2（当前）  每条 8~35 秒，235 条约 1 小时
+#     egemaps           每条 43~62 秒，235 条约 3 小时
+# 脚本会自己从源码读出当前线路打印在日志开头，不用你记。
 #
 # 可设的环境变量（不设就用下面的默认值）：
 #     PYTHON                 指定解释器，默认自动找 python3 / python
@@ -16,11 +21,50 @@
 #     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
 #     COGNIALIGN_OFFLINE=1   禁止联网下载模型（本地没有就直接报错）
 # =====================================================================
+
+# 必须用 bash 跑：下面用了数组、${BASH_SOURCE}、${PIPESTATUS}、pipefail 等 bash 特性。
+# Debian/Ubuntu 上 `sh` 指向 dash，这些都不支持。提前给出清楚的提示 ——
+# 否则用户看到的是一句莫名其妙的 "Illegal option -o pipefail"。
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "这个脚本要用 bash 跑，不能用 sh：" >&2
+    echo "    bash run_preprocess.sh [选项]" >&2
+    exit 1
+fi
+
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 解析自身路径。用 BASH_SOURCE 而不是 $0 —— 以 `bash run_preprocess.sh`
+# 方式调用时 $0 是「不带路径的名字」，bash 会去 PATH 里找它 → "command not found"。
+# 顺便解掉软链接（Linux 上 readlink -f 一定有；macOS 上没有就退回原路径）。
+_SELF_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+    _RESOLVED="$(readlink -f "$_SELF_PATH" 2>/dev/null || true)"
+    if [ -n "$_RESOLVED" ]; then
+        _SELF_PATH="$_RESOLVED"
+    fi
+fi
+HERE="$(cd "$(dirname "$_SELF_PATH")" && pwd)"
+SELF="$HERE/$(basename "$_SELF_PATH")"
 MODULES_DIR="$HERE/modules"
 ENTRY="preprocess/preprocessembeddings.py"   # 相对 modules/ 的路径
+EMBED_SRC="$MODULES_DIR/preprocess/preprocessembeddings.py"
+
+# 从脚本② 源码读出当前模型线路（用正则读文本，**绝不 import** ——
+# 那个脚本没有 __main__ 保护，import 即执行，会覆盖已有产物）。
+grab() { sed -n "s/^$1 *= *'\([^']*\)'.*/\1/p" "$EMBED_SRC" 2>/dev/null | head -1; }
+TEXT_MODEL="$(grab textual_model)"
+AUDIO_MODEL="$(grab audio_model)"
+# 后缀规则来自脚本② 和 dataset.py 里同一张 name_mapping_* 表
+case "$TEXT_MODEL" in
+    bert) TEXT_SUF="" ;;
+    *)    TEXT_SUF="$TEXT_MODEL" ;;
+esac
+case "$AUDIO_MODEL" in
+    wav2vec2) AUDIO_SUF="_audio" ;;
+    egemaps)  AUDIO_SUF="_egemaps" ;;
+    mel)      AUDIO_SUF="_mel" ;;
+    *)        AUDIO_SUF="" ;;
+esac
 
 BG=0
 CHECK=0
@@ -32,11 +76,14 @@ usage() {
 CogniAlign 特征提取一键脚本
 
     bash run_preprocess.sh           自检 → 前台开跑
-    bash run_preprocess.sh -b        自检 → 后台跑（推荐，约 3 小时）
+    bash run_preprocess.sh -b        自检 → 后台跑（推荐，约 1 小时）
     bash run_preprocess.sh -c        只做自检，不跑
     bash run_preprocess.sh -r        跳过已产出特征的样本（断点续跑）
     bash run_preprocess.sh -b -r     后台续跑
     bash run_preprocess.sh -h        看这段帮助
+
+耗时：音频走 wav2vec2 时约 1 小时 / 走 egemaps 时约 3 小时
+      （脚本会从源码读出当前线路，打印在日志开头）
 
 环境变量（都可不设）：
     PYTHON                 指定解释器，默认自动找 python3 / python
@@ -91,6 +138,15 @@ export COGNIALIGN_MODELS_DIR="${COGNIALIGN_MODELS_DIR:-$HERE_PY/models}"
 LOG_DIR="$HERE/logs/preprocess"
 mkdir -p "$LOG_DIR"
 
+# 样本数：从标签表数行数（awk 会数到最后一行没换行的），不写死
+LABELS_CSV="$COGNIALIGN_DATA_ROOT/train/adresso-train-mmse-scores.csv"
+if [ -f "$LABELS_CSV" ]; then
+    N_SAMPLES="$(awk 'END{print NR-1}' "$LABELS_CSV" 2>/dev/null)"
+    [ -z "$N_SAMPLES" ] && N_SAMPLES="?"
+else
+    N_SAMPLES="?"
+fi
+
 # =====================================================================
 # 「worker」模式：被自己以 --_worker 拉起（前台或 nohup 后台都是这条路径）。
 # 只做事：跑 → 核对。交给上层决定日志去哪。
@@ -101,10 +157,14 @@ if [ "$WORKER" = 1 ]; then
     echo "======================================================"
     echo " CogniAlign 特征提取"
     echo " 开始时间 : $(date '+%F %T')"
+    echo " 运行平台 : $(uname -s) / bash ${BASH_VERSION%%(*}"
     echo " 解释器   : $PYTHON"
     echo " 工作目录 : $(pwd)"
     echo " 数据根   : $COGNIALIGN_DATA_ROOT"
     echo " 模型目录 : $COGNIALIGN_MODELS_DIR"
+    echo " 模型线路 : textual=$TEXT_MODEL | audio=$AUDIO_MODEL"
+    echo " 产出文件 : <uid>${TEXT_SUF}.pt 与 <uid>${TEXT_SUF}${AUDIO_SUF}.pt"
+    echo " 样本数   : $N_SAMPLES"
     if [ "$RESUME" = 1 ]; then
         export COGNIALIGN_SKIP_DONE=1
         echo " 续跑模式 : 开（已产出特征的样本会跳过）"
@@ -126,9 +186,47 @@ if [ "$WORKER" = 1 ]; then
 
     echo
     echo "======================================================"
-    echo " 结束时间 : $(date '+%F %T')"
+    echo " 结束时间     : $(date '+%F %T')"
     echo " 主流程退出码 : $RC"
+    if [ "$RC" -eq 0 ]; then
+        echo " 结果         : 正常跑完（上面有结果核对）"
+    else
+        echo " 结果         : 出错了 —— 见下面的排错提示"
+    fi
     echo "======================================================"
+
+    if [ "$RC" -ne 0 ]; then
+        LOG_HINT="${COGNIALIGN_LOG:-（这次没走 run_preprocess.sh，日志由你的终端决定）}"
+        echo
+        echo "########################  排错  ########################"
+        echo "日志文件：$LOG_HINT"
+        echo
+        echo "先把这几行抓出来，多半就是原因："
+        echo "    grep -nE 'Traceback|Error|error|Exception|Killed|SKIP' \"$LOG_HINT\" | tail -30"
+        echo "再看结尾："
+        echo "    tail -25 \"$LOG_HINT\""
+        echo
+        echo "常见的几种："
+        echo "  1) 缺 Python 包"
+        echo "     自检会列出缺哪个。装："
+        echo "     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126"
+        echo "     （纯 CPU 机器把 requirements.txt 里的 +cu126 去掉，索引换成 .../whl/cpu）"
+        echo "  2) 系统缺 libsndfile1"
+        echo "     报 import soundfile / librosa 失败时：sudo apt-get install -y libsndfile1"
+        echo "  3) 数据没搬全"
+        echo "     重跑 bash run_preprocess.sh -c，自检会指出缺哪类文件"
+        echo "     （只有标签表 / 只有音频 / 没有逐词时间戳，都是这一步能看出来的）"
+        echo "  4) 模型下不来（服务器没外网）"
+        echo "     把整个 models/ 目录一起 rsync 过去；或先设 COGNIALIGN_OFFLINE=1"
+        echo "     跑一次，它会直接告诉你模型该放在哪个路径"
+        echo "  5) CUDA 显存不够"
+        echo "     特征提取是单样本、一般不会。真报 OOM 就用 CPU 跑："
+        echo "     CUDA_VISIBLE_DEVICES= bash run_preprocess.sh"
+        echo
+        echo "断了想接着跑（自动跳过已产出特征的样本）："
+        echo "    bash run_preprocess.sh -r"
+        echo "########################################################"
+    fi
     exit "$RC"
 fi
 
@@ -139,7 +237,8 @@ echo "步骤 1/2  环境自检"
 echo "------------------------------------------------------"
 if ! "$PYTHON" "$HERE/tools/check_env.py" --mode preprocess; then
     echo
-    echo "自检没通过 —— 先按上面的提示解决，再跑一次。"
+    echo "自检没通过 —— 按上面标 [!!] 的项逐条解决，然后重跑。"
+    echo "想单独再看一次自检（不跑）：bash run_preprocess.sh -c"
     exit 1
 fi
 
@@ -160,9 +259,10 @@ fi
 
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG="$LOG_DIR/embeddings_$TS.log"
+export COGNIALIGN_LOG="$LOG"   # 传给 worker：出错时好告诉用户该去看哪个文件
 
 if [ "$BG" = 1 ]; then
-    nohup "$0" "${WORKER_ARGS[@]}" > "$LOG" 2>&1 &
+    nohup "$SELF" "${WORKER_ARGS[@]}" > "$LOG" 2>&1 &
     PID=$!
     echo "$PID" > "${LOG%.log}.pid"
 
@@ -170,20 +270,21 @@ if [ "$BG" = 1 ]; then
     echo
     echo "看进度："
     echo "    tail -f \"$LOG\""
-    echo "    grep -c '^Processing' \"$LOG\"     # 已处理的样本数（共 235）"
+    echo "    grep -c '^Processing' \"$LOG\"     # 已处理的样本数（共 $N_SAMPLES）"
     echo "    grep -c '^SKIP' \"$LOG\"           # 被跳过的样本数"
     echo
     echo "想停掉："
     echo "    kill $PID"
     echo
     echo "日志：$LOG"
-    echo "跑完会自动在里面输出结果核对。"
+    echo "开头写明这次用的是哪条模型线路；跑完会追加结果核对；"
+    echo "万一出错，日志结尾会给出排错指引（直接看最后 40 行就行）。"
 else
     echo "日志同时写入: $LOG"
     echo "（这个脚本每个词都会打印，日志会比较大，正常现象）"
     echo
     set +e
-    "$0" "${WORKER_ARGS[@]}" 2>&1 | tee "$LOG"
+    "$SELF" "${WORKER_ARGS[@]}" 2>&1 | tee "$LOG"
     RC=${PIPESTATUS[0]}
     set -e
     echo

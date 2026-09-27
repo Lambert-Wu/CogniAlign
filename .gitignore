@@ -45,3 +45,10 @@ __pycache__/*
 *.tar.gz
 
 api.txt
+*.workbuddy
+
+# WorkBuddy 工作目录：本地的工作数据（记忆、日志、会话产物），不进仓库。
+# ⚠️ 光有规则不够 —— 已经被跟踪的文件不受 .gitignore 约束，
+#    所以如果它已经在索引里了，还需要：
+#        git rm -r --cached .workbuddy
+.workbuddy/
