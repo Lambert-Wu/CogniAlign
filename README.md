@@ -147,6 +147,19 @@ python -c "import sys;sys.path.insert(0,'modules');import hf_models;print(hf_mod
 
 ### 5. 按顺序跑
 
+**② 特征提取有一键脚本**（推荐，自检 → 跑 → 自动核对）：
+
+```bash
+bash run_preprocess.sh -c        # 先只做自检：依赖 / 数据 / 模型 / 设备
+bash run_preprocess.sh -b        # 后台跑（约 3 小时），日志自动落 logs/preprocess/
+bash run_preprocess.sh -b -r     # 断点续跑：跳过已产出特征的样本
+```
+
+脚本自己会做的事：找不到 python 自动探测、把项目路径配好、缺依赖/缺数据/缺模型都会
+在开跑前说清楚（而不是跑一半才报错）、跑完自动调用 `tools/verify_features.py` 核对结果。
+
+手动跑（等价于 `run_preprocess.sh` 内部做的事）：
+
 ```bash
 cd modules
 
@@ -161,7 +174,16 @@ python preprocess/preprocessembeddings.py
 python main.py --config configs/default.yaml
 ```
 
-⚠️ **必须在 `modules/` 目录下执行** —— 脚本之间是平级 import（`from dataset import ...`）。
+配套的三个工具：
+
+| 脚本 | 用途 |
+|---|---|
+| `run_preprocess.sh` | 一键：自检 + 跑特征提取 + 结果核对（`-c` 只自检 / `-b` 后台 / `-r` 续跑） |
+| `tools/check_env.py` | 环境自检，可单独跑：`python tools/check_env.py --mode preprocess\|asr\|train` |
+| `tools/verify_features.py` | 结果核对：特征是否成对齐全 + 用真实 `read_CSV` 读一遍 |
+
+⚠️ **必须在 `modules/` 目录下执行 python 脚本** —— 脚本之间是平级 import（`from dataset import ...`）。
+（`run_preprocess.sh` 已经替你 `cd` 好了。）
 
 > 🚨 **不要 `import` 这三个脚本，也不要对它们用 `--help`。**
 > `main.py`、`preprocesswhisper.py`、`preprocessembeddings.py` 都**没有**

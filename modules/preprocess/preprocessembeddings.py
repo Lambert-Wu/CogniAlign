@@ -108,6 +108,13 @@ textual_data = TRANSCRIPTIONS_CSV
 #    分数不能和原文直接对比。
 max_length = 512
 
+# 续跑开关：设 COGNIALIGN_SKIP_DONE=1 时，两个特征文件都已产出的样本直接跳过。
+# 默认关闭 —— 不设就是原来的行为（全部重做一遍）。
+# 用途：全量约 3 小时，中途断了不用从头再来（run_preprocess.sh --resume 会设它）。
+SKIP_DONE = os.environ.get('COGNIALIGN_SKIP_DONE', '').strip().lower() in (
+    '1', 'true', 'yes', 'on',
+)
+
 
 def preprocess_text():
 
@@ -122,6 +129,21 @@ def preprocess_text():
 
     # 处理不了的样本不再中断整批，改成本清单跳过（原来这里是 return -1）
     skipped = []
+    # 续跑模式下被跳过（已完成）的样本数
+    already_done = 0
+
+    def is_done(uid, diagno):
+        """该样本的两个特征文件是否都已产出且非空。
+
+        判大小而不只判存在：中途崩掉可能留下 0 字节的半个文件，
+        那种情况要重做，不能当成已完成。
+        """
+        base = os.path.join(root_text_path, diagno,
+                            uid + textual_model_data + pauses_data)
+        for p in (base + '.pt', base + audio_model_data + '.pt'):
+            if not os.path.exists(p) or os.path.getsize(p) == 0:
+                return False
+        return True
 
     def skip(reason):
         """记一条跳过：打印 + 进清单 + 清掉刚写出的文本特征。
@@ -140,6 +162,13 @@ def preprocess_text():
 
     # Iteate over each row
     for index, row in df.iterrows():
+
+        # 续跑：两个特征文件都已存在就直接跳过（默认关闭，见顶部 SKIP_DONE）
+        if SKIP_DONE and is_done(row['uid'], row['diagno']):
+            already_done += 1
+            completed_audios += 1
+            print(f"SKIP-DONE {row['diagno']}/{row['uid']}: 特征已存在，跳过")
+            continue
 
         print(f"------------------------------------------")
         print(f"------------------------------------------")
@@ -431,6 +460,8 @@ def preprocess_text():
     # ---- 收尾：汇报 + 把跳过清单落盘 ----
     print("============ 处理结束 ============")
     print(f"成功 {completed_audios} 条，跳过 {len(skipped)} 条")
+    if already_done:
+        print(f"（其中 {already_done} 条是续跑跳过的已完成样本）")
     if skipped:
         skip_path = os.path.join(TRAIN_ROOT, 'preprocess_skipped.csv')
         with open(skip_path, 'w', encoding='utf-8', newline='') as f:

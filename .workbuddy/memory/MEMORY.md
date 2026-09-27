@@ -42,6 +42,10 @@ CogniAlign 是 git 仓库（remote: `Lambert-Wu/CogniAlign`），数据/模型�
    faster-whisper 靠 PyAV 解码，模型读项目自带的 `models/faster-whisper-small`。
    字段一一对应（`segment.words[i].word/.start/.end/.probability`），下游不用改。
 6. **跑脚本必须在 `modules/` 目录下**（import 是平的：`from dataset import ...`）。
+   **特征提取有一键入口 `bash run_preprocess.sh`**（`-c` 自检 / `-b` 后台 / `-r` 续跑），
+   它已经替你把 `cd` 和环境变量配好了，跑完自动核对。
+   自检 `tools/check_env.py`、结果核对 `tools/verify_features.py` 都可单独跑。
+   续跑开关：`COGNIALIGN_SKIP_DONE=1`（默认关，设了才跳过已产出特征的样本）。
 7. **脚本① 有两种产出来源，二选一**：
    - 跑 ASR：`python preprocess/preprocesswhisper.py`（faster-whisper，40~60 分钟）
    - 用 madress 已有的 WhisperX 产物转换：
