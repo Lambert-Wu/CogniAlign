@@ -9,17 +9,17 @@
 #         --extra-index-url https://download.pytorch.org/whl/cu126
 #
 # ⚠️ 末尾那行 --extra-index-url 不是可选项，是必需项。
-#    torch / torchaudio 的版本号带本地标记（+cu126），这种 wheel 只有
+#    torch 的版本号带本地标记（+cu126），这种 wheel 只有
 #    PyTorch 官方源上有，PyPI 上不存在。CUDA 12.4 就把 cu126 换成 cu124，
 #    以此类推（服务器上先用 nvidia-smi 看 CUDA 版本）。
 #
 # 纯 CPU 机器（无显卡的服务器 / CI）：
 #     sed 's/+cu126//' requirements.txt > /tmp/req-cpu.txt
 #     pip install -r /tmp/req-cpu.txt --extra-index-url https://download.pytorch.org/whl/cpu
-#   注意 torchaudio==2.11.0 在 CPU 源上对应的是 2.11.0+cpu，去掉后缀即可。
 #
 # 不需要的东西（都确认过，别再往里加）：
 #   -e .            项目没有 setup.py / pyproject.toml，写了直接装失败
+#   torchaudio      见"深度学习框架"一节的说明 —— 读音频统一用 librosa
 #   whisper         见文末"故意不列进来"
 #   ffmpeg          见"系统依赖"一节，本项目不需要
 # =====================================================================
@@ -28,17 +28,20 @@
 # ---------------------------- 深度学习框架 ----------------------------
 # 全项目的张量与模型（modules/model.py / dataset.py / main.py）
 torch==2.14.0+cu126
-# 读 wav（preprocessembeddings.py；当前 egemaps 分支走 librosa，
-# 但 wav2vec2 分支和 torchcodec 路径要用，保留）
-torchaudio==2.11.0+cu126
+# ⚠️ 这里**没有 torchaudio，是故意的**：
+#   torchaudio 2.9 起默认后端换成 TorchCodec，而 TorchCodec 必须依赖外部 FFmpeg 库。
+#   没有 ffmpeg 的机器上 torchaudio.load() 直接抛 "Could not load libtorchcodec"，
+#   而且 backend="soundfile" 之类的参数会被忽略（换后端也救不了）。
+#   本项目三条音频分支统一用 librosa 读音频（见下）。
+#   换句话说：删掉 torchaudio 是为了少一个"版本必须和 torch 严格配套"的坑。
 
 
 # ---------------------------- 音频特征提取 ----------------------------
-# 读音频、切成 0.1s 帧、mel 频谱（preprocessembeddings.py）
+# 读音频、切成帧、mel 频谱 —— preprocessembeddings.py 三条音频分支全用它
 librosa==0.11.0
 # 音频 I/O —— librosa 的读写后端；tools/convert_whisperx_words.py 也用它读音频时长
 soundfile==0.14.0
-# eGeMAPS 声学特征（preprocessembeddings.py 默认的 audio_model）
+# eGeMAPS 声学特征（只有 audio_model='egemaps' 时才用；wav2vec2 分支不靠它）
 opensmile==2.6.0
 
 
@@ -81,7 +84,7 @@ dotmap==1.3.30
 # =====================================================================
 # 系统依赖（pip 装不了，Linux 上必须先装好）
 # =====================================================================
-# libsndfile1 —— soundfile / librosa / torchaudio 的底层库
+# libsndfile1 —— soundfile / librosa 的底层库（读 wav 全靠它）
 #     Debian/Ubuntu:  sudo apt-get install -y libsndfile1
 #     CentOS/RHEL:    sudo yum install -y libsndfile
 #   缺了它的报错发生在 import soundfile 时（不是安装时），排查起来很费时间。

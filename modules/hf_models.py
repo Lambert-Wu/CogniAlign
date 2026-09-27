@@ -37,6 +37,7 @@
 
 import os
 import sys
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -63,6 +64,26 @@ _CFG_FILES = (
 
 # 非 PyTorch 框架的权重，下载时跳过（distil 那次全下下来是 1.46G，只剩 257M）
 _SKIP_PATTERNS = ["*.msgpack", "*.h5", "*.ot", "*.tflite"]
+_SKIP_SUFFIX = (".msgpack", ".h5", ".ot", ".tflite")
+_SKIP_NAMES = (".gitattributes", "README.md")
+
+# 第 3 级兜底用：连文件清单都拿不到时，按这份常见文件名逐个试探
+# （hf_hub_download 走 /resolve/ 路径，不碰 API，所以这条路更抗网络抖动）
+_CANDIDATE_FILES = (
+    "config.json",
+    "preprocessor_config.json",
+    "feature_extractor_config.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "generation_config.json",
+    "vocab.json",
+    "tokenizer.json",
+    "merges.txt",
+    "vocabulary.txt",       # whisper
+    "model.safetensors",
+    "pytorch_model.bin",
+    "model.bin",            # CTranslate2 / faster-whisper
+)
 
 
 def _nonzero(path):
@@ -110,6 +131,91 @@ def _from_hf_cache(repo_id):
     return path if is_complete(path) else None
 
 
+def _pick_files(files):
+    """从 repo 的完整文件清单里挑出真正要下的。
+
+    跳过非 PyTorch 权重和文档；两种权重格式都在时只留 safetensors
+    （不然白白多下几百 MB）。
+    """
+    out = []
+    for f in files:
+        base = os.path.basename(f)
+        if base in _SKIP_NAMES or f.endswith(_SKIP_SUFFIX):
+            continue
+        out.append(f)
+    names = {os.path.basename(f) for f in out}
+    if "model.safetensors" in names and "pytorch_model.bin" in names:
+        out = [f for f in out if not f.endswith("pytorch_model.bin")]
+    return out
+
+
+def _download_to(repo_id, target):
+    """把整个 repo 下到 target（真实文件，不走 HF 缓存的符号链接）。
+
+    三级策略 —— 这不是过度设计，是这台机器实测必须的：
+
+      1) snapshot_download（会调 api.repo_info）
+      2) list_repo_files + 逐个 hf_hub_download（调 api/models/.../tree）
+      3) 按常见文件名清单逐个试探（**完全不调任何 API 端点**）
+
+    为什么需要 3 层：本机走代理时，huggingface_hub 对 hf-mirror 的
+    **API 端点请求是间歇性 502**（同一秒里 curl 能通、Python 不通，
+    下一次又反过来），而 `/resolve/` 下载路径一直是通的。
+    没有第 3 层，网络差一点就永远下不到模型。
+    """
+    from huggingface_hub import hf_hub_download, list_repo_files, snapshot_download
+
+    # ---- 第 1 层 ----
+    for attempt in range(1, 4):
+        try:
+            snapshot_download(repo_id=repo_id, local_dir=target,
+                              ignore_patterns=_SKIP_PATTERNS)
+            return
+        except Exception as e:
+            print("[模型] snapshot_download 第 %d 次失败（%s）"
+                  % (attempt, type(e).__name__))
+            time.sleep(2 * attempt)
+
+    # ---- 第 2 层 ----
+    files = None
+    for attempt in range(1, 4):
+        try:
+            files = _pick_files(list_repo_files(repo_id))
+            break
+        except Exception as e:
+            print("[模型] 列文件清单第 %d 次失败（%s）"
+                  % (attempt, type(e).__name__))
+            time.sleep(2 * attempt)
+
+    if files:
+        print("[模型] 改用逐文件下载（共 %d 个）" % len(files))
+        for i, name in enumerate(files, 1):
+            print("[模型]   (%d/%d) %s" % (i, len(files), name))
+            hf_hub_download(repo_id=repo_id, filename=name, local_dir=target)
+        return
+
+    # ---- 第 3 层：不碰任何 API，按文件名试探 ----
+    print("[模型] 拿不到文件清单，改用『按常见文件名试探』（不调 API）")
+    got = []
+    for name in _CANDIDATE_FILES:
+        # 两种权重格式只下一种，safetensors 优先
+        if name == "pytorch_model.bin" and "model.safetensors" in got:
+            continue
+        try:
+            hf_hub_download(repo_id=repo_id, filename=name, local_dir=target)
+            got.append(name)
+            print("[模型]   + %s" % name)
+        except Exception:
+            pass  # 这个文件不存在（或这次网络抖），继续试下一个
+
+    if not got:
+        raise RuntimeError(
+            "三级下载全部失败：snapshot_download / list_repo_files / 文件名试探 "
+            "都没拿到东西。网络或代理问题，稍后重试，或手动把模型放到 %s" % target
+        )
+    print("[模型] 试探下载到 %d 个文件" % len(got))
+
+
 def resolve(repo_id, verbose=True):
     """返回可以直接传给 from_pretrained / WhisperModel 的**本地路径**。
 
@@ -140,14 +246,8 @@ def resolve(repo_id, verbose=True):
         )
 
     print(f"[模型] 本地没有 {repo_id}，下载到: {target}")
-    from huggingface_hub import snapshot_download
-
     os.makedirs(target, exist_ok=True)
-    snapshot_download(
-        repo_id=repo_id,
-        local_dir=target,
-        ignore_patterns=_SKIP_PATTERNS,
-    )
+    _download_to(repo_id, target)
 
     if not is_complete(target):
         raise RuntimeError(

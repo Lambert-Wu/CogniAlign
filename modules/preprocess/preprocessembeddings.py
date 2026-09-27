@@ -9,7 +9,10 @@ import csv
 import pandas as pd
 from transformers import AutoTokenizer, RobertaModel, Wav2Vec2Processor, Wav2Vec2Model, BertTokenizer, BertModel, DistilBertModel, AutoModel
 import torch
-import torchaudio
+# 注意：读音频**不要**用 torchaudio。torchaudio 2.9 起默认后端换成了 TorchCodec，
+# 而 TorchCodec 必须依赖外部 FFmpeg 库；没有 ffmpeg 的机器上会直接抛
+# "Could not load libtorchcodec"，而且 backend= 参数会被忽略（换后端也救不了）。
+# 本项目三条音频分支统一用 librosa.load（走 libsndfile，系统只需 libsndfile1）。
 import opensmile
 import unicodedata
 import librosa
@@ -27,7 +30,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 取值必须与 main.py 用的 configs/*.yaml 对齐，否则生成的特征文件名
 # 跟 dataset.py 要找的对不上（configs/default.yaml 是下面这两个值）。
 textual_model = 'distil'
-audio_model = 'egemaps'
+audio_model = 'wav2vec2'   # 音频侧走神经网络线（另一条是 'egemaps' / 'mel'）
 pauses = False
 
 pauses_data = '_pauses' if pauses else ''
@@ -158,6 +161,25 @@ def preprocess_text():
         if os.path.exists(orphan):
             os.remove(orphan)
 
+    def clip_seg(start_segment, end_segment, n_frames):
+        """把帧区间 [start, end) 夹进 [0, n_frames) 并保证至少取到 1 帧。
+
+        为什么必须有这一步：词的时间戳贴着音频末尾时（很常见，
+        本数据集最后一个词的 end 就比音频时长多 0.03 秒），
+        floor(start * segment_length) 会落在最后一帧之后，
+        切片变空，mean(dim=0) 得到 NaN —— 整个样本被判坏而跳过。
+
+        原代码的保护只夹了右端（min(shape[0], end+2)），左端只做了 max(0, ...)，
+        所以 start 越过末帧时 [n:n] 依然是空的。
+        低帧率下侥幸没暴露（eGeMAPS 10Hz 时超界幅度小），
+        wav2vec2 是 50Hz，一测就中。
+        """
+        if start_segment >= n_frames:
+            start_segment = max(0, n_frames - 1)
+        if end_segment <= start_segment:
+            end_segment = min(n_frames, start_segment + 1)
+        return start_segment, end_segment
+
     # Columns are     df = pd.DataFrame(columns=['uid', 'diagno', 'transcription', 'transcription_pause', 'probablities'])
 
     # Iteate over each row
@@ -199,20 +221,21 @@ def preprocess_text():
             audio_path = os.path.join(root_path, row['diagno'], row['uid'] + '.wav')
 
             if audio_model == 'wav2vec2':
-                wave_form, sample_rate = torchaudio.load(audio_path)
-                        
-                # Convert stereo to mono if necessary
-                if wave_form.shape[0] > 1:
-                    wave_form = wave_form.mean(dim=0, keepdim=True)
-
-                wave_form = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(wave_form)
-                sample_rate = 16000
-                wave_form = wave_form.squeeze(0)
+                # 读音频统一用 librosa（和 egemaps 分支同一套），**不要用
+                # torchaudio.load**：torchaudio 2.11 起强制走 TorchCodec，
+                # 而 TorchCodec 需要外部 FFmpeg 库。没有 ffmpeg 的机器上
+                # 会直接抛 "Failed to create AudioDecoder ... Could not load
+                # libtorchcodec"，而且 backend= 参数会被忽略（三种后端都救不了）。
+                # librosa 走 soundfile/libsndfile 解码，只依赖 libsndfile1。
+                # 本数据集音频本来全是 16k 单声道，这里 sr=16000 只是兜底重采样。
+                y, sample_rate = librosa.load(audio_path, sr=16000, mono=True)
+                wave_form = torch.from_numpy(y).float()
 
                 inputs_audio = processor(wave_form, sampling_rate=sample_rate, return_tensors="pt").to(device)
                 with torch.no_grad():
                     outputs_audio = wav2vec_model(**inputs_audio)
 
+                # 输出是 50 Hz（16k 下采样 320 倍），正好对应上面的 segment_length = 50
                 last_hidden_states_audio = outputs_audio.last_hidden_state.squeeze(0).cpu()
                 processed_audio_tensor = torch.zeros((max_length, last_hidden_states_audio.shape[1]))
 
@@ -364,6 +387,7 @@ def preprocess_text():
                             start_segment = max(0, start_segment - 2)
                             end_segment = min(last_hidden_states_audio.shape[0], end_segment + 2)
 
+                        start_segment, end_segment = clip_seg(start_segment, end_segment, last_hidden_states_audio.shape[0])
                         audio_features_segment = last_hidden_states_audio[start_segment:end_segment]
                         processed_audio_tensor[idx + 1] = torch.clamp(audio_features_segment.mean(dim=0), min=-1e3, max=1e3)
 
@@ -394,6 +418,7 @@ def preprocess_text():
                                 end_segment = min(last_hidden_states_audio.shape[0], end_segment + 2)
 
 
+                            start_segment, end_segment = clip_seg(start_segment, end_segment, last_hidden_states_audio.shape[0])
                             audio_features_segment = last_hidden_states_audio[start_segment:end_segment]
                             processed_audio_tensor[idx + 1] = torch.clamp(audio_features_segment.mean(dim=0), min=-1e3, max=1e3)
 
@@ -426,6 +451,7 @@ def preprocess_text():
                         end_segment = min(last_hidden_states_audio.shape[0], end_segment + 2)
 
 
+                    start_segment, end_segment = clip_seg(start_segment, end_segment, last_hidden_states_audio.shape[0])
                     audio_features_segment = last_hidden_states_audio[start_segment:end_segment]
                     processed_audio_tensor[idx + 1] = torch.clamp(audio_features_segment.mean(dim=0), min=-1e3, max=1e3)
 
@@ -445,7 +471,12 @@ def preprocess_text():
                 continue
 
             if torch.isnan(processed_audio_tensor).any():
-                skip("音频特征里出现 NaN")
+                # 打印是哪几行 —— NaN 几乎总是「切片取空了」（对空张量求均值），
+                # 行号直接指向是哪个 token 段没对上
+                bad_rows = torch.isnan(processed_audio_tensor).any(dim=1).nonzero().flatten().tolist()
+                skip(f"音频特征里出现 NaN（{len(bad_rows)} 行: {bad_rows[:10]}"
+                     f"{' …' if len(bad_rows) > 10 else ''}；"
+                     f"音频总帧数 {last_hidden_states_audio.shape[0]}，segment_length {segment_length}）")
                 continue
             
             torch.save(processed_audio_tensor, os.path.join(root_text_path, row['diagno'], row['uid'] + textual_model_data + pauses_data + audio_model_data + '.pt'))

@@ -113,8 +113,9 @@ wheel 只有 PyTorch 官方源上有，PyPI 上不存在。
 | 目录 | 内容 | 怎么来 |
 |---|---|---|
 | `data/diagnosis/` | 音频 + 标签表 + 5 折划分 | 开发机上跑 `tools/build_dataset.py` 生成后 rsync，或在服务器上重新生成 |
-| `models/faster-whisper-small/` | 脚本① 的转写模型（464 MB） | **本地有就直接用**；缺失时才自动下载 |
-| `models/distilbert-base-uncased/` | 脚本② 的文本编码器（257 MB） | 同上 |
+| `models/distilbert-base-uncased/` | 脚本② 的**文本**编码器（257 MB） | **本地有就直接用**；缺失时才自动下载 |
+| `models/wav2vec2-base-960h/` | 脚本② 的**音频**编码器（约 380 MB，`audio_model='wav2vec2'` 时用） | 同上 |
+| `models/faster-whisper-small/` | 脚本① 的转写模型（464 MB） | 同上 |
 
 **关于模型：本地已有就绝不会重新下载。** 所有模型都经 `modules/hf_models.py` 的
 `resolve()` 加载，顺序是「项目 `models/<名字>/` → HF 本地缓存 → 才下载」，

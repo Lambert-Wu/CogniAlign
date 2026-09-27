@@ -93,7 +93,7 @@ if os.environ.get("CONDA_DEFAULT_ENV"):
 # --------------------------------------------------------------------------
 # 只列该项目代码真正 import 的包（清单来自 requirements.txt）
 DEPS = {
-    "preprocess": [("torch", "torch"), ("torchaudio", "torchaudio"),
+    "preprocess": [("torch", "torch"),
                    ("transformers", "transformers"), ("librosa", "librosa"),
                    ("soundfile", "soundfile"), ("opensmile", "opensmile"),
                    ("pandas", "pandas"), ("sklearn", "scikit-learn"),
@@ -314,7 +314,7 @@ if hf_models is not None and paths is not None:
         elif audio and audio not in ("egemaps", "mel"):
             warn("脚本里的 audio_model=%r 不在已知清单里" % audio)
         else:
-            info("音频侧 %s 用 openSMILE 算，不需要下载模型" % audio)
+            info("音频侧 %s 不需要下载模型（egemaps 用 openSMILE，mel 用 librosa 算）" % audio)
     elif MODE == "asr":
         need.append(("Systran/faster-whisper-small", "语音转写"))
 

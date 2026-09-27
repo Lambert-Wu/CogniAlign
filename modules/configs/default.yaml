@@ -18,7 +18,9 @@ model:
   num_classes: 1
   hidden_mlp_size: 256
   textual_model: 'distil'
-  audio_model: 'egemaps'
+  audio_model: 'wav2vec2'   # 必须与 preprocessembeddings.py 里的 audio_model 一致，
+                            # 否则 dataset.read_CSV 会去找 <uid>distil_wav2vec2.pt 这种
+                            # 不存在的文件（音频侧后缀按这里取值拼）
   pauses: False
   fusion: 'cross'
 

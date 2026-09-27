@@ -16,8 +16,17 @@ CogniAlign 是 git 仓库（remote: `Lambert-Wu/CogniAlign`），数据/模型�
   `HF_ENDPOINT=https://hf-mirror.com` + `HF_HUB_DISABLE_XET=1`（hf-mirror 不支持 Xet），
   并且要用 `snapshot_download(repo, local_dir=...)` —— HF 缓存模式在这台机器上
   会在 `snapshots/` 留 0 字节空壳（blobs 内容是对的），`from_pretrained('名字')` 会报错。
-- 模型都放在项目 `models/` 下（已 gitignore）：
-  `faster-whisper-small`（464MB，脚本① 用）、`distilbert-base-uncased`（257MB，脚本② 用）
+- 模型都放在项目 `models/` 下（已 gitignore），总体积 1.1G：
+  `faster-whisper-small`（464MB，脚本① 用）、`distilbert-base-uncased`（257MB，文本侧）、
+  `wav2vec2-base-960h`（361MB，音频侧）。
+  各目录只保留 `model.safetensors`/`model.bin` + 配置文件，已清掉
+  `.git/`、`tf_model.h5`、`pytorch_model.bin` 这类冗余（曾占 1.8G）。
+  ⚠️ 以后往这些目录里放模型时别再带 `.git` 和 TensorFlow 权重 —— 上服务器要 rsync。
+- ⚠️ **读音频一律用 `librosa.load`，不要用 `torchaudio.load`**：
+  torchaudio 2.9 起默认后端是 TorchCodec，必须依赖外部 FFmpeg 库；
+  没有 ffmpeg 的机器上直接抛 `Could not load libtorchcodec`，
+  且 `backend=` 参数会被忽略（三种后端都一样失败）。
+  因此 `requirements.txt` 里**故意不含 torchaudio**。
 - **模型加载统一走 `modules/hf_models.py` 的 `resolve(repo_id)`**，它返回本地路径，
   顺序是「项目 models/<末段>/ → HF 本地缓存 → 才下载」。前两步**零网络请求**，
   所以本地有模型时运行代码不会重新下（实测 0 次 HTTP）。
@@ -59,6 +68,19 @@ CogniAlign 是 git 仓库（remote: `Lambert-Wu/CogniAlign`），数据/模型�
    要检查这些脚本：只读源码 / 用 ast 解析；或把 `COGNIALIGN_DATA_ROOT` 指到
    只含 1 个样本的临时目录再跑（配 `COGNIALIGN_OFFLINE=1` 免得白下模型）。
    出事后的恢复命令：`python tools/convert_whisperx_words.py`（幂等，秒级）。
+9. **音频侧当前走 `wav2vec2`**（`textual_model='distil'` + `audio_model='wav2vec2'`）。
+   换音频线路时**这三处必须一起改**，否则 `read_CSV` 找不到文件：
+   - `preprocessembeddings.py` 的 `audio_model`（还决定 `segment_length`：
+     wav2vec2=50 → 每帧 0.02s；egemaps=10 → 每帧 0.1s）
+   - `configs/default.yaml` 的 `model.audio_model`
+   - 产出文件名后缀由 `name_mapping_audio` 决定：`wav2vec2` → `<uid>distil_audio.pt`，
+     `egemaps` → `<uid>distil_egemaps.pt`
+   特征维度：wav2vec2 768 维 / egemaps 88 维。wav2vec2 实测比 egemaps **快得多**
+   （8~33 秒/条 vs 43~62 秒/条）。
+   ⚠️ 换线路时**必须用极端样本验证**（词最多、时间戳贴着音频末尾的那个）——
+   原代码的对齐边界只夹了区间右端没夹左端，靠 egemaps 的低帧率侥幸通过，
+   换成高帧率的 wav2vec2 就会算出空切片 → `mean` 得 NaN → 整条样本被跳过。
+   已加 `clip_seg()` 修好。
 
 ## 跨平台（Windows 开发 / Linux 服务器跑重活）
 
