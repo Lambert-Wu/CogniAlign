@@ -192,6 +192,14 @@ try:
     textual = grab(src, "textual_model")
     audio = grab(src, "audio_model")
     maxlen = grab(src, "max_length")
+    # ⚠️ 脚本② 现在写的是 `textual_model = TEXT_MODEL`（值来自 paths.py，会跟着
+    # COGNIALIGN_SPLIT 变：train -> distil，test -> chinese），grab 抓到的是
+    # **变量名**而不是真实取值，于是后面会误报"不在已知清单里"，也不会去检查
+    # 该下载哪个模型。真实取值直接问 paths.py（它只读环境变量，无副作用）。
+    if textual not in TEXT_REPO:
+        textual = getattr(paths, "TEXT_MODEL", textual)
+    if audio not in AUDIO_REPO:
+        audio = getattr(paths, "AUDIO_MODEL", audio)
 except Exception as e:
     warn("读不到 preprocessembeddings.py 的配置: %s" % e)
 

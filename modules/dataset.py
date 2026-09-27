@@ -4,13 +4,18 @@ import numpy as np
 import torch
 import os
 from sklearn.model_selection import KFold
-from paths import TEXT_DIR, AUDIO_DIR, SPLITS_DIR, LABELS_CSV
+# ⚠️ 用 SPLIT_* 而不是写死 train 的那套：跑 test（中文语料）时
+# COGNIALIGN_SPLIT=test 会把它们切到 data/diagnosis/test/。
+# SPLIT=train 时 SPLIT_* 就等于下面注释里的 train 路径，行为完全不变。
+from paths import SPLITS_DIR, SPLIT_TEXT_DIR, SPLIT_AUDIO_DIR, SPLIT_LABELS_CSV
 
 # 路径集中在 paths.py，默认指向项目内 data/diagnosis/train/
-root_text_path = TEXT_DIR + os.sep
-root_audio_path = AUDIO_DIR + os.sep
+root_text_path = SPLIT_TEXT_DIR + os.sep
+root_audio_path = SPLIT_AUDIO_DIR + os.sep
 
-csv_labels_path = LABELS_CSV
+# 标签表同样跟着 split 走（test 是 test/test_labels.csv）
+csv_labels_path = SPLIT_LABELS_CSV
+# 5 折划分只在 train 上有，所以 SPLITS_DIR 不跟着 split 变
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_length_wav2vec = 4000
@@ -47,7 +52,12 @@ name_mapping_audio = {
 
 def read_CSV(config):
     # Read CSV with labels
-    labels_pd = pd.read_csv(csv_labels_path)
+    # ⚠️ 必须把 uid 列按字符串读：test 集的 uid 是纯数字串（"0002"），
+    # pandas 默认会推断成 int64 变成 2，拼特征路径时要么找不到文件、
+    # 要么直接 `int + str` 报 TypeError。train 的 uid 带字母（adrso002）
+    # 不会触发，所以这个坑只在跑 test 时才暴露。
+    # dtype 里多写一个表里没有的列名不会报错，所以两套列名一起写死。
+    labels_pd = pd.read_csv(csv_labels_path, dtype={'adressfname': str, 'uid': str})
 
     uids = []
     features = []
@@ -120,7 +130,9 @@ def get_dataloaders(config, kfold_number = 0):
 
 def set_splits():
 
-    labels_pd = pd.read_csv(csv_labels_path)
+    # uid 必须按字符串读（理由见 read_CSV 里的注释）：test 的 uid 是纯数字串，
+    # 被推断成 int 后 uid 会变成 2 而不是 "0002"。
+    labels_pd = pd.read_csv(csv_labels_path, dtype={'adressfname': str, 'uid': str})
     uids = []
 
     for index, row in labels_pd.iterrows():
@@ -135,7 +147,7 @@ def set_splits():
         np.save(os.path.join(SPLITS_DIR, 'val_uids' + str(i)), np.array(uids)[test_index])
 
 def get_splits_stats():
-    labels_pd = pd.read_csv(csv_labels_path)
+    labels_pd = pd.read_csv(csv_labels_path, dtype={'adressfname': str, 'uid': str})
     uids = []
 
     for index, row in labels_pd.iterrows():

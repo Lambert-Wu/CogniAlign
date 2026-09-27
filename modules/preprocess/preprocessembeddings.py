@@ -138,7 +138,11 @@ SKIP_DONE = os.environ.get('COGNIALIGN_SKIP_DONE', '').strip().lower() in (
 def preprocess_text():
 
     # Read textual data from CSV
-    df = pd.read_csv(textual_data, encoding='utf-8')
+    # ⚠️ uid 必须按字符串读：test 集的 uid 是纯数字串（"0002"），pandas 默认
+    # 会推断成 int64 → 变成 2 → 后面 `row['uid'] + 'chinese'` 直接
+    # `TypeError: unsupported operand type(s) for +: 'int' and 'str'`。
+    # train 的 uid 带字母（adrso002）不会触发，所以只有跑 test 才暴露。
+    df = pd.read_csv(textual_data, encoding='utf-8', dtype={'uid': str, 'diagno': str})
 
     row_data = 'transcription_pause' if pauses else 'transcription'
 
@@ -381,6 +385,42 @@ def preprocess_text():
                     if isinstance(words[idx_probs][0], str):
                         print(f"Expected Word: {words[idx_probs][0].replace('Ġ', '').replace('.', '').replace(',', '').replace(';', '').replace(' ', '').lower()}")
 
+                # ------------------------------------------------------------------
+                # [UNK]：这个词不在 BERT 的词表里（中文生僻字，实测有"镊""锨"）。
+                # 它实际就对应词表里**当前这一个字**，所以这里直接消耗掉它、
+                # 用这个字的时间戳。不处理的话 act_word 会一直累积成
+                # "...[unk]..."，永远匹配不上后面的字 —— 从这个字往后全部错位，
+                # 最后 `音频段数 + 2 != token 数` 会把**整条样本**跳过
+                # （测试集 80 条里因此丢了 5 条）。
+                # ------------------------------------------------------------------
+                if cleaned_word.lower() in ('[unk]', 'unk') and idx_probs < len(words):
+                    start = words[idx_probs][1]
+                    end = words[idx_probs][2]
+
+                    start_segment = math.floor(start * segment_length)
+                    end_segment = math.ceil(end * segment_length)
+                    print(f"FOUND UNK: 词表里没这个字，按第 {idx_probs} 个字 "
+                          f"({words[idx_probs][0]}) 的时间处理")
+
+                    for idx in range(idx_start_att, idx_att + len(token_ids)):
+                        n_audio_segments += 1
+
+                        if end_segment - start_segment < 3:
+                            start_segment = max(0, start_segment - 2)
+                            end_segment = min(last_hidden_states_audio.shape[0], end_segment + 2)
+
+                        start_segment, end_segment = clip_seg(start_segment, end_segment, last_hidden_states_audio.shape[0])
+                        audio_features_segment = last_hidden_states_audio[start_segment:end_segment]
+                        processed_audio_tensor[idx + 1] = torch.clamp(audio_features_segment.mean(dim=0), min=-1e3, max=1e3)
+
+                    idx_probs += 1
+                    act_word = ''
+                    idx_start_att = idx_att + len(token_ids)
+                    idx_start_map = idx_map + 1
+                    idx_att += len(token_ids)
+                    idx_map += 1
+                    continue
+
                 if word.strip() in ['.', ',', '?', '!', ';', 'Ġ','Ġ.', 'Ġ,', 'Ġ?', 'Ġ!', 'Ġ;', 'Ġ...', '...']:    # Ensure only real punctuation
                     if idx_probs > 0:  # Avoid index error
                         start = words[idx_probs-1][2]  # Get last word's end time
@@ -521,6 +561,13 @@ def preprocess_text():
         print(f"  {LABELS_PATH}")
         for uid, diagno, reason in skipped:
             print(f"  - {diagno}/{uid}: {reason}")
+    else:
+        # ⚠️ 这次一条都没跳过时，也要把**上次**留下的清单删掉。
+        # 否则它会一直躺在目录里，后面的人照着它去删标签表 —— 白删样本。
+        stale = os.path.join(ROOT_DIR, 'preprocess_skipped.csv')
+        if os.path.exists(stale):
+            os.remove(stale)
+            print(f"（本次没有被跳过的样本，已清掉上次留下的清单: {stale}）")
 
 
 preprocess_text()

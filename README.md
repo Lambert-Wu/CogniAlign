@@ -115,7 +115,9 @@ wheel 只有 PyTorch 官方源上有，PyPI 上不存在。
 | `data/diagnosis/` | 音频 + 标签表 + 5 折划分 | 开发机上跑 `tools/build_dataset.py` 生成后 rsync，或在服务器上重新生成 |
 | `models/distilbert-base-uncased/` | 脚本② 的**文本**编码器（257 MB） | **本地有就直接用**；缺失时才自动下载 |
 | `models/wav2vec2-base-960h/` | 脚本② 的**音频**编码器（约 380 MB，`audio_model='wav2vec2'` 时用） | 同上 |
-| `models/faster-whisper-small/` | 脚本① 的转写模型（464 MB） | 同上 |
+| `models/faster-whisper-small/` | 脚本① 的转写模型（464 MB，英文语料用） | 同上 |
+| `models/SenseVoiceSmall/` | 脚本① 的转写模型（897 MB，**中文语料**用） | ModelScope，见 `tools/gen_sensevoice_words.py` 开头 |
+| `models/speech_fsmn_vad_zh-cn-16k-common-pytorch/` | 上面那个的配套 VAD（1.7 MB） | 同上 |
 
 **关于模型：本地已有就绝不会重新下载。** 所有模型都经 `modules/hf_models.py` 的
 `resolve()` 加载，顺序是「项目 `models/<名字>/` → HF 本地缓存 → 才下载」，
@@ -154,7 +156,14 @@ python -c "import sys;sys.path.insert(0,'modules');import hf_models;print(hf_mod
 bash run_preprocess.sh -c        # 先只做自检：依赖 / 数据 / 模型 / 设备
 bash run_preprocess.sh -b        # 后台跑（约 3 小时），日志自动落 logs/preprocess/
 bash run_preprocess.sh -b -r     # 断点续跑：跳过已产出特征的样本
+
+# 跑 test 集（中文语料）：加 COGNIALIGN_SPLIT=test，路径会自动切到 data/diagnosis/test/
+COGNIALIGN_SPLIT=test bash run_preprocess.sh -b
 ```
+
+⚠️ **train 和 test 语种不同**：`train` 是英文（文本模型 distilbert + WhisperX 词表），
+`test` 是中文（文本模型 bert-base-chinese + SenseVoice 词表）。切 split 时两步都要切，
+否则脚本②拿英文词表去对中文转写，逐词匹配全对不上。
 
 脚本自己会做的事：找不到 python 自动探测、把项目路径配好、缺依赖/缺数据/缺模型都会
 在开跑前说清楚（而不是跑一半才报错）、跑完自动调用 `tools/verify_features.py` 核对结果。
@@ -164,9 +173,10 @@ bash run_preprocess.sh -b -r     # 断点续跑：跳过已产出特征的样本
 ```bash
 cd modules
 
-# ① 词级时间戳 + 转写（下面两条二选一，产出同一批文件）
-python preprocess/preprocesswhisper.py          # 跑 ASR，235 条约 3 小时
-python ../tools/convert_whisperx_words.py       # 复用已有 WhisperX 产物，秒级
+# ① 词级时间戳 + 转写（下面三条按语料语种选一条，产出同一批文件）
+python preprocess/preprocesswhisper.py          # train（英文）：跑 ASR，235 条约 3 小时
+python ../tools/convert_whisperx_words.py       # train（英文）：复用已有 WhisperX 产物，秒级
+python ../tools/gen_sensevoice_words.py         # test（中文）：SenseVoice-Small，80 条约 2 分钟
 
 # ② 文本 / 音频特征（235 条约 3 小时）
 python preprocess/preprocessembeddings.py

@@ -7,7 +7,12 @@
 data/
 
 # 模型权重：体积大，不进仓库
+# ⚠️ 这里放的是**从网上下载的预训练基座**（distilbert / wav2vec2 / SenseVoice…），
+#    不是我们自己训练出来的。自己训练的产物放 checkpoints/，两者别混。
 models/
+
+# 自己训练出来的权重存档：从 modules/logs/<配置名>/ 复制过来的成品
+checkpoints/
 
 # Ignore all files in the logs directory
 logs/*

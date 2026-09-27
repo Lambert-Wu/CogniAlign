@@ -51,20 +51,12 @@ EMBED_SRC="$MODULES_DIR/preprocess/preprocessembeddings.py"
 
 # 从脚本② 源码读出当前模型线路（用正则读文本，**绝不 import** ——
 # 那个脚本没有 __main__ 保护，import 即执行，会覆盖已有产物）。
+# ⚠️ grab 只对「字面量赋值」有效（`textual_model = 'distil'`）。现在脚本② 写的是
+#    `textual_model = TEXT_MODEL`，值来自 paths.py、会跟着 COGNIALIGN_SPLIT 变
+#    （train -> distil，test -> chinese）。所以真正的取值放在下面「路径与环境变量」
+#    之后，直接问 paths.py 要（paths.py 只 import os，开销可忽略）；
+#    grab 只在那次调用失败时兜底。
 grab() { sed -n "s/^$1 *= *'\([^']*\)'.*/\1/p" "$EMBED_SRC" 2>/dev/null | head -1; }
-TEXT_MODEL="$(grab textual_model)"
-AUDIO_MODEL="$(grab audio_model)"
-# 后缀规则来自脚本② 和 dataset.py 里同一张 name_mapping_* 表
-case "$TEXT_MODEL" in
-    bert) TEXT_SUF="" ;;
-    *)    TEXT_SUF="$TEXT_MODEL" ;;
-esac
-case "$AUDIO_MODEL" in
-    wav2vec2) AUDIO_SUF="_audio" ;;
-    egemaps)  AUDIO_SUF="_egemaps" ;;
-    mel)      AUDIO_SUF="_mel" ;;
-    *)        AUDIO_SUF="" ;;
-esac
 
 BG=0
 CHECK=0
@@ -134,12 +126,46 @@ fi
 export COGNIALIGN_PROJECT_ROOT="$HERE_PY"
 export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data/diagnosis}"
 export COGNIALIGN_MODELS_DIR="${COGNIALIGN_MODELS_DIR:-$HERE_PY/models}"
+# 规范地 export 一次：python 端的 paths.py 读它来决定走哪套路径（train 英文 / test 中文）。
+# 不设 = train。⚠️ 改 split 时这里和 paths.py 不能各写一套判断，环境变量是唯一真相。
+export COGNIALIGN_SPLIT="${COGNIALIGN_SPLIT:-train}"
+
+# 当前模型线路：问 paths.py 要真值（跟着上面的 SPLIT 变），失败才退回 sed 抓字面量
+_mcfg="$("$PYTHON" -c "
+import os, sys
+sys.path.insert(0, os.path.join(os.environ['COGNIALIGN_PROJECT_ROOT'], 'modules'))
+import paths
+print(paths.TEXT_MODEL, paths.AUDIO_MODEL)
+" 2>/dev/null || true)"
+if [ -n "$_mcfg" ]; then
+    TEXT_MODEL="$(printf '%s' "$_mcfg" | awk '{print $1}')"
+    AUDIO_MODEL="$(printf '%s' "$_mcfg" | awk '{print $2}')"
+else
+    TEXT_MODEL="$(grab textual_model)"
+    AUDIO_MODEL="$(grab audio_model)"
+fi
+# 后缀规则来自脚本② 和 dataset.py 里同一张 name_mapping_* 表
+case "$TEXT_MODEL" in
+    bert) TEXT_SUF="" ;;
+    *)    TEXT_SUF="$TEXT_MODEL" ;;
+esac
+case "$AUDIO_MODEL" in
+    wav2vec2) AUDIO_SUF="_audio" ;;
+    egemaps)  AUDIO_SUF="_egemaps" ;;
+    mel)      AUDIO_SUF="_mel" ;;
+    *)        AUDIO_SUF="" ;;
+esac
 
 LOG_DIR="$HERE/logs/preprocess"
 mkdir -p "$LOG_DIR"
 
-# 样本数：从标签表数行数（awk 会数到最后一行没换行的），不写死
-LABELS_CSV="$COGNIALIGN_DATA_ROOT/train/adresso-train-mmse-scores.csv"
+# 样本数：从标签表数行数（awk 会数到最后一行没换行的），不写死。
+# 标签表文件名随 split 变，和 paths.py 的 SPLIT_LABELS_CSV 保持一致
+# （test 是 test_labels.csv，train 是 adresso-train-mmse-scores.csv）。
+case "$COGNIALIGN_SPLIT" in
+    test) LABELS_CSV="$COGNIALIGN_DATA_ROOT/test/test_labels.csv" ;;
+    *)    LABELS_CSV="$COGNIALIGN_DATA_ROOT/train/adresso-train-mmse-scores.csv" ;;
+esac
 if [ -f "$LABELS_CSV" ]; then
     N_SAMPLES="$(awk 'END{print NR-1}' "$LABELS_CSV" 2>/dev/null)"
     [ -z "$N_SAMPLES" ] && N_SAMPLES="?"
@@ -161,6 +187,7 @@ if [ "$WORKER" = 1 ]; then
     echo " 解释器   : $PYTHON"
     echo " 工作目录 : $(pwd)"
     echo " 数据根   : $COGNIALIGN_DATA_ROOT"
+    echo " split    : $COGNIALIGN_SPLIT（标签表 $(basename "$LABELS_CSV")）"
     echo " 模型目录 : $COGNIALIGN_MODELS_DIR"
     echo " 模型线路 : textual=$TEXT_MODEL | audio=$AUDIO_MODEL"
     echo " 产出文件 : <uid>${TEXT_SUF}.pt 与 <uid>${TEXT_SUF}${AUDIO_SUF}.pt"
