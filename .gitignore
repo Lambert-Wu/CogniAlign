@@ -11,6 +11,9 @@ models/
 
 # Ignore all files in the logs directory
 logs/*
+# 训练产物：main.py 的 log_path 是相对路径 logs/，而它必须在 modules/ 下运行，
+# 所以模型权重和训练日志实际落在 modules/logs/ —— 这条别删，否则权重会进仓库
+modules/logs/
 # Ignore all files in the base_logs directory
 base_logs/*
 # Ignore all files in the ablative_logs directory
