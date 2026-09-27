@@ -1,4 +1,11 @@
 import os
+
+# 与 preprocesswhisper.py 一致：这台机器连不上 huggingface.co，默认走镜像。
+# 必须在 import transformers 之前设置（huggingface_hub 导入时就读这个变量）。
+os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
+
+import sys
+import csv
 import pandas as pd
 from transformers import AutoTokenizer, RobertaModel, Wav2Vec2Processor, Wav2Vec2Model, BertTokenizer, BertModel, DistilBertModel, AutoModel
 import torch
@@ -9,11 +16,18 @@ import librosa
 import math
 import numpy as np
 
+# 路径集中在 modules/paths.py，本脚本在子目录里，先把上一层加进 sys.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from paths import AUDIO_DIR, TEXT_DIR, TRANSCRIPTIONS_CSV, TRAIN_ROOT
+from hf_models import resolve
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Avaiable: bert, roberta, distilbert, stella, mistral, qwen
-textual_model = ''
-audio_model = ''
+# Avaiable: bert, roberta, distil, stella, mistral, qwen
+# 取值必须与 main.py 用的 configs/*.yaml 对齐，否则生成的特征文件名
+# 跟 dataset.py 要找的对不上（configs/default.yaml 是下面这两个值）。
+textual_model = 'distil'
+audio_model = 'egemaps'
 pauses = False
 
 pauses_data = '_pauses' if pauses else ''
@@ -33,33 +47,44 @@ name_mapping_audio = {
 }
 audio_model_data = '_' + name_mapping_audio.get(audio_model, '')
 
+# 所有模型一律经 hf_models.resolve() 拿本地路径：
+# 本地 models/<名字>/ 里已经有就直接用（不发任何网络请求），
+# 没有才下载到那里。不再直接写 repo 名 —— 那样即使本地有缓存，
+# transformers 也会先去 huggingface.co 校验版本，这台机器连不上。
 if textual_model == 'bert':
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-    model = BertModel.from_pretrained("bert-base-uncased").to(device)
+    _path = resolve("bert-base-uncased")
+    tokenizer = BertTokenizer.from_pretrained(_path)
+    model = BertModel.from_pretrained(_path).to(device)
 elif textual_model == 'roberta':
-    tokenizer = AutoTokenizer.from_pretrained("roberta-base")
-    model = RobertaModel.from_pretrained("roberta-base").to(device)
-elif textual_model == 'distilbert':
-    tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
-    model = DistilBertModel.from_pretrained('distilbert-base-uncased').to(device)
+    _path = resolve("roberta-base")
+    tokenizer = AutoTokenizer.from_pretrained(_path)
+    model = RobertaModel.from_pretrained(_path).to(device)
+elif textual_model == 'distil':
+    _path = resolve("distilbert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained(_path)
+    model = DistilBertModel.from_pretrained(_path).to(device)
 elif textual_model == 'stella':
-    tokenizer = AutoTokenizer.from_pretrained("NovaSearch/stella_en_1.5B_v5", trust_remote_code=True)
-    model = AutoModel.from_pretrained("NovaSearch/stella_en_1.5B_v5", trust_remote_code=True)
+    _path = resolve("NovaSearch/stella_en_1.5B_v5")
+    tokenizer = AutoTokenizer.from_pretrained(_path, trust_remote_code=True)
+    model = AutoModel.from_pretrained(_path, trust_remote_code=True)
 elif textual_model == 'mistral':
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1", use_auth_token=True)
+    _path = resolve("mistralai/Mistral-7B-v0.1")
+    # 需要 Access Token（gated 模型）；首次下载时设 HF_TOKEN 环境变量，
+    # 本地已有的话完全不需要。
+    tokenizer = AutoTokenizer.from_pretrained(_path)
     tokenizer.pad_token = tokenizer.eos_token
-    # Need Access Token
-    model = AutoModel.from_pretrained("mistralai/Mistral-7B-v0.1", use_auth_token=True)
+    model = AutoModel.from_pretrained(_path)
 elif textual_model == 'qwen':
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B")
-    # Need Access Token
-    model = AutoModel.from_pretrained("Qwen/Qwen2.5-7B")
+    _path = resolve("Qwen/Qwen2.5-7B")
+    tokenizer = AutoTokenizer.from_pretrained(_path)
+    model = AutoModel.from_pretrained(_path)
 
 model.eval()
 
 if audio_model == 'wav2vec2':
-    processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
-    wav2vec_model = Wav2Vec2Model.from_pretrained("facebook/wav2vec2-base-960h").to(device)
+    _path = resolve("facebook/wav2vec2-base-960h")
+    processor = Wav2Vec2Processor.from_pretrained(_path)
+    wav2vec_model = Wav2Vec2Model.from_pretrained(_path).to(device)
     segment_length = 50
 elif audio_model == 'egemaps':
     smile = opensmile.Smile(
@@ -70,11 +95,18 @@ elif audio_model == 'egemaps':
 else:
     segment_length = 50
 
-root_path = '/dataset/diagnosis/train/audio/'
-root_text_path = '/dataset/diagnosis/train/text/'
+root_path = AUDIO_DIR + os.sep
+root_text_path = TEXT_DIR + os.sep
 
-textual_data = '/dataset/diagnosis/train/text_transcriptions.csv'
-max_length = 200
+textual_data = TRANSCRIPTIONS_CSV
+
+# 文本/音频统一对齐到这么长的序列。
+# 原代码是 200；本数据集真实分词后 token 数中位 129、最大 593，
+# 取 200 会把 41/235（17%）个样本的尾巴（文本 + 音频对齐）一起截掉，
+# 所以提到 512（DistilBERT 位置编码的硬上限），只剩 adrso276（593）还会超。
+# ⚠️ 改了这里，产出的 .pt 形状会从 (200, F) 变成 (512, F)，与论文设置不同，
+#    分数不能和原文直接对比。
+max_length = 512
 
 
 def preprocess_text():
@@ -87,6 +119,22 @@ def preprocess_text():
     df[row_data] = df[row_data].apply(lambda x: unicodedata.normalize("NFC", str(x)))
 
     completed_audios = 0
+
+    # 处理不了的样本不再中断整批，改成本清单跳过（原来这里是 return -1）
+    skipped = []
+
+    def skip(reason):
+        """记一条跳过：打印 + 进清单 + 清掉刚写出的文本特征。
+
+        文本 .pt 是在音频处理之前就存好的，不清掉的话会留下
+        「有文本 .pt、没音频 .pt」的半成品，训练时照样 FileNotFoundError。
+        """
+        print(f"SKIP {row['diagno']}/{row['uid']}: {reason}")
+        skipped.append((row['uid'], row['diagno'], reason))
+        orphan = os.path.join(root_text_path, row['diagno'],
+                              row['uid'] + textual_model_data + pauses_data + '.pt')
+        if os.path.exists(orphan):
+            os.remove(orphan)
 
     # Columns are     df = pd.DataFrame(columns=['uid', 'diagno', 'transcription', 'transcription_pause', 'probablities'])
 
@@ -154,14 +202,18 @@ def preprocess_text():
                 
                 features = np.vstack(features)
 
-                features_audio = torch.tensor(features).float().to(device)
-                print(f"Features shape: {features_audio.shape}")
+                # 统一变量名：后面所有代码用的是 last_hidden_states_audio，
+                # 这里原来叫 features_audio，一跑到取帧就 NameError。
+                # 同时留在 CPU 上（和 wav2vec2 分支一致），避免往 CPU 的
+                # processed_audio_tensor 里写 GPU 张量。
+                last_hidden_states_audio = torch.tensor(features).float().cpu()
+                print(f"Features shape: {last_hidden_states_audio.shape}")
 
-                processed_audio_tensor = torch.zeros((max_length, features_audio.shape[1]))
+                processed_audio_tensor = torch.zeros((max_length, last_hidden_states_audio.shape[1]))
 
-                if torch.isnan(features_audio).any():
+                if torch.isnan(last_hidden_states_audio).any():
                     print(f"ERROR BEFORE in {row['diagno']}, {row['uid']}: NaN values in features_audio")
-                    features_audio = torch.nan_to_num(features_audio, nan=0.0)
+                    last_hidden_states_audio = torch.nan_to_num(last_hidden_states_audio, nan=0.0)
             elif audio_model == 'mel':
                 y, sr = librosa.load(audio_path)
 
@@ -171,14 +223,14 @@ def preprocess_text():
 
                 mel = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=win_length, hop_length=hop_length, n_mels=n_mels)
 
-                features_audio = torch.tensor(mel).float().permute(1,0)
+                last_hidden_states_audio = torch.tensor(mel).float().permute(1,0)
 
-                processed_audio_tensor = torch.zeros((max_length, features_audio.shape[1]))
+                processed_audio_tensor = torch.zeros((max_length, last_hidden_states_audio.shape[1]))
 
-                if torch.isnan(features_audio).any():
-                    features_audio = torch.nan_to_num(features_audio, nan=0.0)
+                if torch.isnan(last_hidden_states_audio).any():
+                    last_hidden_states_audio = torch.nan_to_num(last_hidden_states_audio, nan=0.0)
         
-            processed_audio_tensor[0] = features_audio.mean(dim=0)
+            processed_audio_tensor[0] = last_hidden_states_audio.mean(dim=0)
 
             # Tokenize and prepare inputs
             inputs_offset = tokenizer(
@@ -360,14 +412,12 @@ def preprocess_text():
             total_tokens = torch.sum(inputs_text['attention_mask'][0]).item()
             print(f"Total tokens: {total_tokens}")
             if n_audio_segments + 2 != total_tokens:
-                print(f"ERROR in {row['diagno']}, {row['uid']}: Number of audio segments ({n_audio_segments}) does not match the number of tokens ({total_tokens})")
-                print(f"Completed audios: {completed_audios}")
-                return -1
+                skip(f"对齐不上：音频段数 {n_audio_segments} + 2 != token 数 {total_tokens}")
+                continue
 
             if torch.isnan(processed_audio_tensor).any():
-                print(f"ERROR in {row['diagno']}, {row['uid']}: NaN values in processed_audio_tensor")
-                print(f"Completed audios: {completed_audios}")
-                return -1
+                skip("音频特征里出现 NaN")
+                continue
             
             torch.save(processed_audio_tensor, os.path.join(root_text_path, row['diagno'], row['uid'] + textual_model_data + pauses_data + audio_model_data + '.pt'))
 
@@ -377,5 +427,22 @@ def preprocess_text():
         print(f"------------------------------------------")
         print(f"CORRECTLY PROCESSED ALL AUDIOS")
         print(f"Completed audios: {completed_audios}")
+
+    # ---- 收尾：汇报 + 把跳过清单落盘 ----
+    print("============ 处理结束 ============")
+    print(f"成功 {completed_audios} 条，跳过 {len(skipped)} 条")
+    if skipped:
+        skip_path = os.path.join(TRAIN_ROOT, 'preprocess_skipped.csv')
+        with open(skip_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['uid', 'diagno', 'reason'])
+            writer.writerows(skipped)
+        print(f"跳过清单已写入: {skip_path}")
+        print("这些样本没生成特征文件，训练前必须把它们从标签表里删掉，")
+        print(f"否则 dataset.read_CSV 会因为找不到 .pt 直接报错：")
+        print(f"  {os.path.join(TRAIN_ROOT, 'adresso-train-mmse-scores.csv')}")
+        for uid, diagno, reason in skipped:
+            print(f"  - {diagno}/{uid}: {reason}")
+
 
 preprocess_text()

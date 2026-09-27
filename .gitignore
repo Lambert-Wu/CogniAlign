@@ -3,6 +3,12 @@
 ./logs
 ./wandb
 
+# 数据集：体积大且有数据使用协议，不进仓库
+data/
+
+# 模型权重：体积大，不进仓库
+models/
+
 # Ignore all files in the logs directory
 logs/*
 # Ignore all files in the base_logs directory
@@ -37,3 +43,5 @@ __pycache__/*
 *.zip
 # Ignore all .tar.gz files
 *.tar.gz
+
+api.txt

@@ -25,7 +25,7 @@ def set_seed(seed):
 def get_config(config_file):
     """Load configuration from a YAML file and ensure log directories exist."""
     
-    with open(config_file, 'r') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         config_yaml = yaml.safe_load(f)
     
     config = DotMap(config_yaml)
@@ -65,7 +65,7 @@ def save_config(config):
     # Convert DotMap to a standard dictionary
     config_dict = config.toDict()
     
-    with open(config_file_path, 'w') as f:
+    with open(config_file_path, 'w', encoding='utf-8') as f:
         yaml.dump(config_dict, f, default_flow_style=False)
 
 
@@ -96,7 +96,7 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
     num_training_steps = num_epochs * len(train_dataloader)
     progress_bar = tqdm(range(num_training_steps))
     
-    with open(log_path, "w") as log:
+    with open(log_path, "w", encoding='utf-8') as log:
         for epoch in range(num_epochs):
             model.train()
             total_true, total_pred, total_loss = [], [], 0
@@ -221,7 +221,7 @@ def get_model_statistics(model='all'):
             continue
         
         try:
-            with open(file_path, "r") as result_file:
+            with open(file_path, "r", encoding='utf-8') as result_file:
                 lines = result_file.readlines()
             
             if not lines:

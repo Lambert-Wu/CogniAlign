@@ -1,0 +1,25 @@
+源词表      : D:\桌面\科研\madress-2023\outputs\subject_extraction\subject_words.csv
+对照标签表  : D:\桌面\科研\CogniAlign\data\diagnosis\train\adresso-train-mmse-scores.csv（235 条）
+源词表里 train 的样本数: 235
+因切割边界拿不到可靠时间的词（已丢弃，逐词表和 transcription 同时去掉）: 6 个
+    adrso025: 'cookies'  new_start='25.258' new_end=''
+    adrso028: 'here?'  new_start='' new_end=''
+    adrso029: 'pursuit.'  new_start='' new_end=''
+    adrso037: 'now?'  new_start='' new_end=''
+    adrso056: 'Pardon?'  new_start='' new_end=''
+    adrso108: 'on.'  new_start='' new_end=''
+  已处理 50/235 ...
+  已处理 100/235 ...
+  已处理 150/235 ...
+  已处理 200/235 ...
+
+---- 完成 ----
+逐词表     : D:\桌面\科研\CogniAlign\data\diagnosis\train\text/<cn|ad>/<uid>.csv  共 235 个
+汇总表     : D:\桌面\科研\CogniAlign\data\diagnosis\train\text_transcriptions.csv  235 行
+清洗后为空的词共丢掉 0 个（总词数里）
+沿用「说话人未标注」的词 18 个（它们是受试者的话，只是 WhisperX 没标上）
+
+抽样看看第一条：
+  uid=adrso002 diagno=cn
+  transcription:  Okay, I see a mom doing the dishes and the water's overflowing from the sink and she seems to be completely oblivious o...
+  transcription_pause:  Okay, I see a mom doing the dishes and the water's overflowing from the sink and she seems to be completely . oblivious...

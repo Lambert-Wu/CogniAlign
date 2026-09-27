@@ -59,7 +59,7 @@ def main(config):
     
     if config.train.cross_validation:
         log_file = os.path.join(log_path, 'cross_fold_summary.txt')
-        with open(log_file, "w") as log:
+        with open(log_file, "w", encoding='utf-8') as log:
             for fold in range(config.train.cross_validation_folds):
                 train_dataloader, validation_dataloader = get_dataloaders(config, kfold_number=fold)
                 

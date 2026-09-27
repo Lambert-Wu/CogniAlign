@@ -4,11 +4,13 @@ import numpy as np
 import torch
 import os
 from sklearn.model_selection import KFold
+from paths import TEXT_DIR, AUDIO_DIR, SPLITS_DIR, LABELS_CSV
 
-root_text_path = '/dataset/diagnosis/train/text/'
-root_audio_path = '/dataset/diagnosis/train/audio/'
+# 路径集中在 paths.py，默认指向项目内 data/diagnosis/train/
+root_text_path = TEXT_DIR + os.sep
+root_audio_path = AUDIO_DIR + os.sep
 
-csv_labels_path = '/dataset/diagnosis/train/adresso-train-mmse-scores.csv'
+csv_labels_path = LABELS_CSV
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_length_wav2vec = 4000
@@ -84,7 +86,7 @@ def read_CSV(config):
 def get_dataloaders(config, kfold_number = 0):
 
     uids, features, labels = read_CSV(config)
-    validation_split = np.load('/dataset/diagnosis/train/splits/val_uids' + str(kfold_number) + '.npy')
+    validation_split = np.load(os.path.join(SPLITS_DIR, 'val_uids' + str(kfold_number) + '.npy'))
 
     batch_size=config.train.batch_size
     # Split those lists into training and validation
@@ -128,8 +130,8 @@ def set_splits():
 
     for i, (train_index, test_index) in enumerate(kfold.split(uids)):
         print("TRAIN:", train_index, "TEST:", test_index)
-        np.save('/dataset/diagnosis/train/splits/train_uids' + str(i), np.array(uids)[train_index])
-        np.save('/dataset/diagnosis/train/splits/val_uids' + str(i), np.array(uids)[test_index])
+        np.save(os.path.join(SPLITS_DIR, 'train_uids' + str(i)), np.array(uids)[train_index])
+        np.save(os.path.join(SPLITS_DIR, 'val_uids' + str(i)), np.array(uids)[test_index])
 
 def get_splits_stats():
     labels_pd = pd.read_csv(csv_labels_path)
@@ -139,8 +141,8 @@ def get_splits_stats():
         uids.append(row['adressfname'])
 
     for i in range(5):
-        training_split = np.load('/dataset/diagnosis/train/splits/train_uids' + str(i) + '.npy')
-        validation_split = np.load('/dataset/diagnosis/train/splits/val_uids' + str(i) + '.npy')
+        training_split = np.load(os.path.join(SPLITS_DIR, 'train_uids' + str(i) + '.npy'))
+        validation_split = np.load(os.path.join(SPLITS_DIR, 'val_uids' + str(i) + '.npy'))
         n_cn_train = 0
         n_ad_train = 0
         n_cn_val = 0

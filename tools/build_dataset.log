@@ -1,0 +1,34 @@
+音频源（只读）: D:\桌面\科研\madress-2023\data\processed\subject_only  [--source subject_only]
+标签表        : D:\桌面\科研\madress-2023\data\row
+目标目录      : D:\桌面\科研\CogniAlign\data\diagnosis
+[train] 标签表 237 条 / 有音频 235 条 / 缺音频被剔除 2 条
+      !! 缺音频，不参与: adrso054
+      !! 缺音频，不参与: adrso171
+[test] 标签表 80 条 / 有音频 80 条 / 缺音频被剔除 0 条
+写出标签表 D:\桌面\科研\CogniAlign\data\diagnosis\train\adresso-train-mmse-scores.csv（235 行）
+写出标签表 D:\桌面\科研\CogniAlign\data\diagnosis\test\test_labels.csv（80 行）
+  [train] 50/235 ...
+  [train] 100/235 ...
+  [train] 150/235 ...
+  [train] 200/235 ...
+[train] 已复制 235 / 内容相同跳过 0 / 待复制 0
+  [test] 50/80 ...
+[test] 已复制 80 / 内容相同跳过 0 / 待复制 0
+[splits] 235 个样本写出 5 折
+
+---- 结果 ----
+  train/audio/ad: 121 条
+  train/audio/cn: 114 条
+  test/audio/ad: 35 条
+  test/audio/cn: 45 条
+  第 0 折: 验证 47 条 / 训练 188 条, 交集 0
+  第 1 折: 验证 47 条 / 训练 188 条, 交集 0
+  第 2 折: 验证 47 条 / 训练 188 条, 交集 0
+  第 3 折: 验证 47 条 / 训练 188 条, 交集 0
+  第 4 折: 验证 47 条 / 训练 188 条, 交集 0
+
+  因缺音频被剔除的样本（已从标签表和划分里去掉）:
+    train/adrso054
+    train/adrso171
+
+注意：标签表已按实际有音频的样本重写，训练集变成 235 条。
