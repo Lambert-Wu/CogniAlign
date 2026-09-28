@@ -36,7 +36,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #     COGNIALIGN_SPLIT=test COGNIALIGN_TEXT_MODEL=chinese python preprocess/extract_features.py
 textual_model = TEXT_MODEL          # 来自 paths.py：test 默认 chinese，其余 distil
 audio_model = AUDIO_MODEL
-pauses = False
+# ── 停顿开关 ────────────────────────────────────────────────────────────
+# True  = 用 transcription_pause 列（按停顿插了 . , ... 的那版）
+# False = 用 transcription 列（纯词流，没有停顿标记）
+#
+# 🚨 改这里必须**同时**改 modules/configs/*.yaml 里的 `pauses`，否则训练直接崩：
+#      dataset.py 按 yaml 的 pauses 拼文件名（True -> <uid>distil_pauses.pt），
+#      而本脚本按这里的 pauses 决定往哪个名字写。
+#      两边不一致 = 训练时 FileNotFoundError。
+#   （本脚本不读 yaml —— 它没有配置文件这个入参，只能靠人工对齐。）
+# 改了之后产出的文件名会多 `_pauses` 后缀，因此与不带停顿的旧特征**并存不覆盖**，
+# 两种配置可以各跑一套、互不影响。训练的结果目录也会多一个 `P_`
+# （distil_wav2vec2_P_cross_mean），不会覆盖旧结果。
+pauses = True
 
 pauses_data = '_pauses' if pauses else ''
 name_mapping_text = {
@@ -101,15 +113,6 @@ if audio_model == 'wav2vec2':
     _path = resolve("facebook/wav2vec2-base-960h")
     processor = Wav2Vec2Processor.from_pretrained(_path)
     wav2vec_model = Wav2Vec2Model.from_pretrained(_path).to(device)
-    # 🚨 必须显式切 eval —— 上面第 98 行那句 `model.eval()` 只作用到**文字**模型
-    # （变量叫 model），音频模型另叫 wav2vec_model、而且是在那句之后才建的，
-    # 从来没被切过。而 Wav2Vec2Model 从 HF 加载出来默认是 train 模式，此时：
-    #   · layerdrop=0.1  → 每次前向随机跳过约 10% 的 Transformer 层
-    #   · mask_time_prob=0.05 → 随机遮挡约 5% 的音频帧
-    #   · hidden/attention dropout=0.1 → 再加一层随机噪声
-    # 实测同一条录音连跑两次，特征平均差 84%（eval 模式下两次完全一致），
-    # 也就是说之前存盘的 235 套音频特征里混进了大量与标签无关的随机噪声。
-    # ⚠️ 改了这里必须**全量重跑**脚本②：旧的 <uid>distil_audio.pt 是脏的。
     wav2vec_model.eval()
     segment_length = 50
 elif audio_model == 'egemaps':

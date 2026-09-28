@@ -72,14 +72,38 @@ def remove_non_english(text):
     return re.sub(r"[^\w\s.,!?'\"\-，。！？、；：]", '', text, flags=re.UNICODE)
 
 
+# 从词里去掉的标点（半角 + 全角）。
+# ⚠️【2026-09-28 改动】原来这套剥离只覆盖 `.,;` 和全角的 `，。；、！？`，
+# **漏了半角的 `!` `?`**，于是带问号的词（"picture?" "sink?" "else?"）会原样
+# 留进逐词表和 transcription。后果：英文转写里混着标点，而中文那边
+# （SenseVoice 输出就是纯汉字流）一个标点都没有 —— 两个 split 的 token 结构
+# 不一致（实测英文每条平均多 17.6 个标点 token，占 token 总数 12.4%）。
+# 现在把半角 `!` `?` 一起去掉，并且让「拼 transcription」和「清洗逐词表」
+# **共用同一套规则** —— 两边词序列必须严格一致，否则脚本② 的词/token 数对不上
+# 会把整条样本跳过。
+# ⚠️ 故意不含 `-` 和 `—`：`-` 出现在词内部（"mm-hmm" "three-legged"），
+#    剥掉会把一个词拆成两个；`—` 本来就不在 remove_non_english 的白名单里，
+#    两边都会被删掉，已经是一致的。
+STRIP_PUNCT = '.,;!?，。；！？、'
+
+
+def strip_punct(raw):
+    """去掉词里附着的标点，**保留大小写和连字符**。
+
+    和 clean_word 用的是同一张 STRIP_PUNCT 表，所以
+    `strip_punct('picture?') == 'picture'`，与逐词表里的词一致。
+    """
+    for ch in STRIP_PUNCT:
+        raw = raw.replace(ch, '')
+    return raw.strip()
+
+
 def clean_word(raw):
     """与脚本①完全相同的清洗：先去掉标点空格、转小写，再过滤非法字符。
 
-    标点要同时覆盖半角和全角 —— 中文转写的标点是全角的（，。！？、）。
+    标点是半角 + 全角一起覆盖（见上面的 STRIP_PUNCT）。
     """
-    for ch in '.,;，。；、！？ ':
-        raw = raw.replace(ch, '')
-    return remove_non_english(raw.lower())
+    return remove_non_english(strip_punct(raw).replace(' ', '').lower())
 
 
 def load_source(src_path, split='train'):
@@ -149,9 +173,16 @@ def build_sample(uid, diagno, rows, audio_path):
             elif gap > 0.5:
                 transcription_pauses += ' ,'
 
-        # b. 用空格 join，等价于原来 word['word'] 自带的前导空格
-        transcription += ' ' + raw
-        transcription_pauses += ' ' + raw
+        # b. 用空格 join，等价于原来 word['word'] 自带的前导空格。
+        # ⚠️【2026-09-28】这里改用 strip_punct(raw) 而不是 raw：把 ASR 自带的标点
+        # 去掉，让英文 transcription 变成纯词流，和中文那边（SenseVoice 无标点）
+        # 结构一致。注意停顿标记是在上面单独插进来的，**不受这一步影响** ——
+        # transcription_pause 里留下的 . , ... 全部是按停顿算出来的，
+        # 不再混着 ASR 的原生标点。
+        # ⚠️ 必须和 clean_word 用同一套剥离规则，否则两个词序列会错位。
+        w_txt = strip_punct(raw)
+        transcription += ' ' + w_txt
+        transcription_pauses += ' ' + w_txt
         prev_end = end
 
         cw = clean_word(raw)

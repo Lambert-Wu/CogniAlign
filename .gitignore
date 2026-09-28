@@ -60,3 +60,4 @@ api.txt
 #    所以如果它已经在索引里了，还需要：
 #        git rm -r --cached .workbuddy
 .workbuddy/
+logs/

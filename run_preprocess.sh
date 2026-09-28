@@ -199,7 +199,20 @@ EOF
     [ -n "$TEXT_MODEL" ]  || TEXT_MODEL="$(grab textual_model)"
     [ -n "$AUDIO_MODEL" ] || AUDIO_MODEL="$(grab audio_model)"
 
-    # 后缀规则来自脚本② 和 dataset.py 里同一张 name_mapping_* 表
+    # 停顿开关：extract_features.py 里写的是字面量 `pauses = True/False`，
+    # 而它没有 __main__ 保护（import 即执行），所以只能 sed 读源码，不能 import。
+    # ⚠️ 关掉停顿会让产出文件名少一段 `_pauses`，这里的后缀必须跟着变，
+    #    否则下面「本次覆盖 N 个」会数错文件、日志里打印的文件名也是错的。
+    _pauses_src="$(sed -n 's/^pauses *= *\([A-Za-z]*\).*/\1/p' "$EMBED_SRC" 2>/dev/null | head -1)"
+    if [ "$_pauses_src" = "True" ]; then
+        PAUSES_SUF="_pauses"
+        PAUSES_DESC="开（读 transcription_pause 列）"
+    else
+        PAUSES_SUF=""
+        PAUSES_DESC="关（读 transcription 列）"
+    fi
+
+    # 后缀规则来自 extract_features.py 和 dataset.py 里同一张 name_mapping_* 表
     case "$TEXT_MODEL" in
         bert) TEXT_SUF="" ;;
         *)    TEXT_SUF="$TEXT_MODEL" ;;
@@ -211,7 +224,9 @@ EOF
         xlsr)     AUDIO_SUF="_xlsr" ;;
         *)        AUDIO_SUF="" ;;
     esac
-    # 音频特征文件是「文本后缀 + 音频后缀」，例如 adrso024distil_audio.pt
+    # 文本特征文件 = 编号 + 文本后缀 + [停顿后缀]，例如 adrso024distil_pauses.pt
+    TEXT_SUF="${TEXT_SUF}${PAUSES_SUF}"
+    # 音频特征文件 = 文本特征后缀 + 音频后缀，例如 adrso024distil_pauses_audio.pt
     AUDIO_FULL_SUF="${TEXT_SUF}${AUDIO_SUF}"
 
     # 样本数：从标签表数行数（awk 会数到最后一行没换行的），不写死
@@ -284,6 +299,7 @@ if [ "$WORKER" = 1 ]; then
         echo " 数据根   : $COGNIALIGN_DATA_ROOT"
         echo " 模型目录 : $COGNIALIGN_MODELS_DIR"
         echo " 模型线路 : textual=$TEXT_MODEL | audio=$AUDIO_MODEL"
+        echo " 停顿标记 : $PAUSES_DESC"
         echo " 产出文件 : <uid>${TEXT_SUF}.pt 与 <uid>${AUDIO_FULL_SUF}.pt"
         echo " 标签表   : ${LABELS_CSV:-<没找到>}"
         echo " 样本数   : $N_SAMPLES"

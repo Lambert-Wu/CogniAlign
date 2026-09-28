@@ -21,7 +21,11 @@ model:
   audio_model: 'wav2vec2'   # 必须与 extract_features.py 里的 audio_model 一致，
                             # 否则 dataset.read_CSV 会去找 <uid>distil_wav2vec2.pt 这种
                             # 不存在的文件（音频侧后缀按这里取值拼）
-  pauses: False
+  pauses: True             # 必须与 preprocess/extract_features.py 里的 `pauses` 一致
+                            # True  -> 读 transcription_pause 列，文件名带 _pauses 后缀，
+                            #          结果目录带 P_（distil_wav2vec2_P_cross_mean）
+                            # False -> 读 transcription 列（纯词流）
+                            # 注意：extract_features.py **不读这个 yaml**，两边要人工对齐
   fusion: 'cross'
 
 model_name: ''
