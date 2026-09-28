@@ -329,7 +329,12 @@ LOG="$LOG_DIR/train_$TS.log"
 export COGNIALIGN_LOG="$LOG"
 
 if [ "$BG" = 1 ]; then
-    nohup "$SELF" "${WORKER_ARGS[@]}" > "$LOG" 2>&1 &
+    # ★ 用 "$BASH" 显式调用自己，而不是直接跑 "$SELF"。
+    #   原因：脚本文件可能**没有可执行权限**（git 里存成 100644 时，
+    #   Linux 上 clone 下来就是 644），此时 `nohup "$SELF"` 会直接报
+    #   `nohup: failed to run command '...': Permission denied`。
+    #   显式交给 bash 执行就不依赖那个权限位了 —— 反正本脚本本来就要求 bash。
+    nohup "$BASH" "$SELF" "${WORKER_ARGS[@]}" > "$LOG" 2>&1 &
     PID=$!
     echo "$PID" > "${LOG%.log}.pid"
 
@@ -352,7 +357,8 @@ else
     echo "（tqdm 进度条在日志里会有换行错乱，看 train_stats_*.txt 更清楚）"
     echo
     set +e
-    "$SELF" "${WORKER_ARGS[@]}" 2>&1 | tee "$LOG"
+    # 同上：显式用 $BASH 调自己，不依赖文件的可执行权限位
+    "$BASH" "$SELF" "${WORKER_ARGS[@]}" 2>&1 | tee "$LOG"
     RC=${PIPESTATUS[0]}
     set -e
     echo

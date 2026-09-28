@@ -1,0 +1,26 @@
+# 行尾规则：给不同文件定死，不让 Git 按本机的 autocrlf 猜。
+#
+# 为什么必须有这个文件
+# --------------------
+# Windows 上 Git 默认 core.autocrlf=true：检出时把 LF 转成 CRLF。
+# 而 **CRLF 的 .sh 在 Linux 上会直接报 `bad interpreter: No such file or directory`**
+# —— 报的是"文件不存在"，文件明明在，极具误导性。
+# 本仓库的 .sh 是要在 Linux 服务器上跑的，所以这里强制 eol=lf：
+# 无论谁在哪台机器上 clone / checkout，拿到的 .sh 一律是 LF。
+#
+# 同理：.py 统一用 LF，避免同一份代码在两个平台上出现无意义的行尾差异。
+
+*.sh text eol=lf
+*.py text eol=lf
+
+# 二进制 / 不该被跨平台转换的东西
+*.pt  binary
+*.wav binary
+*.npy binary
+*.pth binary
+*.safetensors binary
+*.bin binary
+*.png binary
+*.jpg binary
+*.mp3 binary
+*.zip binary
