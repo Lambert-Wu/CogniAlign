@@ -141,12 +141,6 @@ def set_splits():
     # Split the uids into 5 folds with kfold from sklearn
     kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    # ⚠️ np.save 不会自己建目录：splits/ 不存在时会在 np.save 那一行抛
-    #    FileNotFoundError，而报错指向的是 .npy 文件、看不出是目录缺失。
-    #    build_dataset.py 建数据集时会建这个目录，但直接调 set_splits()
-    #    （换了数据位置、新加一个 split 等情况）就会踩到，所以这里补上。
-    os.makedirs(SPLITS_DIR, exist_ok=True)
-
     for i, (train_index, test_index) in enumerate(kfold.split(uids)):
         print("TRAIN:", train_index, "TEST:", test_index)
         np.save(os.path.join(SPLITS_DIR, 'train_uids' + str(i)), np.array(uids)[train_index])

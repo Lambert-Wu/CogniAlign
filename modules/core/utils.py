@@ -55,15 +55,6 @@ def save_config(config):
 
     config.path_name = f"{config.model_name}_{config.model.pooling}"
 
-    # 允许用环境变量指定「结果文件夹的名字」（run_train.sh -o 走的就是这条路）。
-    # ⚠️ **只改 path_name**（日志/权重目录），**绝不能动 model_name** ——
-    # model_name 会被模型类拿去做两件事：① 判断要不要挂 mel/egemaps 的 ResNet；
-    # ② forward() 里 `model_name.split('_')[1]` 取出音频模型名。
-    # 动它就是直接改模型结构，权重会跟之前完全对不上。
-    _run_name = os.environ.get("COGNIALIGN_RUN_NAME", "").strip()
-    if _run_name:
-        config.path_name = _run_name
-
     # ⚠️ log_path / config_file_path 必须在 path_name 更新**之后**才算。
     # 原代码把这两行放在函数开头，而那时 path_name 还是 get_config() 里那个
     # f"{空的 model_name}_{pooling}" = "_mean"，于是：

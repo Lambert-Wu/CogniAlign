@@ -53,8 +53,6 @@ WORKER=0
 RESUME=0
 CONFIG="configs/default.yaml"
 WANDB_MODE_CHOICE="disabled"
-RUN_NAME=""      # -o 指定：结果文件夹的名字（不指定就按配置自动拼）
-ARCHIVE=1        # 跑完自动归档一份到 checkpoints/；--no-archive 关闭
 
 usage() {
     cat <<'EOF'
@@ -66,13 +64,7 @@ CogniAlign 训练一键脚本
     bash run_train.sh -f configs/qwen.yaml   换配置文件
     bash run_train.sh -w offline          用 wandb 本地记录（默认 disabled）
     bash run_train.sh -r                  续跑：已跑完的折跳过，只补剩下的
-    bash run_train.sh -o 我的实验名       结果写到 logs/我的实验名/（否则按配置自动拼名）
-    bash run_train.sh --no-archive        跑完不自动归档到 checkpoints/
     bash run_train.sh -h                  看这段帮助
-
-结果放哪：
-  · 训练过程 -> modules/logs/<名字>/      （5 个 model_fold_*.pth + config.yaml）
-  · 跑完自动 -> checkpoints/<日期>_<名字>/（长期保存，不会下次被覆盖）
 
 说明：
   · 配置里的 cross_validation: True 会跑 5 折，每折存一个 model_fold_<n>.pth
@@ -101,11 +93,6 @@ while [ $# -gt 0 ]; do
             shift
             [ $# -gt 0 ] || { echo "-w 后面要跟 disabled / offline / online" >&2; exit 2; }
             WANDB_MODE_CHOICE="$1" ;;
-        -o|--out)
-            shift
-            [ $# -gt 0 ] || { echo "-o 后面要跟文件夹名" >&2; exit 2; }
-            RUN_NAME="$1" ;;
-        --no-archive)    ARCHIVE=0 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "未知参数: $1（用 -h 看用法）" >&2; exit 2 ;;
     esac
@@ -182,18 +169,10 @@ if [ -f "$CFG_PATH" ]; then
     if [ "$_pauses" = "True" ]; then _name="${_name}P_"; fi
     _name="${_name}${_fusion}"
     PATH_NAME="${_name}_${_pooling}"
-    # -o 给了名字就用它，否则沿用配置自动拼出来的名字
-    if [ -n "$RUN_NAME" ]; then
-        PATH_NAME="$RUN_NAME"
-    fi
     RESULT_DIR="$MODULES_DIR/logs/$PATH_NAME"
 else
     RESULT_DIR="<配置文件缺失，算不出来>"
 fi
-
-# 传给 train.py：utils.save_config() 看到它就按这个名字建结果目录。
-# ⚠️ 只影响文件夹名，不影响模型结构（model_name 仍由配置决定）。
-export COGNIALIGN_RUN_NAME="$RUN_NAME"
 
 # =====================================================================
 # 「worker」模式：跑 → 核对 → （失败时）排错指引
@@ -235,19 +214,9 @@ if [ "$WORKER" = 1 ]; then
     echo "      $RESULT_DIR/train_stats_<折号>.txt"
     echo "      想看某折的进度就另开一个终端 tail -f 那个文件。"
     echo
-    echo "⚠️ 启动后会有约 1~2 分钟「什么也不打印」的阶段："
-    echo "   它正在把 235 条特征（约 700MB）读进内存。这是正常的，不是卡死。"
-    echo "   如果 5 分钟后还是空白 —— 先别等，用前台模式重跑一次看真实报错："
-    echo "       PYTHON=<你的解释器> bash run_train.sh          # 不加 -b"
-    echo
 
     set +e
-    # ★ 必须加 -u（无缓冲）。
-    #   不加的话 Python 在「输出重定向到文件」时用 8KB 块缓冲，
-    #   训练打的字又少 —— 日志会长时间停在启动横幅那里一动不动，
-    #   看着像卡死，其实进程在正常跑（血的教训：2026-09-28 在服务器上就是这个现象）。
-    #   自检那一步本来就带 -u，主流程这里之前漏了。
-    "$PYTHON" -u "$ENTRY" --config "$CONFIG"
+    "$PYTHON" "$ENTRY" --config "$CONFIG"
     RC=$?
 
     echo
@@ -270,32 +239,9 @@ if [ "$WORKER" = 1 ]; then
         echo "结果目录不存在 —— 说明还没跑起来就失败了"
     fi
 
-    # ---- 跑成功就归档一份到 checkpoints/ ----
-    # modules/logs/<名字>/ 是"工作目录"（同名字再跑会被覆盖），
-    # checkpoints/<日期>_<名字>/ 才是长期保存的成品。
-    if [ "$RC" -eq 0 ] && [ "$ARCHIVE" = 1 ] && [ -d "$RESULT_DIR" ]; then
-        STAMP="$(date +%Y-%m-%d)"
-        ARCH_DIR="$HERE/checkpoints/${STAMP}_${PATH_NAME}"
-        mkdir -p "$HERE/checkpoints"
-        if [ -d "$ARCH_DIR" ]; then
-            echo
-            echo "归档目录已存在，不覆盖：$ARCH_DIR"
-        else
-            cp -a "$RESULT_DIR" "$ARCH_DIR"
-            echo
-            echo "======================================================"
-            echo " 已归档（长期保存）"
-            echo "   结果目录 : $RESULT_DIR"
-            echo "   归档到   : $ARCH_DIR"
-            echo "   内容     : $(ls "$ARCH_DIR"/model_fold_*.pth 2>/dev/null | wc -l) 个折权重 + config.yaml"
-            echo "======================================================"
-        fi
-    fi
-
     echo
     echo "======================================================"
     echo " 结束时间     : $(date '+%F %T')"
-    echo " 结果目录     : $RESULT_DIR"
     echo " 主流程退出码 : $RC"
     if [ "$RC" -eq 0 ]; then
         echo " 结果         : 正常跑完"
@@ -362,14 +308,7 @@ fi
 
 if [ "$CHECK" = 1 ]; then
     echo
-    echo "======================================================"
-    echo " 只自检，到此为止（没有开跑）"
-    echo
-    echo " 真跑的话结果会写到这里："
-    echo "   训练过程 : $RESULT_DIR"
-    echo "   跑完归档 : $HERE/checkpoints/<日期>_$PATH_NAME"
-    echo "             （想改名字：bash run_train.sh -o 你想要的名字 ...）"
-    echo "======================================================"
+    echo "-c 只自检，到此为止（没有开跑）。"
     exit 0
 fi
 
