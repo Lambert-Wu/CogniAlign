@@ -193,12 +193,19 @@ if [ "$WORKER" = 1 ]; then
     echo " 续跑     : $COGNIALIGN_RESUME（1 = 已跑完的折跳过）"
     echo "======================================================"
     echo
+    # ★★ 这两行的 `ls` 必须带 `|| true` —— 否则第一次训练时脚本会**静默死掉**。
+    #   原因：`ls` 在找不到文件（结果目录还不存在）时退出码是 **2**；
+    #   本脚本开了 `set -euo pipefail`，pipefail 让整个管道取到 ls 的 2，
+    #   set -e 于是立刻终止脚本；而错误信息被 2>/dev/null 吞掉，
+    #   现象就是：打印完启动横幅后什么都不发生、退出码 2、日志一片空白。
+    #   （2026-09-28 在 Linux 服务器上就是被这个坑住的；以前能跑通是因为
+    #    目录里已有旧权重、ls 成功，所以从未触发。）
     if [ "$COGNIALIGN_RESUME" = 1 ]; then
-        _done="$(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l)"
+        _done="$(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l || true)"
         echo "续跑：已完成 $_done 折，这次只补剩下的（断在半路的那一折要重跑）"
         echo
     else
-        _old="$(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l)"
+        _old="$(ls "$RESULT_DIR"/model_fold_*.pth 2>/dev/null | wc -l || true)"
         if [ "$_old" -gt 0 ]; then
             echo "##########################################################"
             echo "# 注意：结果目录里已经有 $_old 个旧的 model_fold_*.pth"
