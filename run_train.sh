@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# CogniAlign 训练（main.py）一键启动脚本
+# CogniAlign 训练（train.py）一键启动脚本
 # Linux / macOS / Git Bash 通用
 # ---------------------------------------------------------------------
 # 用法：
@@ -16,7 +16,7 @@
 #   那一折会白跑、要重来，但**之前跑完的折会保留、不会被重跑**。
 #   判断依据：结果目录里有没有 model_fold_<n>.pth。
 #
-# 关于 wandb：main.py 顶层就直接调 wandb.login()，不配 API key 时会
+# 关于 wandb：train.py 顶层就直接调 wandb.login()，不配 API key 时会
 #   「提示你输入 key」→ 在终端里会一直卡着等人按。所以脚本默认
 #   设 WANDB_MODE=disabled（训练照常，只是不上传曲线）。
 #   想看曲线就 -w offline（记到 ./wandb/，之后可 wandb sync 上传）。
@@ -45,7 +45,7 @@ fi
 HERE="$(cd "$(dirname "$_SELF_PATH")" && pwd)"
 SELF="$HERE/$(basename "$_SELF_PATH")"
 MODULES_DIR="$HERE/modules"
-ENTRY="main.py"
+ENTRY="train.py"
 
 BG=0
 CHECK=0
@@ -69,7 +69,7 @@ CogniAlign 训练一键脚本
 说明：
   · 配置里的 cross_validation: True 会跑 5 折，每折存一个 model_fold_<n>.pth
   · 结果目录 = logs/<文本模型>_<音频模型>_<融合>_<池化>/，脚本开跑前会打印出来
-  · 默认 WANDB_MODE=disabled（main.py 顶层会 wandb.login()，不设会卡在等输入 key）
+  · 默认 WANDB_MODE=disabled（train.py 顶层会 wandb.login()，不设会卡在等输入 key）
   · -r 续跑的粒度是"折"：断在半路的那一折要重跑，跑完的折不会重跑
 
 环境变量（都可不设）：
@@ -131,10 +131,10 @@ export COGNIALIGN_PROJECT_ROOT="$HERE_PY"
 export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data/diagnosis}"
 export COGNIALIGN_MODELS_DIR="${COGNIALIGN_MODELS_DIR:-$HERE_PY/models}"
 
-# 续跑开关：main.py 读它来决定要不要跳过已存权重的折
+# 续跑开关：train.py 读它来决定要不要跳过已存权重的折
 export COGNIALIGN_RESUME="$RESUME"
 
-# wandb：默认完全不启用，避免 main.py 顶层的 wandb.login() 卡在等输入 key
+# wandb：默认完全不启用，避免 train.py 顶层的 wandb.login() 卡在等输入 key
 export WANDB_MODE="$WANDB_MODE_CHOICE"
 export WANDB_SILENT=true
 if [ "$WANDB_MODE_CHOICE" != "disabled" ]; then
@@ -148,7 +148,7 @@ mkdir -p "$LOG_DIR"
 # 规则同 utils.save_config()：
 #   model_name = {textual}_{audio}_{P_}{fusion}
 #   path_name  = {model_name}_{pooling}
-# ⚠️ main.py 里的 log_path 是相对路径 logs/（相对**当前工作目录**），
+# ⚠️ train.py 里的 log_path 是相对路径 logs/（相对**当前工作目录**），
 #    而脚本必须在 modules/ 下运行（模块间是平级 import），
 #    所以结果实际落在 modules/logs/ 而不是仓库根的 logs/。
 CFG_PATH="$MODULES_DIR/$CONFIG"
@@ -210,7 +210,7 @@ if [ "$WORKER" = 1 ]; then
             echo
         fi
     fi
-    echo "注意：main.py 会连续跑 5 折；每个 epoch 的指标实时写进"
+    echo "注意：train.py 会连续跑 5 折；每个 epoch 的指标实时写进"
     echo "      $RESULT_DIR/train_stats_<折号>.txt"
     echo "      想看某折的进度就另开一个终端 tail -f 那个文件。"
     echo
@@ -266,7 +266,7 @@ if [ "$WORKER" = 1 ]; then
         echo "     自检会列出缺哪个。装："
         echo "     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126"
         echo "  2) 特征文件不全 / 文件名对不上"
-        echo "     python tools/verify_features.py        # 会逐条指出缺哪个 uid 的哪种特征"
+        echo "     python modules/tools/verify_features.py        # 会逐条指出缺哪个 uid 的哪种特征"
         echo "     最常见的坑：configs/*.yaml 里的 audio_model 和后缀对不上"
         echo "     （wav2vec2 -> <uid>distil_audio.pt；egemaps -> <uid>distil_egemaps.pt）"
         echo "  3) CUDA 显存不够 —— 实测这个模型 batch_size=32 只要约 2 GB，一般不会"
@@ -286,7 +286,7 @@ fi
 echo "步骤 1/2  环境自检"
 echo "------------------------------------------------------"
 echo "（要 import torch / transformers / wandb 这些大包，约 40 秒不动是正常的）"
-if ! "$PYTHON" -u "$HERE/tools/check_env.py" --mode train; then
+if ! "$PYTHON" -u "$HERE/modules/tools/check_env.py" --mode train; then
     echo
     echo "自检没通过 —— 按上面标 [!!] 的项逐条解决，然后重跑。"
     echo "想单独再看一次自检（不跑）：bash run_train.sh -c"
@@ -296,11 +296,11 @@ fi
 echo
 echo "特征文件核对（训练要按配置里的模型名去找 <uid>*.pt）"
 echo "------------------------------------------------------"
-if [ -f "$HERE/tools/verify_features.py" ]; then
-    "$PYTHON" "$HERE/tools/verify_features.py" --quick || {
+if [ -f "$HERE/modules/tools/verify_features.py" ]; then
+    "$PYTHON" "$HERE/modules/tools/verify_features.py" --quick || {
         echo
         echo "特征不全 —— 先用完整版看缺哪些："
-        echo "    $PYTHON $HERE/tools/verify_features.py"
+        echo "    $PYTHON $HERE/modules/tools/verify_features.py"
         echo "缺样本的话，用特征提取的续跑模式补齐：bash run_preprocess.sh -r"
         exit 1
     }

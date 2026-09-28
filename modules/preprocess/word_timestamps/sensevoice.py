@@ -8,13 +8,13 @@ WhisperX 底层是 Whisper（英文为主），念中文会掉字、认错字（
 "踩在凳子上" -> "摘的凳子上"、"布仔擦盘子" -> "补宅插盘子"），
 字级时间也会跟着歪。SenseVoice-Small 是阿里出的多语种模型，中文是它的主场。
 
-产出（和脚本① `preprocesswhisper.py` 完全一样的两种文件，下游不用改）
+产出（和脚本① `transcribe_whisper.py` 完全一样的两种文件，下游不用改）
 -----------------------------------------------------------------------
 1. <SPLIT_TEXT_DIR>/<dx>/<uid>.csv   列 word,start,end,probability
 2. <SPLIT_ROOT>/text_transcriptions.csv
    列 uid,diagno,transcription,transcription_pause,probablities
 
-和脚本①保持一致的几个细节（改之前先看 tools/convert_whisperx_words.py 的说明）
+和脚本①保持一致的几个细节（改之前先看 modules/preprocess/word_timestamps/from_whisperx.py 的说明）
 ------------------------------------------------------------------------------
 a. 词（这里中文是单字）要按同一套规则清洗：去标点空格、转小写、再过滤非法字符
 b. transcription 由**同一批字**用空格拼出来，否则脚本②逐字匹配会对不上而跳过样本
@@ -32,10 +32,10 @@ SenseVoice 的时间戳是 CTC 强制对齐算出来的，每个字只给到一�
 
 用法
 ----
-    python tools/gen_sensevoice_words.py                 # 跑 test 集（默认）
-    python tools/gen_sensevoice_words.py --split train   # 跑 train 集
-    python tools/gen_sensevoice_words.py --limit 3       # 先试 3 条
-    python tools/gen_sensevoice_words.py --check         # 只算不写盘
+    python modules/preprocess/word_timestamps/sensevoice.py                 # 跑 test 集（默认）
+    python modules/preprocess/word_timestamps/sensevoice.py --split train   # 跑 train 集
+    python modules/preprocess/word_timestamps/sensevoice.py --limit 3       # 先试 3 条
+    python modules/preprocess/word_timestamps/sensevoice.py --check         # 只算不写盘
 
 模型从哪来
 ----------
@@ -60,7 +60,7 @@ import time
 
 import soundfile as sf
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'modules'))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # modules/
 from paths import MODELS_DIR, TEST_AUDIO_DIR, TEST_TEXT_DIR, \
     TEST_LABELS_CSV, TEST_TRANSCRIPTIONS_CSV, \
     AUDIO_DIR, TEXT_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV
@@ -96,7 +96,7 @@ TAG_RE = re.compile(r'<\|[^|]*\|>')     # SenseVoice 会输出 <|zh|><|NEUTRAL|>
 # ⚠️ 换语料后如果又冒出别的生僻字，往这张表里加即可（键=原字，值=同音常用字）。
 # 想知道哪些字 BERT 不认得：
 #     python -c "import csv,glob,collections,sys;sys.path.insert(0,'modules');\
-# from transformers import AutoTokenizer as T;from hf_models import resolve;\
+# from transformers import AutoTokenizer as T;from core.model_download import resolve;\
 # t=T.from_pretrained(resolve('bert-base-chinese'));\
 # c=collections.Counter(w['word'] for p in glob.glob('data/diagnosis/test/text/*/*.csv')\
 # for w in csv.DictReader(open(p,encoding='utf-8-sig')));\
@@ -111,7 +111,7 @@ GAP_FILL_MAX = 0.5
 
 
 def remove_non_english(text):
-    """与脚本①/convert_whisperx_words.py 保持一致。
+    """与脚本①/from_whisperx.py 保持一致。
 
     原来只保留 `[a-zA-Z0-9 ...]` —— 那是给英文写的，会把汉字全删光。
     这里改成保留 Unicode 字母数字（含汉字）+ 空白 + 常见中英文标点。

@@ -25,7 +25,7 @@
 #    里面要有 data/ 和 outputs/。
 #    默认：D:\桌面\科研\madress-2023（只在开发机上有意义）
 #    什么时候要设：只有在服务器上重新生成数据集时才需要
-#                  （tools/build_dataset.py）
+#                  （modules/dataset/build_dataset.py）
 #    注意：如果你是把做好的 data/diagnosis/ 直接 rsync 过去的，
 #          这个变量**根本不用设**。
 # ---------------------------------------------------------------------
@@ -36,7 +36,7 @@
 #    指向**具体文件**，不是目录。
 #    默认：<MADRESS_ROOT>/outputs/subject_extraction/subject_words.csv
 #    什么时候要设：只有重新生成词级时间戳时才需要
-#                  （tools/convert_whisperx_words.py）
+#                  （modules/preprocess/word_timestamps/from_whisperx.py）
 # ---------------------------------------------------------------------
 # export SUBJECT_WORDS_CSV=/data/madress-2023/outputs/subject_extraction/subject_words.csv
 
@@ -46,7 +46,7 @@
 #   项目里的 models/ 下；本地有就直接用，**不会重新下载也不会联网**。
 #       distilbert-base-uncased  (~257MB)  <- 文本特征用
 #       faster-whisper-small     (~464MB)  <- 语音转写用
-#   加载逻辑见 modules/hf_models.py。
+#   加载逻辑见 modules/core/model_download.py。
 # ---------------------------------------------------------------------
 # 模型放别处（比如服务器上模型单独放一个盘）
 # export COGNIALIGN_MODELS_DIR=/data/models
@@ -57,7 +57,7 @@
 
 # ---------------------------------------------------------------------
 # 附 B：HF 镜像（代码里已经给了可用默认值，一般不用改）
-#   本仓库的开发机连不上 huggingface.co，所以 hf_models.py 里默认把
+#   本仓库的开发机连不上 huggingface.co，所以 model_download.py 里默认把
 #   HF_ENDPOINT 指向 hf-mirror 镜像，并关掉 hf-mirror 不支持的 Xet 协议。
 #   服务器网络正常的话可以不设，代码用的是 setdefault，
 #   你在外面设了就以你的为准（要下模型时才用得上）。
@@ -88,5 +88,5 @@ EOF
         "${SUBJECT_WORDS_CSV:-<MADRESS_ROOT>/outputs/subject_extraction/subject_words.csv（默认）}"
     echo
     echo "想确认代码里实际解析成什么，跑这句："
-    echo "    cd <项目根> && python -c \"import sys;sys.path.insert(0,'modules');import hf_models,paths;print(paths.DATA_ROOT);print(hf_models.describe('distilbert-base-uncased'))\""
+    echo "    cd <项目根> && python -c \"import sys;sys.path.insert(0,'modules');import paths;from core import model_download;print(paths.DATA_ROOT);print(model_download.describe('distilbert-base-uncased'))\""
 fi

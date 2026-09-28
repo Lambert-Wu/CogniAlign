@@ -26,12 +26,12 @@ subject_only  已经切掉访谈者的 data/processed/subject_only/{train,test}/
 
 用法
 ----
-    python tools/build_dataset.py --source subject_only          # 建目录+复制+标签表+5折
-    python tools/build_dataset.py --source subject_only --check  # 只校验不写盘
+    python modules/dataset/build_dataset.py --source subject_only          # 建目录+复制+标签表+5折
+    python modules/dataset/build_dataset.py --source subject_only --check  # 只校验不写盘
 
     # 换机器（Linux 服务器等）：源语料和本项目都不在原来的位置时
     export MADRESS_ROOT=/data/madress-2023
-    python tools/build_dataset.py --source subject_only
+    python modules/dataset/build_dataset.py --source subject_only
 
 跨平台
 ------
@@ -49,7 +49,8 @@ import sys
 import numpy as np
 from sklearn.model_selection import KFold
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MODULES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # modules/
+PROJECT_ROOT = os.path.dirname(_MODULES_DIR)                                  # 项目根
 
 # 源语料在隔壁 madress-2023 项目里。这只是"本机默认值"：
 # 换机器（尤其是 Linux 服务器）用 --madress 或环境变量 MADRESS_ROOT 指过来。

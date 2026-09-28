@@ -56,7 +56,7 @@ TEST_TRANSCRIPTIONS_CSV = os.path.join(TEST_ROOT, "text_transcriptions.csv")
 # 和 DATA_ROOT 一样可以用环境变量挪走（服务器上模型常常单独放一个盘）：
 #     Windows:  set COGNIALIGN_MODELS_DIR=D:\models
 #     Linux:    export COGNIALIGN_MODELS_DIR=/data/models
-# 目录里再按模型名分子目录，见 modules/hf_models.py。
+# 目录里再按模型名分子目录，见 modules/core/model_download.py。
 MODELS_DIR = os.environ.get(
     "COGNIALIGN_MODELS_DIR",
     os.path.join(_PROJECT_ROOT, "models"),

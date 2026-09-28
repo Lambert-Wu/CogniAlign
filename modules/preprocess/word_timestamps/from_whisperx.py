@@ -5,7 +5,7 @@
 --------------
 `outputs/subject_extraction/subject_words.csv` 里的 `new_start/new_end` 是**切割后**的
 时间轴（对齐 `data/processed/subject_only` 音频，也就是本项目现在用的音频），
-并且已经按受试者筛过说话人。所以它可以代替 `preprocesswhisper.py` 的转写产物，
+并且已经按受试者筛过说话人。所以它可以代替 `transcribe_whisper.py` 的转写产物，
 省掉 40~60 分钟的 ASR。
 
 ⚠️ 反过来，`outputs/whisperx/final/*.json` **不能用**：它的时间是切割前的
@@ -26,8 +26,8 @@ c. 停顿标记按 new_ 时间轴的间隔算：>0.5s 插 ','、>1s 插 '.'、>2
 
 用法
 ----
-    python tools/convert_whisperx_words.py            # 真跑
-    python tools/convert_whisperx_words.py --check    # 只校验不写盘
+    python modules/preprocess/word_timestamps/from_whisperx.py            # 真跑
+    python modules/preprocess/word_timestamps/from_whisperx.py --check    # 只校验不写盘
 """
 
 import argparse
@@ -38,7 +38,7 @@ import sys
 
 import soundfile as sf
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'modules'))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # modules/
 from paths import (TEXT_DIR, AUDIO_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV,
                    TEST_TEXT_DIR, TEST_AUDIO_DIR, TEST_LABELS_CSV,
                    TEST_TRANSCRIPTIONS_CSV)

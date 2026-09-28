@@ -1,17 +1,26 @@
 # -*- coding: utf-8 -*-
-"""量一下「音频编码器没切 eval」到底带来多少随机噪声。
+"""量一下「音频编码器如果被留在 train 模式」会带来多少随机噪声。
 
-为什么要有这个脚本
-------------------
-`preprocessembeddings.py` 第 98 行的 `model.eval()` 只作用到文字模型（变量叫
-`model`），音频模型另叫 `wav2vec_model`、而且是在那句之后才创建的 —— 所以它
-一直停留在 train 模式。Wav2Vec2Model 在 train 模式下会：
+⚠️⚠️ 关于本脚本的一个更正（2026-09-28）
+----------------------------------------
+这个脚本最初是拿来证明「项目里的 wav2vec2 没切 eval、现有特征是脏的」——
+**那个结论是错的，已撤回**。`PreTrainedModel.from_pretrained()` 内部就会调
+`model.eval()`（`transformers/modeling_utils.py:4315`），所以从 HF 加载出来的模型
+**本来就是 eval 模式**，项目代码一直是干净的。
 
+但本脚本描述的现象本身是真的、也仍然有用：
+它展示的是「一旦模型真的处在 train 模式，特征会随机到什么程度」。
+所以它的正确定位是——**加/换音频编码器时的自检工具**，而不是"抓 bug 的证据"。
+
+用法：换模型（比如 XLS-R）之后跑一次，确认
+    ① eval 模式两次前向完全一致
+    ② 输出标准差在合理量级
+如果①不成立，说明那个模型没进 eval 模式，特征会带随机性。
+
+为什么会进城 train 模式会变成那样（`facebook/wav2vec2-base-960h` 的 config）：
     · layerdrop=0.1        → 每次前向随机跳过约 10% 的 Transformer 层
     · mask_time_prob=0.05  → 随机遮挡约 5% 的音频帧（用 masked_spec_embed 填）
     · hidden/attention dropout=0.1 → 再叠一层随机噪声
-
-结果就是：同一条录音，每次提出来的特征都不一样。本脚本把这个"不一样"量化出来。
 
 怎么量化
 --------
@@ -31,9 +40,9 @@
 
 用法
 ----
-    python tools/test_audio_mode.py            # 默认抽 8 条（含最长/最短）
-    python tools/test_audio_mode.py --n 3      # 少抽几条，跑得快
-    python tools/test_audio_mode.py --longest  # 只测最长那条（最费显存）
+    python modules/tools/probe_audio_encoder.py            # 默认抽 8 条（含最长/最短）
+    python modules/tools/probe_audio_encoder.py --n 3      # 少抽几条，跑得快
+    python modules/tools/probe_audio_encoder.py --longest  # 只测最长那条（最费显存）
 """
 
 import argparse
@@ -41,9 +50,9 @@ import csv
 import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
-sys.path.insert(0, os.path.join(_ROOT, "modules"))
+_MODULES = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # modules/
+_ROOT = os.path.dirname(_MODULES)                                        # 项目根
+sys.path.insert(0, _MODULES)
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
@@ -52,7 +61,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 import paths  # noqa: E402
-from hf_models import resolve  # noqa: E402
+from core.model_download import resolve  # noqa: E402
 from transformers import Wav2Vec2Model, Wav2Vec2Processor  # noqa: E402
 
 SQRT2 = 2 ** 0.5

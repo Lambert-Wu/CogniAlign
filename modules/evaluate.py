@@ -12,11 +12,11 @@
 用法
 ----
     # 用单折权重评估测试集
-    COGNIALIGN_SPLIT=test python tools/evaluate.py \
+    COGNIALIGN_SPLIT=test python modules/evaluate.py \
         --checkpoint checkpoints/2026-09-27_distil_wav2vec2_cross_mean/model_fold_0.pth
 
     # 目录里有 5 折就都跑，再给平均
-    COGNIALIGN_SPLIT=test python tools/evaluate.py \
+    COGNIALIGN_SPLIT=test python modules/evaluate.py \
         --checkpoint checkpoints/2026-09-27_distil_wav2vec2_cross_mean
 
 ⚠️ 语种要自己留意
@@ -35,11 +35,11 @@ import re
 import sys
 import time
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_MODULES = os.path.join(_PROJECT_ROOT, 'modules')
+_MODULES = os.path.dirname(os.path.abspath(__file__))      # 本文件就在 modules/ 下
+_PROJECT_ROOT = os.path.dirname(_MODULES)                   # 项目根
 sys.path.insert(0, _MODULES)
 
-# main.py 顶层会 wandb.login()，评估用不到它，先把开关设死。
+# train.py 顶层会 wandb.login()，评估用不到它，先把开关设死。
 os.environ.setdefault('WANDB_MODE', 'disabled')
 os.environ.setdefault('WANDB_SILENT', 'true')
 
@@ -52,8 +52,8 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
 from torch.utils.data import DataLoader
 
 import paths
-from dataset import AdressoDataset, read_CSV
-from model import (BidirectionalCrossAttentionTransformerEncoder,
+from dataset.dataset import AdressoDataset, read_CSV
+from networks.model import (BidirectionalCrossAttentionTransformerEncoder,
                    CrossAttentionTransformerEncoder, ElementWiseFusionEncoder,
                    MyTransformerEncoder)
 

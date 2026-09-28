@@ -4,16 +4,16 @@
 
 ⚠️ 设计约束（很重要）
 --------------------
-本文件**绝不 import** preprocessembeddings.py / preprocesswhisper.py / main.py。
+本文件**绝不 import** extract_features.py / transcribe_whisper.py / train.py。
 这三个脚本没有 `if __name__ == "__main__":` 保护，import 即执行整个流程，
 会静默覆盖已有产物 —— 这个坑实际踩过（覆盖了 105 个逐词表）。
 需要知道这些脚本里的配置时，只用正则读源码文本，绝不执行。
 
 用法
 ----
-    python tools/check_env.py                # 检查特征提取（默认）
-    python tools/check_env.py --mode asr     # 检查语音转写
-    python tools/check_env.py --mode train   # 检查训练
+    python modules/tools/check_env.py                # 检查特征提取（默认）
+    python modules/tools/check_env.py --mode asr     # 检查语音转写
+    python modules/tools/check_env.py --mode train   # 检查训练
 
 退出码：0 = 通过（可能带提醒），1 = 有硬性缺失。
 """
@@ -22,9 +22,10 @@ import os
 import re
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "modules"))
+HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
+MODULES_DIR = os.path.dirname(HERE)                     # modules/
+ROOT = os.path.dirname(MODULES_DIR)                     # 项目根
+sys.path.insert(0, MODULES_DIR)
 
 # --------------------------------------------------------------------------
 # 参数
@@ -151,22 +152,22 @@ except Exception as e:
 section("路径")
 try:
     import paths
-    import hf_models
+    from core import model_download
     info("数据集   %s" % paths.DATA_ROOT)
     info("模型目录 %s" % paths.MODELS_DIR)
     if not os.path.isdir(paths.DATA_ROOT):
         bad("数据集目录不存在: %s\n"
             "       设环境变量 COGNIALIGN_DATA_ROOT 指向 diagnosis 目录（train/ 的父目录）" % paths.DATA_ROOT)
 except Exception as e:
-    bad("paths/hf_models 导入失败: %s" % e)
+    bad("paths/model_download 导入失败: %s" % e)
     paths = None
-    hf_models = None
+    model_download = None
 
 
 # --------------------------------------------------------------------------
 # 4b) 读源码里的配置（正则，绝不执行）
 # --------------------------------------------------------------------------
-EMBED_SRC = os.path.join(ROOT, "modules", "preprocess", "preprocessembeddings.py")
+EMBED_SRC = os.path.join(MODULES_DIR, "preprocess", "extract_features.py")
 
 
 def grab(src, name):
@@ -201,7 +202,7 @@ try:
     if audio not in AUDIO_REPO:
         audio = getattr(paths, "AUDIO_MODEL", audio)
 except Exception as e:
-    warn("读不到 preprocessembeddings.py 的配置: %s" % e)
+    warn("读不到 extract_features.py 的配置: %s" % e)
 
 
 # --------------------------------------------------------------------------
@@ -257,8 +258,8 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
             ok("逐词时间戳 %d 个 csv" % n_word)
         else:
             bad("没有逐词时间戳（text/<dx>/<uid>.csv）。先跑脚本①：\n"
-                "       cd modules && python preprocess/preprocesswhisper.py\n"
-                "       或（秒级）python tools/convert_whisperx_words.py")
+                "       cd modules && python preprocess/word_timestamps/transcribe_whisper.py\n"
+                "       或（秒级）python modules/preprocess/word_timestamps/from_whisperx.py")
 
         if os.path.exists(paths.SPLIT_TRANSCRIPTIONS_CSV):
             with open(paths.SPLIT_TRANSCRIPTIONS_CSV, encoding="utf-8-sig", newline="") as f:
@@ -309,7 +310,7 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
 # --------------------------------------------------------------------------
 # 6) 模型
 # --------------------------------------------------------------------------
-if hf_models is not None and paths is not None:
+if model_download is not None and paths is not None:
     section("模型")
 
     need = []
@@ -335,12 +336,12 @@ if hf_models is not None and paths is not None:
         info("本步骤不需要额外模型")
 
     for repo, why in need:
-        path, ready = hf_models.describe(repo)
+        path, ready = model_download.describe(repo)
         if ready:
             size = sum(os.path.getsize(os.path.join(path, f))
                        for f in os.listdir(path) if os.path.isfile(os.path.join(path, f)))
             ok("%s 本地已有 (%.0f MB)  %s" % (repo, size / 1024 ** 2, why))
-        elif hf_models.offline_mode():
+        elif model_download.offline_mode():
             bad("COGNIALIGN_OFFLINE=1 且本地没有 %s\n"
                 "       期望位置: %s\n"
                 "       放好模型，或取消这个环境变量让它联网下载" % (repo, path))

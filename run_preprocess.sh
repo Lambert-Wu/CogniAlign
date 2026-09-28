@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =====================================================================
-# CogniAlign 特征提取（preprocessembeddings.py）一键启动脚本
+# CogniAlign 特征提取（extract_features.py）一键启动脚本
 # Linux / macOS / Git Bash 通用
 # ---------------------------------------------------------------------
 # 用法：
@@ -21,7 +21,7 @@
 #   -s all 时会按顺序跑 train → test，每跑完一个立刻做一次结果核对，
 #   两个 split 的报告都写进同一个日志，用分隔线隔开。
 #
-# 耗时取决于音频线路（见 preprocessembeddings.py 的 audio_model）：
+# 耗时取决于音频线路（见 extract_features.py 的 audio_model）：
 #     wav2vec2（当前）  每条 8~35 秒，235 条约 1 小时
 #     egemaps           每条 43~62 秒，235 条约 3 小时
 # 脚本会自己从 paths.py 读出当前线路打印在日志开头，不用你记。
@@ -58,8 +58,8 @@ fi
 HERE="$(cd "$(dirname "$_SELF_PATH")" && pwd)"
 SELF="$HERE/$(basename "$_SELF_PATH")"
 MODULES_DIR="$HERE/modules"
-ENTRY="preprocess/preprocessembeddings.py"   # 相对 modules/ 的路径
-EMBED_SRC="$MODULES_DIR/preprocess/preprocessembeddings.py"
+ENTRY="preprocess/extract_features.py"   # 相对 modules/ 的路径
+EMBED_SRC="$MODULES_DIR/preprocess/extract_features.py"
 
 # 从脚本② 源码读出当前模型线路（用正则读文本，**绝不 import** ——
 # 那个脚本没有 __main__ 保护，import 即执行，会覆盖已有产物）。
@@ -307,7 +307,7 @@ if [ "$WORKER" = 1 ]; then
 
         echo
         echo "--- [${IDX}/${TOTAL}] $SP 结果核对 ---"
-        "$PYTHON" "$HERE/tools/verify_features.py" || true
+        "$PYTHON" "$HERE/modules/tools/verify_features.py" || true
         echo "(核对结束，不影响主流程)"
     done
 
@@ -373,7 +373,7 @@ for SP in "${SPLITS[@]}"; do
         echo
         echo "--- 自检 [${_IDX}/${#SPLITS[@]}] split=$SP ---"
     fi
-    if ! "$PYTHON" -u "$HERE/tools/check_env.py" --mode preprocess; then
+    if ! "$PYTHON" -u "$HERE/modules/tools/check_env.py" --mode preprocess; then
         echo
         echo "自检没通过（split=$SP）—— 按上面标 [!!] 的项逐条解决，然后重跑。"
         echo "想单独再看一次自检（不跑）：bash run_preprocess.sh -c -s $SP"

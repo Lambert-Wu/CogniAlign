@@ -10,13 +10,13 @@
 4. 用**真实的 dataset.read_CSV()** 把特征读一遍 —— 证明训练真的吃得上这些文件
    （形状、标签分布都会打印）
 
-⚠️ 同样不 import preprocessembeddings.py（它没有 __main__ 保护，import 即执行）。
+⚠️ 同样不 import extract_features.py（它没有 __main__ 保护，import 即执行）。
    脚本里的配置用正则读源码。
 
 用法
 ----
-    python tools/verify_features.py            # 完整核对（含 read_CSV）
-    python tools/verify_features.py --quick    # 只数文件，不加载张量
+    python modules/tools/verify_features.py            # 完整核对（含 read_CSV）
+    python modules/tools/verify_features.py --quick    # 只数文件，不加载张量
 """
 
 import csv
@@ -25,15 +25,16 @@ import re
 import sys
 import types
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "modules"))
+HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
+MODULES_DIR = os.path.dirname(HERE)                     # modules/
+ROOT = os.path.dirname(MODULES_DIR)                     # 项目根
+sys.path.insert(0, MODULES_DIR)
 
 QUICK = "--quick" in sys.argv
 
 import paths  # noqa: E402
 
-EMBED_SRC = os.path.join(ROOT, "modules", "preprocess", "preprocessembeddings.py")
+EMBED_SRC = os.path.join(MODULES_DIR, "preprocess", "extract_features.py")
 
 
 def grab(src, name):
@@ -136,7 +137,7 @@ if QUICK:
     print("--quick：跳过 read_CSV 加载。")
 elif len(ok_uids) == n:
     import torch  # noqa: E402
-    import dataset  # noqa: E402
+    from dataset import dataset  # noqa: E402
 
     # 只验证「文件读得出来、形状对不对」，不需要显存，强制走 CPU
     dataset.device = torch.device("cpu")

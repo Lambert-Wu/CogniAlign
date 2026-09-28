@@ -1,6 +1,6 @@
 import os
 
-# 与 preprocesswhisper.py 一致：这台机器连不上 huggingface.co，默认走镜像。
+# 与 transcribe_whisper.py 一致：这台机器连不上 huggingface.co，默认走镜像。
 # 必须在 import transformers 之前设置（huggingface_hub 导入时就读这个变量）。
 os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 
@@ -24,16 +24,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # SPLIT / TEXT_MODEL / SPLIT_* 都在 paths.py 里统一决定（读环境变量）
 from paths import (SPLIT, TEXT_MODEL, AUDIO_MODEL, SPLIT_ROOT, SPLIT_AUDIO_DIR,
                    SPLIT_TEXT_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV)
-from hf_models import resolve
+from core.model_download import resolve
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Avaiable: bert, roberta, distil, chinese, stella, mistral, qwen
-# 取值必须与 main.py 用的 configs/*.yaml 对齐，否则生成的特征文件名
+# 取值必须与 train.py 用的 configs/*.yaml 对齐，否则生成的特征文件名
 # 跟 dataset.py 要找的对不上（configs/default.yaml 是下面这两个值）。
 # 允许用环境变量覆盖 —— 同一份代码要跑 train（英文 distil）和
 # test（中文 chinese）两套配置：
-#     COGNIALIGN_SPLIT=test COGNIALIGN_TEXT_MODEL=chinese python preprocess/preprocessembeddings.py
+#     COGNIALIGN_SPLIT=test COGNIALIGN_TEXT_MODEL=chinese python preprocess/extract_features.py
 textual_model = TEXT_MODEL          # 来自 paths.py：test 默认 chinese，其余 distil
 audio_model = AUDIO_MODEL
 pauses = False
@@ -56,7 +56,7 @@ name_mapping_audio = {
 }
 audio_model_data = '_' + name_mapping_audio.get(audio_model, '')
 
-# 所有模型一律经 hf_models.resolve() 拿本地路径：
+# 所有模型一律经 model_download.resolve() 拿本地路径：
 # 本地 models/<名字>/ 里已经有就直接用（不发任何网络请求），
 # 没有才下载到那里。不再直接写 repo 名 —— 那样即使本地有缓存，
 # transformers 也会先去 huggingface.co 校验版本，这台机器连不上。
