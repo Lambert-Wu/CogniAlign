@@ -235,9 +235,19 @@ if [ "$WORKER" = 1 ]; then
     echo "      $RESULT_DIR/train_stats_<折号>.txt"
     echo "      想看某折的进度就另开一个终端 tail -f 那个文件。"
     echo
+    echo "⚠️ 启动后会有约 1~2 分钟「什么也不打印」的阶段："
+    echo "   它正在把 235 条特征（约 700MB）读进内存。这是正常的，不是卡死。"
+    echo "   如果 5 分钟后还是空白 —— 先别等，用前台模式重跑一次看真实报错："
+    echo "       PYTHON=<你的解释器> bash run_train.sh          # 不加 -b"
+    echo
 
     set +e
-    "$PYTHON" "$ENTRY" --config "$CONFIG"
+    # ★ 必须加 -u（无缓冲）。
+    #   不加的话 Python 在「输出重定向到文件」时用 8KB 块缓冲，
+    #   训练打的字又少 —— 日志会长时间停在启动横幅那里一动不动，
+    #   看着像卡死，其实进程在正常跑（血的教训：2026-09-28 在服务器上就是这个现象）。
+    #   自检那一步本来就带 -u，主流程这里之前漏了。
+    "$PYTHON" -u "$ENTRY" --config "$CONFIG"
     RC=$?
 
     echo

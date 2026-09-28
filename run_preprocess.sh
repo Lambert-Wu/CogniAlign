@@ -316,7 +316,9 @@ if [ "$WORKER" = 1 ]; then
         echo
 
         set +e
-        "$PYTHON" "$ENTRY"
+        # ★ 加 -u（无缓冲）：输出重定向到文件时 Python 默认 8KB 块缓冲，
+        #   不加的话日志会一阵一阵地跳，看着像卡住。
+        "$PYTHON" -u "$ENTRY"
         _RC=$?
         set -e
         [ "$_RC" -eq 0 ] || RC="$_RC"
