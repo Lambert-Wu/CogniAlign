@@ -15,6 +15,7 @@
     dataset:
       max_length: 512
       pauses: true
+      features_dir: 'text'    # 特征 .pt 放哪；换模型做对比实验时改成别的名字
     encoders:
       text:
         distil: {suffix: 'distil', repo: 'distilbert-base-uncased', dim: 768}
@@ -78,6 +79,11 @@ class Spec(object):
         ds = cfg.get('dataset', {})
         self.pauses = bool(ds.get('pauses', False))
         self.max_length = int(ds.get('max_length', 512))
+        # 特征 .pt 放哪个子目录（相对 <split>/）。
+        # 默认 'text' —— 老行为：特征和逐词表 .csv 挤在同一个目录里。
+        # 做「换模型」对比实验时改成别的名字（如 'text_xlmr_xlsr'），
+        # 新老两套特征就能并存在不同目录，互不覆盖。
+        self._features_dir = str(ds.get('features_dir', 'text') or 'text').strip()
 
     # ------------------------------------------------------------ 查表
     def _entry(self, kind, name):
@@ -116,6 +122,16 @@ class Spec(object):
         return self.text_suffix() + '_' + self.audio_entry().get('suffix', '')
 
     # ------------------------------------------------------------ 参数
+    def features_dir(self):
+        """特征 `.pt` 存放的子目录名（相对 `<split>/`），默认 `'text'`。
+
+        ⚠️ 逐词表的 `.csv` **不跟着这个走** —— 它始终在 `<split>/text/`。
+        这里只决定 `.pt` 放哪，所以可以放心改（不会把时间戳表也搬走）。
+        提取端（extract_features.py）和读取端（dataset.py）都查同一个配置，
+        所以不会出现"存到一个目录、读另一个目录"的错位。
+        """
+        return self._features_dir
+
     def fps(self):
         """音频每秒多少帧（原 segment_length），把时间戳的「秒」换算成帧号。"""
         return int(self.audio_entry().get('fps', 50))

@@ -41,6 +41,9 @@ audio_model = paths.AUDIO_MODEL
 # 以前这里是去抓 extract_features.py 的源码文本（正则匹配 `max_length = 512`），
 # 那边一改写法就失效；现在和训练、特征提取共用同一份配置。
 spec = feature_spec.load_default(textual_model=textual_model, audio_model=audio_model)
+# 特征 .pt 的目录：跟配置的 dataset.features_dir 走（默认 'text'）。
+# 提取端 extract_features.py 查的是同一个来源，所以核对的和写出的必然一致。
+feat_dir = paths.feature_dir(spec.features_dir())
 max_length = spec.max_length
 pauses = spec.pauses
 text_suffix = spec.text_suffix()
@@ -64,7 +67,7 @@ with open(paths.SPLIT_LABELS_CSV, encoding="utf-8-sig", newline="") as f:
 missing_text, missing_audio, empty_files, ok_uids = [], [], [], []
 for r in labels:
     uid, dx = r["adressfname"], r["dx"]
-    d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
+    d = os.path.join(feat_dir, dx)
     t = os.path.join(d, uid + text_suffix + ".pt")
     a = os.path.join(d, uid + audio_suffix + ".pt")
     for p, bucket in ((t, missing_text), (a, missing_audio)):
@@ -92,7 +95,7 @@ if empty_files:
 # 磁盘上多出来的（标签表里没有的 uid）
 extra = []
 for dx in ("ad", "cn"):
-    d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
+    d = os.path.join(feat_dir, dx)
     if not os.path.isdir(d):
         continue
     want = {r["adressfname"] + audio_suffix + ".pt" for r in labels if r["dx"] == dx}

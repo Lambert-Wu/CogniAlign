@@ -94,3 +94,16 @@ else:
     SPLIT_TEXT_DIR = TEXT_DIR
     SPLIT_LABELS_CSV = LABELS_CSV
     SPLIT_TRANSCRIPTIONS_CSV = TRANSCRIPTIONS_CSV
+
+
+def feature_dir(name="text"):
+    """特征 `.pt` 的存放目录：`<当前 split>/<name>/`。
+
+    `name` 来自配置的 `dataset.features_dir`（见 core/feature_spec.py），
+    默认 `'text'` —— 和逐词表同目录，是沿用已久的老行为。
+
+    ⚠️ **只有特征 .pt 跟着这个走**；逐词表的 `.csv` 始终在 SPLIT_TEXT_DIR。
+    所以换模型做对比实验时，把 features_dir 改成别的名字，
+    新特征就和旧特征分开放了，而时间戳表不会被动到。
+    """
+    return os.path.join(SPLIT_ROOT, name)

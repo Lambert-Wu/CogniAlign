@@ -23,7 +23,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # SPLIT / TEXT_MODEL / SPLIT_* 都在 paths.py 里统一决定（读环境变量）
 from paths import (SPLIT, TEXT_MODEL, AUDIO_MODEL, SPLIT_ROOT, SPLIT_AUDIO_DIR,
-                   SPLIT_TEXT_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV)
+                   SPLIT_TEXT_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV,
+                   feature_dir)
 from core import feature_spec
 from core import encoders
 
@@ -83,10 +84,29 @@ segment_length = spec.fps()
 # 当前 split 对应的路径，在 paths.py 里统一决定（SPLIT_* 那一组）
 ROOT_DIR = SPLIT_ROOT
 root_path = SPLIT_AUDIO_DIR + os.sep
+# 逐词表 .csv 的目录（脚本① 的产出）。**特征不放这儿**，别混了。
 root_text_path = SPLIT_TEXT_DIR + os.sep
+# 特征 .pt 的目录 —— 由配置的 dataset.features_dir 决定（见 core/feature_spec.py）。
+# 默认 'text' 就是上面那个目录（沿用已久的老行为）；
+# 换成别的名字（如 'text_xlmr_xlsr'）就把新模型的特征单独放一处，
+# 和旧特征并存互不覆盖。读取端 dataset.py 查的是同一个配置，不会错位。
+root_feat_path = feature_dir(spec.features_dir()) + os.sep
 textual_data = SPLIT_TRANSCRIPTIONS_CSV
 LABELS_PATH = SPLIT_LABELS_CSV
 print(f"处理 split: {SPLIT}  |  文本模型: {textual_model}  |  数据根: {ROOT_DIR}")
+print(f"特征输出目录: {root_feat_path}")
+
+
+def save_feature(tensor, diagno, filename):
+    """把特征写进 root_feat_path/<dx>/<filename>（目录不存在就建）。
+
+    单独抽出来是因为要写两处（文本 / 音频），而换了 features_dir 之后
+    新目录一开始并不存在 —— 以前那个目录是脚本①建逐词表时顺手建好的，
+    所以这里不建目录就会直接报 FileNotFoundError。
+    """
+    d = os.path.join(root_feat_path, diagno)
+    os.makedirs(d, exist_ok=True)
+    torch.save(tensor, os.path.join(d, filename))
 
 # 文本/音频统一对齐到这么长的序列。
 # 原代码是 200；本数据集真实分词后 token 数中位 129、最大 593，
@@ -131,7 +151,7 @@ def preprocess_text():
         判大小而不只判存在：中途崩掉可能留下 0 字节的半个文件，
         那种情况要重做，不能当成已完成。
         """
-        base = os.path.join(root_text_path, diagno,
+        base = os.path.join(root_feat_path, diagno,
                             uid + textual_model_data + pauses_data)
         for p in (base + '.pt', base + audio_model_data + '.pt'):
             if not os.path.exists(p) or os.path.getsize(p) == 0:
@@ -146,7 +166,7 @@ def preprocess_text():
         """
         print(f"SKIP {row['diagno']}/{row['uid']}: {reason}")
         skipped.append((row['uid'], row['diagno'], reason))
-        orphan = os.path.join(root_text_path, row['diagno'],
+        orphan = os.path.join(root_feat_path, row['diagno'],
                               row['uid'] + textual_model_data + pauses_data + '.pt')
         if os.path.exists(orphan):
             os.remove(orphan)
@@ -205,7 +225,8 @@ def preprocess_text():
 
         # Save the embeddings
         last_hidden_states_text = outputs_text.last_hidden_state.squeeze(0).cpu()
-        torch.save(last_hidden_states_text, os.path.join(root_text_path, row['diagno'], row['uid'] + textual_model_data + pauses_data + '.pt'))
+        save_feature(last_hidden_states_text, row['diagno'],
+                     row['uid'] + textual_model_data + pauses_data + '.pt')
 
         if audio_model != '':
             audio_path = os.path.join(root_path, row['diagno'], row['uid'] + '.wav')
@@ -293,6 +314,22 @@ def preprocess_text():
             tokens = tokenizer.convert_ids_to_tokens(input_ids.tolist())
             word_mapping = []
 
+            # ── 分词器怎么把 token 拼回"词"：两种流派，靠配置区分 ──────────
+            #   · WordPiece（bert / distilbert / bert-base-chinese）
+            #       **子词**带前缀 '##'（working -> work + ##ing），词首不带
+            #   · SentencePiece（xlm-roberta：'▁'）/ byte-level BPE（roberta：'Ġ'）
+            #       **词首**带前缀（▁tell▁me），子词不带 —— 规则正好相反
+            #
+            # 这两种规则必须分开处理。搞混的后果不是"切错一点"，而是
+            # token 根本分不成词 -> act_word 累积出来的串永远匹配不上 ->
+            # 最后 `音频段数 + 2 != token 数` 把**整条样本**跳过
+            # （实测：xlmr 用它跑 4 条，跳过 4 条）。
+            #
+            # ⚠️ 以前这里写死 `token.startswith("##")`，只能跑 WordPiece 系。
+            #    现在从配置的 encoders.text.<名字> 读，加新分词器不用改这里。
+            subword_prefix = str(spec.text_entry().get('subword_prefix', '##') or '')
+            word_start_prefix = str(spec.text_entry().get('word_start_prefix', '') or '')
+
             current_word = ""
             current_tokens = []
             current_token_ids = []
@@ -304,19 +341,27 @@ def preprocess_text():
                 if start == 0 and end == 0:
                     continue
 
-                # Check for subwords (##) and group tokens into words
-                if token.startswith("##"):
-                    current_word += token[2:]
-                    current_tokens.append(token)
-                    current_token_ids.append(token_id)
+                if word_start_prefix:
+                    # 词首带前缀的流派：带前缀 = 新词开始，不带 = 上一个词的延续
+                    starts_new = token.startswith(word_start_prefix)
+                    piece = token[len(word_start_prefix):] if starts_new else token
                 else:
+                    # 子词带前缀的流派（WordPiece）：带前缀 = 延续，不带 = 新词
+                    starts_new = not token.startswith(subword_prefix)
+                    piece = token[len(subword_prefix):] if not starts_new else token
+
+                if starts_new:
                     # Save previous word
                     if current_word:
                         word_mapping.append((current_word, current_tokens, current_token_ids))
                     # Start a new word
-                    current_word = token
+                    current_word = piece
                     current_tokens = [token]
                     current_token_ids = [token_id]
+                else:
+                    current_word += piece
+                    current_tokens.append(token)
+                    current_token_ids.append(token_id)
 
             # Save the last word
             if current_word:
@@ -505,7 +550,8 @@ def preprocess_text():
                      f"音频总帧数 {last_hidden_states_audio.shape[0]}，segment_length {segment_length}）")
                 continue
             
-            torch.save(processed_audio_tensor, os.path.join(root_text_path, row['diagno'], row['uid'] + textual_model_data + pauses_data + audio_model_data + '.pt'))
+            save_feature(processed_audio_tensor, row['diagno'],
+                         row['uid'] + textual_model_data + pauses_data + audio_model_data + '.pt')
 
             
             completed_audios += 1

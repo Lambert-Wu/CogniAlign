@@ -7,12 +7,14 @@ from sklearn.model_selection import KFold
 # ⚠️ 用 SPLIT_* 而不是写死 train 的那套：跑 test（中文语料）时
 # COGNIALIGN_SPLIT=test 会把它们切到 data/diagnosis/test/。
 # SPLIT=train 时 SPLIT_* 就等于下面注释里的 train 路径，行为完全不变。
-from paths import SPLITS_DIR, SPLIT_TEXT_DIR, SPLIT_AUDIO_DIR, SPLIT_LABELS_CSV
+from paths import SPLITS_DIR, SPLIT_LABELS_CSV, feature_dir
 from core import feature_spec
 
-# 路径集中在 paths.py，默认指向项目内 data/diagnosis/train/
-root_text_path = SPLIT_TEXT_DIR + os.sep
-root_audio_path = SPLIT_AUDIO_DIR + os.sep
+# ⚠️ 特征 .pt 的目录**不在这里写死** —— 它跟着配置的 dataset.features_dir 走
+# （默认 'text'，即"和逐词表同目录"的老行为），在 read_CSV() 里现算。
+# 换模型做对比实验时把 features_dir 改成别的名字，两套特征就分开放了。
+# 这里原本还有 root_text_path / root_audio_path 两个模块级常量，
+# 前者是特征目录（已改为配置驱动）、后者全项目没人用，都已删除。
 
 # 标签表同样跟着 split 走（test 是 test/test_labels.csv）
 csv_labels_path = SPLIT_LABELS_CSV
@@ -58,6 +60,9 @@ def read_CSV(config):
     spec = feature_spec.from_config(config)
     text_suffix = spec.text_suffix()
     audio_suffix = spec.audio_suffix()
+    # 特征放在哪个目录也查同一份配置（dataset.features_dir）。
+    # 提取端 extract_features.py 用的是同一个来源，所以不会"存一边、读另一边"。
+    root_feat_path = feature_dir(spec.features_dir()) + os.sep
 
 
     for index, row in labels_pd.iterrows():
@@ -67,11 +72,11 @@ def read_CSV(config):
 
 
         if config.model.textual_model != '':
-            text_embeddings_path = os.path.join(root_text_path, row['dx'],
+            text_embeddings_path = os.path.join(root_feat_path, row['dx'],
                                                 row['adressfname'] + text_suffix + '.pt')
 
         if config.model.audio_model != '':
-            audio_embeddings_path = os.path.join(root_text_path, row['dx'],
+            audio_embeddings_path = os.path.join(root_feat_path, row['dx'],
                                                  row['adressfname'] + audio_suffix + '.pt')
         
         if config.model.multimodality:

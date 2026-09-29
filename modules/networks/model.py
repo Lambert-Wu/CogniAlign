@@ -104,31 +104,43 @@ class ResNetAudio(nn.Module):
         return x
 
 
-def audio_needs_projection(config):
-    """音频编码器的输出维度不等于 hidden_size 时，需要一层 ResNet 把它升上来。
+def audio_projection_kind(config):
+    """音频编码器输出维度 != hidden_size 时，用哪种层把它对齐：
+
+        'resnet'  **低维人工特征**（mel 谱 80 / eGeMAPS 88）-> ResNet 卷积升维。
+                  这类特征的最后一维是真正的**频率轴**，沿它做 2D 卷积有意义。
+        'linear'  **高维神经网络特征**（XLS-R 1024）-> 线性层降维。
+                  两点原因：
+                  · 它的最后一维是抽象**语义表示**，相邻两维之间没有空间关系，
+                    ResNet 依赖的"局部性"假设不成立；
+                  · ResNetAudio 把 F 当作"图像宽度"，那一层激活 ∝ B×768×T×F：
+                        F=88    -> 0.13 GB/样本    batch=32 ->  4 GB
+                        F=1024  -> 1.50 GB/样本    batch=32 -> 48 GB
+                    1024 维是**量级问题**（比 88 大 11.6 倍），连 24GB 的卡都放不下
+                    —— 本机实测 batch_size=1 都 OOM。
+                    Linear 的激活只有 B×T×768，batch=32 约 48 MB。
+        None      维度相同，不用投影。
 
     以前这里是 `if 'mel' in model_name or 'egemaps' in model_name` —— 靠模型名字猜。
     症状有两个：
-      · 换个名字相近的编码器就判错（比如 xlsr 也是 768 维，却会被当成需要升维）
+      · 换个名字相近的编码器就判错
       · 每个类里都复制一遍这段判断，其中三个类还写成了两个条件**完全相同**的
         if/elif，第二个分支永远是死代码
 
-    现在只看维度：`encoders.audio.<名字>.dim` 由 core/utils.get_config() 带进
-    config.model.audio_dim。wav2vec2 是 768 = hidden_size → 不用升；
-    eGeMAPS 88、mel 谱 80 → 要升。
+    现在只看维度：`encoders.audio.<名字>.dim` 由 core/utils.apply_encoder_meta()
+    带进 config.model.audio_dim。wav2vec2 是 768 = hidden_size → 不投影；
+    eGeMAPS 88 / mel 谱 80 → 升维；XLS-R 1024 → 降维。
     """
     if not hasattr(config, 'get'):
-        return False
-    audio_dim = config.get('audio_dim', 0)
+        return None
     try:
-        audio_dim = int(audio_dim)
-    except (TypeError, ValueError):
-        return False
-    try:
+        audio_dim = int(config.get('audio_dim', 0))
         hidden = int(config.hidden_size)
     except (TypeError, ValueError):
-        return False
-    return audio_dim > 0 and audio_dim != hidden
+        return None
+    if audio_dim <= 0 or audio_dim == hidden:
+        return None
+    return 'linear' if audio_dim > hidden else 'resnet'
 
 
 class CrossAttentionEncoderLayer(nn.Module):
@@ -240,10 +252,12 @@ class CrossAttentionTransformerEncoder(nn.Module):
         self.model_name = config.model_name
         self.config = config
 
-        # 靠维度判断，不看模型名（见 audio_needs_projection）
-        self.audio_needs_proj = audio_needs_projection(config)
-        if self.audio_needs_proj:
-            self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
+        # 靠维度判断，不看模型名（见 audio_projection_kind）
+        self.audio_proj_kind = audio_projection_kind(config)
+        if self.audio_proj_kind == 'resnet':
+            self.audio_proj_layer = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
+        elif self.audio_proj_kind == 'linear':
+            self.audio_proj_layer = nn.Linear(int(config.audio_dim), int(config.hidden_size))
 
 
         # 带不带门控由配置的 model.gated 显式决定，不再从 fusion 字符串里猜
@@ -292,10 +306,9 @@ class CrossAttentionTransformerEncoder(nn.Module):
         
         src, memory = features
 
-        if self.audio_needs_proj:
-            # 音频侧是低维特征（mel 谱 / eGeMAPS），先升到 hidden_size
-            # （原来这里的 elif 条件与上面完全相同，是进不去的死代码）
-            src = self.mel_extractor(src)
+        if self.audio_proj_kind:
+            # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降
+            src = self.audio_proj_layer(src)
 
         # Iterate over layers with normalization in between
         for i, layer in enumerate(self.layers):
@@ -325,10 +338,12 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
         self.fusion = config.fusion
         self.config = config
 
-        # 靠维度判断，不看模型名（见 audio_needs_projection）
-        self.audio_needs_proj = audio_needs_projection(config)
-        if self.audio_needs_proj:
-            self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
+        # 靠维度判断，不看模型名（见 audio_projection_kind）
+        self.audio_proj_kind = audio_projection_kind(config)
+        if self.audio_proj_kind == 'resnet':
+            self.audio_proj_layer = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
+        elif self.audio_proj_kind == 'linear':
+            self.audio_proj_layer = nn.Linear(int(config.audio_dim), int(config.hidden_size))
         
 
         # 带不带门控由配置的 model.gated 显式决定，不再从 fusion 字符串里猜
@@ -397,10 +412,9 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
         
         src, memory = features
 
-        if self.audio_needs_proj:
-            # 音频侧是低维特征（mel 谱 / eGeMAPS），先升到 hidden_size
-            # （原来这里的 elif 条件与上面完全相同，是进不去的死代码）
-            src = self.mel_extractor(src)
+        if self.audio_proj_kind:
+            # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降
+            src = self.audio_proj_layer(src)
 
         # Copy src into src1 tensor
         src1 = src.clone()
@@ -457,10 +471,12 @@ class ElementWiseFusionEncoder(nn.Module):
         hidden_size = config.hidden_size * 2 if self.fusion == 'concat' else config.hidden_size
 
 
-        # 靠维度判断，不看模型名（见 audio_needs_projection）
-        self.audio_needs_proj = audio_needs_projection(config)
-        if self.audio_needs_proj:
-            self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
+        # 靠维度判断，不看模型名（见 audio_projection_kind）
+        self.audio_proj_kind = audio_projection_kind(config)
+        if self.audio_proj_kind == 'resnet':
+            self.audio_proj_layer = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
+        elif self.audio_proj_kind == 'linear':
+            self.audio_proj_layer = nn.Linear(int(config.audio_dim), int(config.hidden_size))
         
         self.encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -488,10 +504,9 @@ class ElementWiseFusionEncoder(nn.Module):
 
         src, memory = features
 
-        if self.audio_needs_proj:
-            # 音频侧是低维特征（mel 谱 / eGeMAPS），先升到 hidden_size
-            # （原来这里的 elif 条件与上面完全相同，是进不去的死代码）
-            src = self.mel_extractor(src)
+        if self.audio_proj_kind:
+            # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降
+            src = self.audio_proj_layer(src)
 
         if self.fusion == 'concat':
             features = torch.cat((src, memory), dim=2)
@@ -525,10 +540,12 @@ class MyTransformerEncoder(nn.Module):
 
         self.model_name = config.model_name
 
-        # 靠维度判断，不看模型名（见 audio_needs_projection）
-        self.audio_needs_proj = audio_needs_projection(config)
-        if self.audio_needs_proj:
-            self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size)
+        # 靠维度判断，不看模型名（见 audio_projection_kind）
+        self.audio_proj_kind = audio_projection_kind(config)
+        if self.audio_proj_kind == 'resnet':
+            self.audio_proj_layer = ResNetAudio(in_channels=1, out_channels=config.hidden_size)
+        elif self.audio_proj_kind == 'linear':
+            self.audio_proj_layer = nn.Linear(int(config.audio_dim), int(config.hidden_size))
         
         self.encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -554,9 +571,9 @@ class MyTransformerEncoder(nn.Module):
     def forward(self, features, mask=None, key_padding_mask=None):
         """Forward pass for multi-layer transformer encoder."""
 
-        # 靠维度判断，不看模型名（见 audio_needs_projection）
-        if self.audio_needs_proj:
-            features = self.mel_extractor(features)
+        # 靠维度判断，不看模型名（见 audio_projection_kind）
+        if self.audio_proj_kind:
+            features = self.audio_proj_layer(features)
         
         features = self.encoder(features, src_key_padding_mask=key_padding_mask)
                 

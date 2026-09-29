@@ -1,3 +1,30 @@
+# ── 多语言实验配置：XLM-RoBERTa（文本）+ Wav2Vec2-XLS-R（音频）─────────────
+#
+# 本文件 = default.yaml 的整份内容，只改了 3 处：
+#   model.textual_model   : distil   -> xlmr
+#   model.audio_model     : wav2vec2 -> xlsr
+#   dataset.features_dir  : 'text'   -> 'text_xlmr_xlsr'   ← 新特征单独放一处
+#
+# 这样一来老实验的特征在 <split>/text/，新实验的在 <split>/text_xlmr_xlsr/，
+# 两套互不覆盖，随时可以回头对比。
+#
+# 用法（⚠️ 提取和训练必须指向同一份配置，否则特征文件名对不上）
+#
+#   提取：
+#     COGNIALIGN_CONFIG=configs/xlmr_xlsr.yaml \
+#     COGNIALIGN_TEXT_MODEL=xlmr COGNIALIGN_AUDIO_MODEL=xlsr \
+#     python preprocess/extract_features.py
+#
+#   训练：
+#     python train.py --config configs/xlmr_xlsr.yaml
+#
+# ⚠️ 提取侧的模型名由**环境变量**决定（paths.py 按 split 切：train→distil、
+#    test→chinese，不设环境变量就是这个默认），配置里的 model.textual_model /
+#    audio_model 是给训练用的 —— 两边必须一致。
+# ⚠️ XLS-R 输出 1024 维 ≠ hidden_size 768，网络会按维度自动挂一层投影
+#    （networks/model.py 的 audio_needs_projection），不用改代码。
+# ⚠️ 两个 split 都要提（train 和 test），跑 test 时记得 COGNIALIGN_SPLIT=test。
+
 # ── 数据集参数 ──────────────────────────────────────────────────────────
 # 脚本②（extract_features.py）和训练都要读这两个值，以前是硬写死在 py 里的，
 # 改了 py 还得记得手动改这里 —— 现在只有这一份。
@@ -10,7 +37,7 @@ dataset:
   # 就分开放、互不覆盖；逐词表 .csv 不会跟着动（它始终在 text/）。
   # ⚠️ 提取端（extract_features.py）和读取端（dataset.py）都查这一行，
   #    所以不会出现"存到一个目录、读另一个目录"。
-  features_dir: 'text'
+  features_dir: 'text_xlmr_xlsr'
   # 只用音频、不用文本时，文件名里还是带一段文本后缀（老命名规则遗留）。
   # 本项目一直都是文本+音频双模态，这个值用不到，留在这里是为了不把它写死回 py。
   text_fallback: 'distil'
@@ -156,8 +183,8 @@ model:
   hidden_mlp_size: 256
   # 文本/音频编码器：名字要和上面 encoders 段里登记的键一致。
   # （COGNIALIGN_SPLIT=test 时，文本侧会被环境变量覆盖成 chinese）
-  textual_model: 'distil'
-  audio_model: 'wav2vec2'
+  textual_model: 'xlmr'
+  audio_model: 'xlsr'
 
   # fusion 只用来拼结果目录名（model_name = <文本>_<音频>_[P_]<fusion>）；
   # 真正决定用哪个网络类的是下面的 architecture。

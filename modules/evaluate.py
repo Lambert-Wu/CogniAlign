@@ -82,7 +82,7 @@ def build_config(config_file, textual_model, audio_model):
     cfg.path_name = f"{cfg.model_name}_{cfg.model.pooling}"
 
     # 把音频编码器的输出维度带进 model 段，网络结构据此决定要不要挂 ResNet 升维
-    # （见 networks/model.py 的 audio_needs_projection）
+    # （见 networks/model.py 的 audio_projection_kind）
     cfg.model.audio_dim = spec.dim('audio') if cfg.model.audio_model else 0
     return cfg
 
