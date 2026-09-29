@@ -155,11 +155,17 @@ def from_config(cfg, textual_model=None, audio_model=None):
 
 
 def load_default(path=None, textual_model=None, audio_model=None):
-    """脚本② 用：它没有配置入参，直接读默认那份。
+    """没有配置入参的调用方用这个（extract_features / verify_features / 启动脚本）。
 
-    换配置文件：设 `COGNIALIGN_CONFIG=/path/to/xxx.yaml`。
+    换配置文件：设 `COGNIALIGN_CONFIG=/path/to/xxx.yaml`，也可以给相对路径。
+    ⚠️ **相对路径一律按 `modules/` 解析**，不按当前工作目录 ——
+    用 cwd 解析会时对时错：`run_preprocess.sh` 从项目根跑、`extract_features.py`
+    从 modules/ 跑，同一句 `configs/x.yaml` 两边意思就不同了（实测 check_env
+    就因此读不到配置）。
     """
     p = path or os.environ.get('COGNIALIGN_CONFIG', '').strip() or DEFAULT_CONFIG
+    if not os.path.isabs(p):
+        p = os.path.join(_MODULES, p)
     with open(p, encoding='utf-8') as f:
         raw = yaml.safe_load(f)
     return Spec(DotMap(raw), textual_model=textual_model, audio_model=audio_model)

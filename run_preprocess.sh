@@ -11,13 +11,20 @@
 #     bash run_preprocess.sh -c               # 只做自检，不跑
 #     bash run_preprocess.sh -r               # 跳过已产出特征的样本（断点续跑）
 #     bash run_preprocess.sh -b -r            # 后台续跑
+#     bash run_preprocess.sh -f configs/xlmr_xlsr.yaml   # 换配置文件
+#
+# 换模型 / 换实验：只需要 -f 指向另一份 configs/*.yaml。
+# 模型名、特征输出目录、文件名后缀、停顿开关**全部从那份配置读**，
+# 不用再手工 export COGNIALIGN_TEXT_MODEL / COGNIALIGN_AUDIO_MODEL。
+# ⚠️ 训练侧对应的是 run_train.sh 的 -f，两边必须指向同一份配置。
 #
 # 关于「覆盖」：默认就是全量重算 —— 每个样本都会重新提一遍特征并**覆盖**同名
 # 文件（不加 -r 就一定是这个行为）。日志开头会打印「本次将覆盖 N 个已存在的
 # 特征文件」，跑之前就能确认。想断点续跑才加 -r。
 #
-# 关于两个 split：train 是英文（文本走 distil），test 是中文（文本走 chinese）。
-# 线路是 paths.py 按 COGNIALIGN_SPLIT 自动选的，不需要手工指定文本模型。
+# 关于两个 split：train 是英文、test 是中文。默认配置用
+# `model.split_textual_model.test: chinese` 表达「test 换中文文本模型」；
+# 换成 xlmr 这类多语言模型时不用写这一行 —— 两个 split 共用同一套模型。
 #   -s all 时会按顺序跑 train → test，每跑完一个立刻做一次结果核对，
 #   两个 split 的报告都写进同一个日志，用分隔线隔开。
 #
@@ -32,6 +39,9 @@
 #     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
 #     COGNIALIGN_OFFLINE=1   禁止联网下载模型（本地没有就直接报错）
 #     COGNIALIGN_SPLIT       train|test，只在没给 -s 时作为默认值
+#     COGNIALIGN_CONFIG      配置文件，等价于 -f（命令行 -f 优先）
+# 注意：**不需要**手工设 COGNIALIGN_TEXT_MODEL / COGNIALIGN_AUDIO_MODEL ——
+#       脚本会从配置文件里读出来并 export。
 # =====================================================================
 
 # 必须用 bash 跑：下面用了数组、${BASH_SOURCE}、${PIPESTATUS}、pipefail 等 bash 特性。
@@ -68,6 +78,11 @@ BG=0
 CHECK=0
 RESUME=0
 WORKER=0
+# 用哪份配置（路径相对 modules/）。
+# 模型名、特征输出目录、文件名后缀、停顿开关**全部从这份配置读**，
+# 所以换实验只改这一个参数 —— 不用再手工 export
+# COGNIALIGN_CONFIG / COGNIALIGN_TEXT_MODEL / COGNIALIGN_AUDIO_MODEL 一串变量。
+CONFIG="configs/default.yaml"
 
 # ---------------------------------------------------------------- split
 # 默认值：环境变量 COGNIALIGN_SPLIT 有就用它，否则 train。
@@ -78,21 +93,27 @@ usage() {
     cat <<'EOF'
 CogniAlign 特征提取一键脚本
 
-    bash run_preprocess.sh               跑训练集（默认）
+    bash run_preprocess.sh               跑训练集（默认配置）
     bash run_preprocess.sh -s test       跑测试集
     bash run_preprocess.sh -s all        训练集 → 测试集，一次跑完
     bash run_preprocess.sh -s all -b     上面那个放到后台（推荐）
     bash run_preprocess.sh -c            只做自检，不跑
     bash run_preprocess.sh -r            跳过已产出特征的样本（断点续跑）
+    bash run_preprocess.sh -f configs/xlmr_xlsr.yaml   换配置文件
     bash run_preprocess.sh -h            看这段帮助
 
+换模型 / 换实验：只用 -f 指到另一份 configs/*.yaml。模型名、特征输出目录、
+         文件名后缀、停顿开关全从那份配置读，不用手工 export 环境变量。
+         训练侧用 run_train.sh -f 指向**同一份**配置（否则名字对不上）。
 覆盖行为：默认全量重算并覆盖同名文件（不加 -r 就一定是这样）；
          日志开头会打印本次将覆盖多少个已存在的特征文件。
-两个 split：train 英文（文本 distil）/ test 中文（文本 chinese），
-         由 paths.py 按 split 自动选，不用手工指定。
+两个 split：train 英文 / test 中文。默认配置里 test 用
+         model.split_textual_model.test=chinese 表示换中文文本模型；
+         多语言模型（如 xlmr）不用写这行，两个 split 共用一套。
 
-耗时：音频走 wav2vec2 时训练集约 1 小时 / 走 egemaps 时约 3 小时
-     （脚本会从 paths.py 读出当前线路，打印在日志开头）
+耗时取决于音频线路（日志开头会打印当前线路）：
+    wav2vec2（768 维）  235 条约 1 小时
+    XLS-R 300m（1024 维）约 2~3 小时
 
 环境变量（都可不设）：
     PYTHON                 指定解释器，默认自动找 python3 / python
@@ -100,6 +121,7 @@ CogniAlign 特征提取一键脚本
     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
     COGNIALIGN_OFFLINE=1   禁止联网下载模型（本地没有就直接报错）
     COGNIALIGN_SPLIT       train|test，没给 -s 时的默认值
+    COGNIALIGN_CONFIG      配置文件，等价于 -f（命令行 -f 优先）
 EOF
 }
 
@@ -112,6 +134,10 @@ while [ $# -gt 0 ]; do
             shift
             [ $# -gt 0 ] || { echo "-s 后面要跟 train / test / all" >&2; exit 2; }
             SPLIT_CHOICE="$1" ;;
+        -f|--config)
+            shift
+            [ $# -gt 0 ] || { echo "-f 后面要跟配置文件路径（如 configs/xlmr_xlsr.yaml）" >&2; exit 2; }
+            CONFIG="$1" ;;
         --_worker)       WORKER=1 ;;
         -h|--help)       usage; exit 0 ;;
         *) echo "未知参数: $1（用 -h 看用法）" >&2; exit 2 ;;
@@ -124,6 +150,17 @@ case "$SPLIT_CHOICE" in
     all)        SPLITS=(train test) ;;
     *) echo "-s 只能是 train / test / all，收到: $SPLIT_CHOICE" >&2; exit 2 ;;
 esac
+
+# 配置文件 export 出去：python 端 core/feature_spec.py 读它拿模型名 / 特征目录 /
+# 超参，提取和训练**必须用同一份**，否则特征文件名对不上、训练直接 FileNotFoundError。
+CFG_PATH="$MODULES_DIR/$CONFIG"
+if [ ! -f "$CFG_PATH" ]; then
+    echo "找不到配置文件: $CONFIG（路径相对 modules/）" >&2
+    echo "现有配置：" >&2
+    ls -1 "$MODULES_DIR/configs" 2>/dev/null | sed 's/^/    configs\//' >&2 || true
+    exit 2
+fi
+export COGNIALIGN_CONFIG="$CONFIG"
 
 # ---------------------------------------------------------------- 解释器
 if [ -z "${PYTHON:-}" ]; then
@@ -171,20 +208,38 @@ mkdir -p "$LOG_DIR"
 # =====================================================================
 split_info() {
     TEXT_MODEL=""; AUDIO_MODEL=""; LABELS_CSV=""; TEXT_DIR=""
-    PAUSES_SUF=""; TEXT_SUF=""; AUDIO_FULL_SUF=""; PAUSES_DESC=""
+    PAUSES_SUF=""; TEXT_SUF=""; AUDIO_FULL_SUF=""; PAUSES_DESC=""; FEAT_DIR=""
 
-    # 路径问 paths.py，文件名后缀 / 停顿开关问配置（core/feature_spec.py）。
-    # 一次问完，下面的 shell 逻辑就不必再靠模型名去猜后缀了。
+    # 模型名从**配置文件**读 —— 不再要求手工 export COGNIALIGN_TEXT_MODEL /
+    # COGNIALIGN_AUDIO_MODEL。配置就是 $COGNIALIGN_CONFIG 指向的那份。
+    #
+    # 配置里可选 model.split_textual_model.<split> 按 split 覆盖模型：
+    #   老实验（train 英文 distil / test 中文 chinese）靠它；
+    #   多语言模型（xlmr 通吃中英）两个 split 同名，不用写。
+    #
+    # 路径、文件名后缀、停顿开关、特征目录都在这里一次问完，
+    # shell 侧不再猜任何东西（以前后缀要靠 case 硬编码模型名）。
     _info="$("$PYTHON" -c "
 import os, sys
-sys.path.insert(0, os.path.join(os.environ['COGNIALIGN_PROJECT_ROOT'], 'modules'))
+root = os.environ['COGNIALIGN_PROJECT_ROOT']
+sys.path.insert(0, os.path.join(root, 'modules'))
 import paths
 from core import feature_spec
-spec = feature_spec.load_default(textual_model=paths.TEXT_MODEL, audio_model=paths.AUDIO_MODEL)
-print(paths.TEXT_MODEL)
-print(paths.AUDIO_MODEL)
+
+m = feature_spec.load_default().cfg.get('model', {}) or {}
+
+def pick(key, fallback):
+    per_split = m.get('split_' + key) or {}
+    return per_split.get(paths.SPLIT) or m.get(key) or fallback
+
+text_m = pick('textual_model', paths.TEXT_MODEL)
+audio_m = pick('audio_model', paths.AUDIO_MODEL)
+spec = feature_spec.load_default(textual_model=text_m, audio_model=audio_m)
+print(text_m)
+print(audio_m)
 print(paths.SPLIT_LABELS_CSV)
 print(paths.SPLIT_TEXT_DIR)
+print(paths.feature_dir(spec.features_dir()))
 print('_pauses' if spec.pauses else '')
 print(spec.text_suffix())
 print(spec.audio_suffix())
@@ -195,11 +250,22 @@ print(spec.audio_suffix())
           read -r AUDIO_MODEL || true
           read -r LABELS_CSV || true
           read -r TEXT_DIR || true
+          read -r FEAT_DIR || true
           read -r PAUSES_SUF || true
           read -r TEXT_SUF || true
           read -r AUDIO_FULL_SUF || true ; } <<EOF
 $_info
 EOF
+    fi
+
+    # ⚠️ 关键一步：把模型名 export 出去。extract_features.py 是新起的 python
+    # 进程，靠这两个环境变量决定用哪个编码器 —— 以前得让用户自己设，
+    # 现在脚本从配置读出来代劳，少一处能对不上的地方。
+    if [ -n "$TEXT_MODEL" ]; then
+        export COGNIALIGN_TEXT_MODEL="$TEXT_MODEL"
+    fi
+    if [ -n "$AUDIO_MODEL" ]; then
+        export COGNIALIGN_AUDIO_MODEL="$AUDIO_MODEL"
     fi
     # 后缀 / 停顿开关由上面的 python 从配置读出来：TEXT_SUF='distil_pauses'、
     # AUDIO_FULL_SUF='distil_pauses_audio'、PAUSES_SUF='_pauses'。
@@ -230,8 +296,11 @@ EOF
 # `endswith('.pt')` 会同时命中两种文件，顺序反了会把音频的也算成文本的。
 # ---------------------------------------------------------------------------
 count_existing() {
-    [ -n "${TEXT_DIR:-}" ] && [ -d "$TEXT_DIR" ] || { echo "0 0"; return 0; }
-    "$PYTHON" - "$TEXT_DIR" "$TEXT_SUF" "$AUDIO_FULL_SUF" <<'PY'
+    # 数的是**特征目录**（FEAT_DIR，来自配置的 dataset.features_dir），
+    # 不是逐词表目录。两者默认是同一个（'text'），但改了 features_dir
+    # 就分开了 —— 那时数错目录会把"本次覆盖 N 个"报成 0，误导人。
+    [ -n "${FEAT_DIR:-}" ] && [ -d "$FEAT_DIR" ] || { echo "0 0"; return 0; }
+    "$PYTHON" - "$FEAT_DIR" "$TEXT_SUF" "$AUDIO_FULL_SUF" <<'PY'
 import os, sys
 d, tsuf, asuf = sys.argv[1], sys.argv[2], sys.argv[3]
 n_a = n_t = 0
@@ -283,9 +352,11 @@ if [ "$WORKER" = 1 ]; then
         echo " 工作目录 : $(pwd)"
         echo " 数据根   : $COGNIALIGN_DATA_ROOT"
         echo " 模型目录 : $COGNIALIGN_MODELS_DIR"
+        echo " 配置文件 : $CONFIG"
         echo " 模型线路 : textual=$TEXT_MODEL | audio=$AUDIO_MODEL"
         echo " 停顿标记 : $PAUSES_DESC"
         echo " 产出文件 : <uid>${TEXT_SUF}.pt 与 <uid>${AUDIO_FULL_SUF}.pt"
+        echo " 特征目录 : ${FEAT_DIR:-<没读到>}"
         echo " 标签表   : ${LABELS_CSV:-<没找到>}"
         echo " 样本数   : $N_SAMPLES"
         if [ "$RESUME" = 1 ]; then
@@ -383,6 +454,20 @@ for SP in "${SPLITS[@]}"; do
 done
 
 if [ "$CHECK" = 1 ]; then
+    # 顺便把"这一轮到底用哪套模型、特征写去哪"打出来 —— 光看自检看不出
+    # 配置选对没有，而这恰恰是最容易搞错的地方（提取和训练用了不同配置，
+    # 特征文件名就对不上）。每个 split 各报一行。
+    echo
+    echo "==== 本次将使用的配置 ===="
+    for SP in "${SPLITS[@]}"; do
+        export COGNIALIGN_SPLIT="$SP"
+        split_info
+        echo "  [$SP]  配置文件 : $CONFIG"
+        echo "        模型线路 : textual=$TEXT_MODEL  audio=$AUDIO_MODEL"
+        echo "        停顿标记 : $PAUSES_DESC"
+        echo "        特征目录 : ${FEAT_DIR:-<没读到>}"
+        echo "        产出文件 : <uid>${TEXT_SUF}.pt 与 <uid>${AUDIO_FULL_SUF}.pt"
+    done
     echo
     echo "-c 只自检，到此为止（没有开跑）。"
     exit 0

@@ -152,6 +152,10 @@ mkdir -p "$LOG_DIR"
 #    而脚本必须在 modules/ 下运行（模块间是平级 import），
 #    所以结果实际落在 modules/logs/ 而不是仓库根的 logs/。
 CFG_PATH="$MODULES_DIR/$CONFIG"
+# 也 export 出去：verify_features.py / check_env.py 这些工具没有 --config
+# 入参，靠这个环境变量找配置。不 export 的话它们会去读 default.yaml，
+# 用 -f 换了配置就会误报"特征不齐"。
+export COGNIALIGN_CONFIG="$CONFIG"
 yaml_get() {   # yaml_get <key>
     sed -n "s/^  $1: *'\{0,1\}\([^'#]*\)'\{0,1\}.*/\1/p" "$CFG_PATH" 2>/dev/null | head -1 | tr -d ' '
 }
@@ -308,7 +312,15 @@ if [ -f "$HERE/modules/tools/verify_features.py" ]; then
         echo
         echo "特征不全 —— 先用完整版看缺哪些："
         echo "    $PYTHON $HERE/modules/tools/verify_features.py"
-        echo "缺样本的话，用特征提取的续跑模式补齐：bash run_preprocess.sh -r"
+        echo
+        _cfg_hint=""
+        if [ "$CONFIG" != "configs/default.yaml" ]; then
+            _cfg_hint=" -f $CONFIG"
+        fi
+        echo "补齐办法（⚠️ 提取必须用**同一份**配置，否则特征文件名对不上）："
+        echo "    bash run_preprocess.sh -s all$_cfg_hint"
+        echo "中途断过、只想补没提好的，加 -r 跳过已完成的："
+        echo "    bash run_preprocess.sh -s all -r$_cfg_hint"
         exit 1
     }
 fi
