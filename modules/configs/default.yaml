@@ -86,7 +86,10 @@ encoders:
       opensmile_feature_level: 'Functionals'
     mel:
       suffix: 'mel'
-      dim: 768
+      # 这里是编码器**原始输出**的维度（mel 谱是 80 维），不是升维之后的 768。
+      # 网络里发现 dim ≠ model.hidden_size 就会自动挂一层 ResNet 升维
+      # （见 networks/model.py 的 audio_needs_projection）。
+      dim: 80
       fps: 50
       loader: 'mel_librosa'
 
@@ -109,15 +112,20 @@ model:
   n_heads: 12
   num_classes: 1
   hidden_mlp_size: 256
+  # 文本/音频编码器：名字要和上面 encoders 段里登记的键一致。
+  # （COGNIALIGN_SPLIT=test 时，文本侧会被环境变量覆盖成 chinese）
   textual_model: 'distil'
-  audio_model: 'wav2vec2'   # 必须与 extract_features.py 里的 audio_model 一致，
-                            # 否则 dataset.read_CSV 会去找 <uid>distil_wav2vec2.pt 这种
-                            # 不存在的文件（音频侧后缀按这里取值拼）
-  pauses: True             # 必须与 preprocess/extract_features.py 里的 `pauses` 一致
-                            # True  -> 读 transcription_pause 列，文件名带 _pauses 后缀，
-                            #          结果目录带 P_（distil_wav2vec2_P_cross_mean）
-                            # False -> 读 transcription 列（纯词流）
-                            # 注意：extract_features.py **不读这个 yaml**，两边要人工对齐
+  audio_model: 'wav2vec2'
+
+  # fusion 只用来拼结果目录名（model_name = <文本>_<音频>_[P_]<fusion>）；
+  # 真正决定用哪个网络类的是下面的 architecture。
   fusion: 'cross'
+  # 用哪个网络结构，键对应 networks/model.py 末尾的 ARCHITECTURES：
+  #   cross_attention / bidirectional_cross_attention / elementwise / plain_transformer
+  architecture: 'cross_attention'
+  # 交叉注意力是否带门控（对应 GatedCrossAttentionFusion）
+  gated: false
+
+  # ⚠️ pauses 已移到 dataset 段（以前这里还有一份，同一个语义写两遍，改一处忘一处）。
 
 model_name: ''

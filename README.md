@@ -44,7 +44,7 @@ CogniAlign/
 │   │   ├── dataset.py              # 读特征 + 5 折划分 + DataLoader
 │   │   └── build_dataset.py        # 一次性把语料摆成 data/diagnosis/
 │   ├── networks/                   # 模型结构
-│   │   └── model.py                # 交叉注意力等几种融合编码器
+│   │   └── model.py                # 几种融合编码器；用哪个由配置的 architecture 选
 │   ├── preprocess/                 # 特征提取流水线（先①后②）
 │   │   ├── word_timestamps/        # ① 逐词时间戳：三种实现，按语料选一个
 │   │   │   ├── transcribe_whisper.py   # 英文，真跑 ASR（约 3 小时）

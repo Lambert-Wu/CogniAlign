@@ -1,6 +1,6 @@
 from dataset.dataset import get_dataloaders
 from core.utils import set_seed, get_config, train, save_config
-from networks.model import CrossAttentionTransformerEncoder, MyTransformerEncoder, BidirectionalCrossAttentionTransformerEncoder, ElementWiseFusionEncoder
+from networks import model as model_module
 import torch
 import wandb
 import sys
@@ -15,15 +15,10 @@ def set_up(config, train_dataloader, device, fold=0):
     """Set up model, optimizer, loss function, and scheduler."""
     set_seed(42)
     
-    if config.model.multimodality:
-        if 'bicross' in config.model.fusion:
-            model = BidirectionalCrossAttentionTransformerEncoder(config.model).to(device)
-        elif 'cross' in config.model.fusion:
-            model = CrossAttentionTransformerEncoder(config.model).to(device)
-        else:
-            model = ElementWiseFusionEncoder(config.model).to(device)
-    else:
-         model = MyTransformerEncoder(config.model).to(device)
+    # 用哪个网络结构由配置的 model.architecture 决定，训练和评估共用同一份实现
+    # （见 networks/model.py 的 build）。以前这里和 evaluate.py 各写一份
+    # `if 'cross' in fusion` 的字符串判断，改一处忘一处就会训评不一致。
+    model = model_module.build(config.model).to(device)
 
 
     optimizer = AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)

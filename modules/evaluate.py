@@ -53,9 +53,8 @@ from torch.utils.data import DataLoader
 
 import paths
 from dataset.dataset import AdressoDataset, read_CSV
-from networks.model import (BidirectionalCrossAttentionTransformerEncoder,
-                   CrossAttentionTransformerEncoder, ElementWiseFusionEncoder,
-                   MyTransformerEncoder)
+from networks import model as model_module
+from core import feature_spec
 
 
 def build_config(config_file, textual_model, audio_model):
@@ -67,32 +66,35 @@ def build_config(config_file, textual_model, audio_model):
     if audio_model is not None:
         cfg.model.audio_model = audio_model
 
-    # 这两行与 utils.save_config() 的算法一致（评估不调 save_config，
+    # 与 utils.save_config() 的算法一致（评估不调 save_config，
     # 是因为它会顺手建日志目录、写文件）：
     #   multimodality = 两条线都开着
-    #   model_name    = <文本>_<音频>_[P_]<融合方式>
-    # model_name 会进到模型里，用第 2 段决定要不要挂 mel/egemaps 的 ResNet，
-    # 所以格式不能改。
+    #   model_name    = <文本>_<音频>_[P_]<融合方式>   ← 只用来拼结果目录名
+    # 停顿开关统一从配置的 dataset 段读（以前 model.pauses 和 dataset.pauses 两份，
+    # 改一处忘一处就对不上了）。
     cfg.model.multimodality = cfg.model.textual_model != '' and cfg.model.audio_model != ''
     textual = cfg.model.textual_model + '_' if cfg.model.textual_model != '' else ''
     audio = cfg.model.audio_model + '_' if cfg.model.audio_model != '' else ''
-    pauses = 'P_' if cfg.model.pauses else ''
+    spec = feature_spec.from_config(cfg)
+    pauses = 'P_' if spec.pauses else ''
     cfg.model_name = f"{textual}{audio}{pauses}{cfg.model.fusion}"
     cfg.model.model_name = cfg.model_name
     cfg.path_name = f"{cfg.model_name}_{cfg.model.pooling}"
+
+    # 把音频编码器的输出维度带进 model 段，网络结构据此决定要不要挂 ResNet 升维
+    # （见 networks/model.py 的 audio_needs_projection）
+    cfg.model.audio_dim = spec.dim('audio') if cfg.model.audio_model else 0
     return cfg
 
 
 def build_model(cfg):
-    """按 fusion 选模型类。判断与 main.set_up() 保持一致，但不调用 set_up ——
-    它会 wandb.init() 还会建优化器，评估都不要。"""
-    if not cfg.model.multimodality:
-        return MyTransformerEncoder(cfg.model)
-    if 'bicross' in cfg.model.fusion:
-        return BidirectionalCrossAttentionTransformerEncoder(cfg.model)
-    if 'cross' in cfg.model.fusion:
-        return CrossAttentionTransformerEncoder(cfg.model)
-    return ElementWiseFusionEncoder(cfg.model)
+    """按配置里的 model.architecture 建模型，直接复用 networks.model.build()。
+
+    和训练侧是**同一份实现** —— 以前这里和 train.py 各写一份
+    `if 'cross' in fusion` 的字符串判断，改一处忘一处就会训评不一致。
+    （不用 train.set_up() 是因为它会 wandb.init() 还会建优化器，评估都不要。）
+    """
+    return model_module.build(cfg.model)
 
 
 def load_weights(model, ckpt_path, device):

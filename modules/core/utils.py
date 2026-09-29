@@ -4,6 +4,8 @@ import random
 import yaml
 import os
 from dotmap import DotMap
+
+from core import feature_spec
 import wandb
 from tqdm import tqdm
 import time
@@ -39,7 +41,24 @@ def get_config(config_file):
     # with open(config_file_path, 'w') as f:
         # yaml.dump(config_yaml, f, default_flow_style=False)
     
+    # 把音频编码器的输出维度带进 model 段（网络结构据此决定要不要挂 ResNet）
+    apply_encoder_meta(config)
     return config
+
+def apply_encoder_meta(config):
+    """把当前编码器的属性投影到 config.model，供网络结构使用。
+
+    目前只带一个 `audio_dim`：音频编码器输出维度 ≠ hidden_size 时，
+    `networks/model.py` 会据此挂一层 ResNet 升维（以前是拿模型名字猜的：
+    `if 'mel' in model_name or 'egemaps' in model_name`）。
+
+    维度只在 configs/*.yaml 的 `encoders` 段定义一次，这里不重复写值。
+    训练走 get_config()，评估在 build_config() 里各自调一次。
+    """
+    spec = feature_spec.from_config(config)
+    config.model.audio_dim = spec.dim('audio') if config.model.audio_model else 0
+    return config
+
 
 def save_config(config):
     """Save the configuration to a YAML file, ensuring log directories exist."""
@@ -48,7 +67,9 @@ def save_config(config):
 
     textual_data = config.model.textual_model + '_' if config.model.textual_model != '' else ''
     audio_data = config.model.audio_model + '_' if config.model.audio_model != '' else ''
-    pauses_data = 'P_' if config.model.pauses else ''
+    # 停顿开关统一从配置的 dataset 段读（以前 model.pauses 是另一份，同一个语义
+    # 写两遍，改一处忘一处结果目录名就跟特征文件名对不上了）
+    pauses_data = 'P_' if feature_spec.from_config(config).pauses else ''
 
     config.model_name = f"{textual_data}{audio_data}{pauses_data}{config.model.fusion}"
     config.model.model_name = config.model_name

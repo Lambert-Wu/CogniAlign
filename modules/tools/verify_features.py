@@ -138,7 +138,8 @@ elif len(ok_uids) == n:
                                     audio_model=audio_model).cfg
     cfg.model.textual_model = textual_model or ""
     cfg.model.audio_model = audio_model or ""
-    cfg.model.pauses = pauses
+    # 停顿开关不在这里设：统一由配置的 dataset 段决定（feature_spec 读它）
+    cfg.model.audio_dim = spec.dim('audio') if audio_model else 0
     cfg.model.multimodality = (textual_model != "" and audio_model != "")
     cfg.train.batch_size = 4
 

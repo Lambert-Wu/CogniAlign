@@ -104,6 +104,33 @@ class ResNetAudio(nn.Module):
         return x
 
 
+def audio_needs_projection(config):
+    """音频编码器的输出维度不等于 hidden_size 时，需要一层 ResNet 把它升上来。
+
+    以前这里是 `if 'mel' in model_name or 'egemaps' in model_name` —— 靠模型名字猜。
+    症状有两个：
+      · 换个名字相近的编码器就判错（比如 xlsr 也是 768 维，却会被当成需要升维）
+      · 每个类里都复制一遍这段判断，其中三个类还写成了两个条件**完全相同**的
+        if/elif，第二个分支永远是死代码
+
+    现在只看维度：`encoders.audio.<名字>.dim` 由 core/utils.get_config() 带进
+    config.model.audio_dim。wav2vec2 是 768 = hidden_size → 不用升；
+    eGeMAPS 88、mel 谱 80 → 要升。
+    """
+    if not hasattr(config, 'get'):
+        return False
+    audio_dim = config.get('audio_dim', 0)
+    try:
+        audio_dim = int(audio_dim)
+    except (TypeError, ValueError):
+        return False
+    try:
+        hidden = int(config.hidden_size)
+    except (TypeError, ValueError):
+        return False
+    return audio_dim > 0 and audio_dim != hidden
+
+
 class CrossAttentionEncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation=nn.ReLU()):
         """Cross-Attention Transformer Encoder Layer."""
@@ -213,11 +240,14 @@ class CrossAttentionTransformerEncoder(nn.Module):
         self.model_name = config.model_name
         self.config = config
 
-        if 'mel' in self.model_name or 'egemaps' in self.model_name:
+        # 靠维度判断，不看模型名（见 audio_needs_projection）
+        self.audio_needs_proj = audio_needs_projection(config)
+        if self.audio_needs_proj:
             self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
 
 
-        if 'gated' in config.fusion:
+        # 带不带门控由配置的 model.gated 显式决定，不再从 fusion 字符串里猜
+        if config.get('gated', False):
             self.layers = nn.ModuleList([
                 GatedCrossAttentionFusion(
                     d_model=config.hidden_size,
@@ -262,12 +292,10 @@ class CrossAttentionTransformerEncoder(nn.Module):
         
         src, memory = features
 
-        audio_model = self.model_name.split('_')[1] if self.config.audio_model != '' else ''
-
-        if 'mel' == audio_model or 'egemaps' == audio_model:
+        if self.audio_needs_proj:
+            # 音频侧是低维特征（mel 谱 / eGeMAPS），先升到 hidden_size
+            # （原来这里的 elif 条件与上面完全相同，是进不去的死代码）
             src = self.mel_extractor(src)
-        elif 'mel' == audio_model or 'egemaps' == audio_model:
-            memory = self.mel_extractor(memory)
 
         # Iterate over layers with normalization in between
         for i, layer in enumerate(self.layers):
@@ -297,11 +325,14 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
         self.fusion = config.fusion
         self.config = config
 
-        if 'mel' in self.model_name or 'egemaps' in self.model_name:
+        # 靠维度判断，不看模型名（见 audio_needs_projection）
+        self.audio_needs_proj = audio_needs_projection(config)
+        if self.audio_needs_proj:
             self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
         
 
-        if 'gated' in config.fusion:
+        # 带不带门控由配置的 model.gated 显式决定，不再从 fusion 字符串里猜
+        if config.get('gated', False):
             self.layers_1 = nn.ModuleList([
                 GatedCrossAttentionFusion(
                     d_model=config.hidden_size,
@@ -366,12 +397,10 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
         
         src, memory = features
 
-        audio_model = self.model_name.split('_')[1] if self.config.audio_model != '' else ''
-
-        if 'mel' == audio_model or 'egemaps' == audio_model:
+        if self.audio_needs_proj:
+            # 音频侧是低维特征（mel 谱 / eGeMAPS），先升到 hidden_size
+            # （原来这里的 elif 条件与上面完全相同，是进不去的死代码）
             src = self.mel_extractor(src)
-        elif 'mel' == audio_model or 'egemaps' == audio_model:
-            memory = self.mel_extractor(memory)
 
         # Copy src into src1 tensor
         src1 = src.clone()
@@ -428,7 +457,9 @@ class ElementWiseFusionEncoder(nn.Module):
         hidden_size = config.hidden_size * 2 if self.fusion == 'concat' else config.hidden_size
 
 
-        if 'mel' in self.model_name or 'egemaps' in self.model_name:
+        # 靠维度判断，不看模型名（见 audio_needs_projection）
+        self.audio_needs_proj = audio_needs_projection(config)
+        if self.audio_needs_proj:
             self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size, dropout=config.dropout)
         
         self.encoder = nn.TransformerEncoder(
@@ -457,12 +488,10 @@ class ElementWiseFusionEncoder(nn.Module):
 
         src, memory = features
 
-        audio_model = self.model_name.split('_')[1] if self.config.audio_model != '' else ''
-
-        if 'mel' == audio_model or 'egemaps' == audio_model:
+        if self.audio_needs_proj:
+            # 音频侧是低维特征（mel 谱 / eGeMAPS），先升到 hidden_size
+            # （原来这里的 elif 条件与上面完全相同，是进不去的死代码）
             src = self.mel_extractor(src)
-        elif 'mel' == audio_model or 'egemaps' == audio_model:
-            memory = self.mel_extractor(memory)
 
         if self.fusion == 'concat':
             features = torch.cat((src, memory), dim=2)
@@ -496,7 +525,9 @@ class MyTransformerEncoder(nn.Module):
 
         self.model_name = config.model_name
 
-        if 'mel' in self.model_name or 'egemaps' in self.model_name:
+        # 靠维度判断，不看模型名（见 audio_needs_projection）
+        self.audio_needs_proj = audio_needs_projection(config)
+        if self.audio_needs_proj:
             self.mel_extractor = ResNetAudio(in_channels=1, out_channels=config.hidden_size)
         
         self.encoder = nn.TransformerEncoder(
@@ -523,7 +554,8 @@ class MyTransformerEncoder(nn.Module):
     def forward(self, features, mask=None, key_padding_mask=None):
         """Forward pass for multi-layer transformer encoder."""
 
-        if 'mel' in self.model_name or 'egemaps' in self.model_name:
+        # 靠维度判断，不看模型名（见 audio_needs_projection）
+        if self.audio_needs_proj:
             features = self.mel_extractor(features)
         
         features = self.encoder(features, src_key_padding_mask=key_padding_mask)
@@ -535,3 +567,41 @@ class MyTransformerEncoder(nn.Module):
             features = features[:, 0, :]
         
         return self.classifier(features)
+
+
+# ---------------------------------------------------------------------------
+# 架构清单
+# ---------------------------------------------------------------------------
+# 配置里的 model.architecture 直接对应这里的键。train.py 和 evaluate.py 都走
+# build()，所以两边永远选到同一个类 —— 以前两处各写一份
+# `if 'cross' in fusion` 的判断，改一处忘一处就会训评不一致。
+#
+# 加一个新架构 = 在上面写一个类 + 在这里登记一行，调用方都不用动。
+ARCHITECTURES = {
+    'cross_attention': CrossAttentionTransformerEncoder,
+    'bidirectional_cross_attention': BidirectionalCrossAttentionTransformerEncoder,
+    'elementwise': ElementWiseFusionEncoder,
+    'plain_transformer': MyTransformerEncoder,
+}
+
+
+def build(config):
+    """按 config.architecture 建模型。
+
+    config 是配置里 `model:` 那一段（DotMap）。
+    """
+    name = config.get('architecture', '') if hasattr(config, 'get') else ''
+    if not name:
+        raise KeyError(
+            "配置里缺少 model.architecture（决定用哪个网络结构）。可选：%s"
+            % ' / '.join(ARCHITECTURES)
+        )
+    cls = ARCHITECTURES.get(name)
+    if cls is None:
+        raise KeyError(
+            "未知的 model.architecture=%r。可选：%s" % (name, ' / '.join(ARCHITECTURES))
+        )
+    if not config.get('multimodality', True) and name != 'plain_transformer':
+        print("提醒：当前是单模态，但 architecture=%r 是跨模态结构，建议改成 plain_transformer"
+              % name)
+    return cls(config)

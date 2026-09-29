@@ -9,7 +9,7 @@
 |---|---|
 | `core/` | 通用基础：读配置、训练循环、预训练模型下载、编码器参数的唯一出处 |
 | `dataset/` | 数据侧：读特征、5 折划分、一次性摆数据 |
-| `networks/` | 模型结构：几种融合编码器 |
+| `networks/` | 模型结构：几种融合编码器；用哪个由配置的 `model.architecture` 选（末尾有架构清单 `ARCHITECTURES`） |
 | `preprocess/` | 特征提取流水线：① 逐词时间戳 → ② 对齐存特征 |
 | `tools/` | 不参与训练：跑之前自检、跑之后核对 |
 | `configs/` | 实验超参（yaml） |
@@ -23,7 +23,7 @@
 | 换数据 / 模型的存放位置 | **别改代码**，设环境变量，见 `paths.py` 顶部注释 |
 | 换数据集、重新摆目录结构 | `dataset/build_dataset.py` |
 | 换文本 / 音频编码器 | **只改 `configs/*.yaml`**：在 `encoders` 段加一段，再把 `model.textual_model` / `model.audio_model` 指过去 |
-| 改网络结构 / 融合方式 | `networks/model.py` |
+| 换网络结构 / 融合方式 | **只改 `configs/*.yaml`** 的 `model.architecture`（`cross_attention` / `bidirectional_cross_attention` / `elementwise` / `plain_transformer`）和 `model.gated`；要加全新结构才动 `networks/model.py`，写完在文件末尾的 `ARCHITECTURES` 里登记一行 |
 | 调学习率、轮数、batch | `configs/default.yaml` |
 | 改训练 / 验证循环 | `core/utils.py` |
 | 换语料语种（英文 ↔ 中文） | 设 `COGNIALIGN_SPLIT=train\|test`，路径自动切；词表要用对应语种的那版脚本① |
