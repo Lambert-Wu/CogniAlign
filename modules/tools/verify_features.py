@@ -11,7 +11,7 @@
    （形状、标签分布都会打印）
 
 ⚠️ 同样不 import extract_features.py（它没有 __main__ 保护，import 即执行）。
-   脚本里的配置用正则读源码。
+   需要的参数改从配置文件读（见 core/feature_spec.py），不再去抓它的源码文本。
 
 用法
 ----
@@ -21,7 +21,6 @@
 
 import csv
 import os
-import re
 import sys
 import types
 
@@ -33,30 +32,19 @@ sys.path.insert(0, MODULES_DIR)
 QUICK = "--quick" in sys.argv
 
 import paths  # noqa: E402
-
-EMBED_SRC = os.path.join(MODULES_DIR, "preprocess", "extract_features.py")
-
-
-def grab(src, name):
-    m = re.search(r"^%s\s*=\s*['\"]?([^'\"\n#]+)['\"]?" % re.escape(name), src, re.M)
-    return m.group(1).strip() if m else None
-
-
-with open(EMBED_SRC, encoding="utf-8") as f:
-    src = f.read()
+from core import feature_spec  # noqa: E402
 
 textual_model = paths.TEXT_MODEL    # 由 paths.py 决定，跟着 COGNIALIGN_SPLIT 走
 audio_model = paths.AUDIO_MODEL
-max_length = grab(src, "max_length")
-pauses = grab(src, "pauses") == "True"
 
-# 与脚本②/dataset.py 同一套命名规则
-NAME_TEXT = {"bert": "", "distil": "distil", "chinese": "chinese", "roberta": "roberta",
-             "mistral": "mistral", "qwen": "qwen", "stella": "stella"}
-NAME_AUDIO = {"wav2vec2": "audio", "egemaps": "egemaps", "mel": "mel"}
-
-text_suffix = NAME_TEXT.get(textual_model, "") + ("_pauses" if pauses else "")
-audio_suffix = text_suffix + ("_" + NAME_AUDIO[audio_model] if audio_model in NAME_AUDIO else "")
+# 超参和文件名后缀全部从配置文件读（encoders: / dataset: 两段）。
+# 以前这里是去抓 extract_features.py 的源码文本（正则匹配 `max_length = 512`），
+# 那边一改写法就失效；现在和训练、特征提取共用同一份配置。
+spec = feature_spec.load_default(textual_model=textual_model, audio_model=audio_model)
+max_length = spec.max_length
+pauses = spec.pauses
+text_suffix = spec.text_suffix()
+audio_suffix = spec.audio_suffix()
 
 print("=" * 68)
 print("特征提取结果核对")
@@ -142,14 +130,17 @@ elif len(ok_uids) == n:
     # 只验证「文件读得出来、形状对不对」，不需要显存，强制走 CPU
     dataset.device = torch.device("cpu")
 
-    cfg = types.SimpleNamespace()
-    cfg.model = types.SimpleNamespace(
-        multimodality=(textual_model != "" and audio_model != ""),
-        textual_model=textual_model or "",
-        audio_model=audio_model or "",
-        pauses=pauses,
-    )
-    cfg.train = types.SimpleNamespace(batch_size=4)
+    # 配置从配置文件读（含 encoders / dataset 两段），再按当前 split 覆盖模型名。
+    # ⚠️ 以前这里是手工拼一个空壳 SimpleNamespace，里面**没有 encoders 段** ——
+    #    read_CSV 查 feature_spec 时就拿不到文件名后缀，会去找 `<uid>.pt`，
+    #    即便文件明明都在也报 FileNotFoundError。
+    cfg = feature_spec.load_default(textual_model=textual_model,
+                                    audio_model=audio_model).cfg
+    cfg.model.textual_model = textual_model or ""
+    cfg.model.audio_model = audio_model or ""
+    cfg.model.pauses = pauses
+    cfg.model.multimodality = (textual_model != "" and audio_model != "")
+    cfg.train.batch_size = 4
 
     print("--- 用真实 dataset.read_CSV() 读一遍（CPU，%d 条）---" % n)
     try:

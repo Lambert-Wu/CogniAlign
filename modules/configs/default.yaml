@@ -1,3 +1,95 @@
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+# 脚本②（extract_features.py）和训练都要读这两个值，以前是硬写死在 py 里的，
+# 改了 py 还得记得手动改这里 —— 现在只有这一份。
+dataset:
+  max_length: 512       # 文本/音频统一对齐到这么长的序列
+  pauses: true          # true = 用带停顿标记的那版转写（文件名会多一段 _pauses）
+  # 只用音频、不用文本时，文件名里还是带一段文本后缀（老命名规则遗留）。
+  # 本项目一直都是文本+音频双模态，这个值用不到，留在这里是为了不把它写死回 py。
+  text_fallback: 'distil'
+
+# ── 编码器登记表 ────────────────────────────────────────────────────────
+# 换模型只改这里，不动任何 .py。原先这张表在三处各写了一份，加载代码里还挂着
+# 7 个 elif 分支硬编码仓库名和模型类 —— 现在都收在这一处。
+#
+#   suffix     特征文件名的后缀        dim   输出维度
+#   repo       HuggingFace 仓库名      fps   每秒多少帧（只有音频侧有）
+#   tokenizer / model / processor     用 transformers 里的哪个类加载
+#   loader     不是 HF 模型时怎么加载：opensmile / mel_librosa
+#   trust_remote_code / pad_token_from_eos / opensmile_*   个别模型的特例开关
+#
+# 加一个新模型 = 在下面加一段，跑起来就能用（记得 dim 要等于模型的输出维度）
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    # bert-base-chinese 的 tokenizer 是**按字切分**的（一个汉字一个 token，
+    # 且不带 ## 前缀），正好和逐词时间戳表里的单字对得上 —— test 集能用它。
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+    stella:
+      suffix: 'stella'
+      repo: 'NovaSearch/stella_en_1.5B_v5'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      trust_remote_code: true
+    # mistral 是 gated 模型，首次下载要设 HF_TOKEN；本地已有则完全不需要
+    mistral:
+      suffix: 'mistral'
+      repo: 'mistralai/Mistral-7B-v0.1'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      pad_token_from_eos: true
+    qwen:
+      suffix: 'qwen'
+      repo: 'Qwen/Qwen2.5-7B'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    # 下面两个不是神经网络，用传统特征：openSMILE / librosa
+    egemaps:
+      suffix: 'egemaps'
+      dim: 88
+      fps: 10
+      loader: 'opensmile'
+      opensmile_feature_set: 'eGeMAPSv02'
+      opensmile_feature_level: 'Functionals'
+    mel:
+      suffix: 'mel'
+      dim: 768
+      fps: 50
+      loader: 'mel_librosa'
+
 train:
   batch_size: 32
   num_epochs: 200

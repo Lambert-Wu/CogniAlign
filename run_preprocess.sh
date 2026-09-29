@@ -59,16 +59,10 @@ HERE="$(cd "$(dirname "$_SELF_PATH")" && pwd)"
 SELF="$HERE/$(basename "$_SELF_PATH")"
 MODULES_DIR="$HERE/modules"
 ENTRY="preprocess/extract_features.py"   # 相对 modules/ 的路径
-EMBED_SRC="$MODULES_DIR/preprocess/extract_features.py"
-
-# 从脚本② 源码读出当前模型线路（用正则读文本，**绝不 import** ——
-# 那个脚本没有 __main__ 保护，import 即执行，会覆盖已有产物）。
-# ⚠️ grab 只对「字面量赋值」有效（`textual_model = 'distil'`）。现在脚本② 写的是
-#    `textual_model = TEXT_MODEL`，值来自 paths.py、会跟着 COGNIALIGN_SPLIT 变
-#    （train -> distil，test -> chinese）。所以真正的取值来自下面 split_info()，
-#    直接问 paths.py 要（paths.py 只 import os，开销可忽略）；
-#    grab 只在那次调用失败时兜底。
-grab() { sed -n "s/^$1 *= *'\([^']*\)'.*/\1/p" "$EMBED_SRC" 2>/dev/null | head -1; }
+# 模型线路、文件名后缀、停顿开关全部由 split_info() 从配置读
+# （configs/*.yaml 的 encoders / dataset 段 + paths.py 的路径）。
+# 以前这里要 sed 抓 extract_features.py 的源码文本，脚本一改写法就失效。
+# 也绝不 import 那个脚本 —— 它没有 __main__ 保护，import 即执行会覆盖产物。
 
 BG=0
 CHECK=0
@@ -177,57 +171,48 @@ mkdir -p "$LOG_DIR"
 # =====================================================================
 split_info() {
     TEXT_MODEL=""; AUDIO_MODEL=""; LABELS_CSV=""; TEXT_DIR=""
+    PAUSES_SUF=""; TEXT_SUF=""; AUDIO_FULL_SUF=""; PAUSES_DESC=""
 
+    # 路径问 paths.py，文件名后缀 / 停顿开关问配置（core/feature_spec.py）。
+    # 一次问完，下面的 shell 逻辑就不必再靠模型名去猜后缀了。
     _info="$("$PYTHON" -c "
 import os, sys
 sys.path.insert(0, os.path.join(os.environ['COGNIALIGN_PROJECT_ROOT'], 'modules'))
 import paths
+from core import feature_spec
+spec = feature_spec.load_default(textual_model=paths.TEXT_MODEL, audio_model=paths.AUDIO_MODEL)
 print(paths.TEXT_MODEL)
 print(paths.AUDIO_MODEL)
 print(paths.SPLIT_LABELS_CSV)
 print(paths.SPLIT_TEXT_DIR)
+print('_pauses' if spec.pauses else '')
+print(spec.text_suffix())
+print(spec.audio_suffix())
 " 2>/dev/null || true)"
 
     if [ -n "$_info" ]; then
         { read -r TEXT_MODEL || true
           read -r AUDIO_MODEL || true
           read -r LABELS_CSV || true
-          read -r TEXT_DIR || true ; } <<EOF
+          read -r TEXT_DIR || true
+          read -r PAUSES_SUF || true
+          read -r TEXT_SUF || true
+          read -r AUDIO_FULL_SUF || true ; } <<EOF
 $_info
 EOF
     fi
-    [ -n "$TEXT_MODEL" ]  || TEXT_MODEL="$(grab textual_model)"
-    [ -n "$AUDIO_MODEL" ] || AUDIO_MODEL="$(grab audio_model)"
-
-    # 停顿开关：extract_features.py 里写的是字面量 `pauses = True/False`，
-    # 而它没有 __main__ 保护（import 即执行），所以只能 sed 读源码，不能 import。
-    # ⚠️ 关掉停顿会让产出文件名少一段 `_pauses`，这里的后缀必须跟着变，
-    #    否则下面「本次覆盖 N 个」会数错文件、日志里打印的文件名也是错的。
-    _pauses_src="$(sed -n 's/^pauses *= *\([A-Za-z]*\).*/\1/p' "$EMBED_SRC" 2>/dev/null | head -1)"
-    if [ "$_pauses_src" = "True" ]; then
-        PAUSES_SUF="_pauses"
+    # 后缀 / 停顿开关由上面的 python 从配置读出来：TEXT_SUF='distil_pauses'、
+    # AUDIO_FULL_SUF='distil_pauses_audio'、PAUSES_SUF='_pauses'。
+    # 这里不再用 case 硬编码模型名，也不再 sed 抓源码 —— 配置一改自动跟着变。
+    if [ -n "$PAUSES_SUF" ]; then
         PAUSES_DESC="开（读 transcription_pause 列）"
     else
-        PAUSES_SUF=""
         PAUSES_DESC="关（读 transcription 列）"
     fi
-
-    # 后缀规则来自 extract_features.py 和 dataset.py 里同一张 name_mapping_* 表
-    case "$TEXT_MODEL" in
-        bert) TEXT_SUF="" ;;
-        *)    TEXT_SUF="$TEXT_MODEL" ;;
-    esac
-    case "$AUDIO_MODEL" in
-        wav2vec2) AUDIO_SUF="_audio" ;;
-        egemaps)  AUDIO_SUF="_egemaps" ;;
-        mel)      AUDIO_SUF="_mel" ;;
-        xlsr)     AUDIO_SUF="_xlsr" ;;
-        *)        AUDIO_SUF="" ;;
-    esac
-    # 文本特征文件 = 编号 + 文本后缀 + [停顿后缀]，例如 adrso024distil_pauses.pt
-    TEXT_SUF="${TEXT_SUF}${PAUSES_SUF}"
-    # 音频特征文件 = 文本特征后缀 + 音频后缀，例如 adrso024distil_pauses_audio.pt
-    AUDIO_FULL_SUF="${TEXT_SUF}${AUDIO_SUF}"
+    if [ -z "$TEXT_SUF" ] && [ -z "$AUDIO_FULL_SUF" ]; then
+        echo "  [!!] 读不到配置里的编码器参数（configs/*.yaml 的 encoders 段）" >&2
+        echo "       确认 $PYTHON 能 import modules/core/feature_spec.py" >&2
+    fi
 
     # 样本数：从标签表数行数（awk 会数到最后一行没换行的），不写死
     if [ -n "${LABELS_CSV:-}" ] && [ -f "$LABELS_CSV" ]; then

@@ -7,13 +7,13 @@ os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 import sys
 import csv
 import pandas as pd
-from transformers import AutoTokenizer, RobertaModel, Wav2Vec2Processor, Wav2Vec2Model, BertTokenizer, BertModel, DistilBertModel, AutoModel
+# 具体用哪个 tokenizer / 模型类由配置决定，通过 core/encoders.py 加载；
+# 这里不再 import 任何具体的模型类，也不再出现任何仓库名。
 import torch
 # 注意：读音频**不要**用 torchaudio。torchaudio 2.9 起默认后端换成了 TorchCodec，
 # 而 TorchCodec 必须依赖外部 FFmpeg 库；没有 ffmpeg 的机器上会直接抛
 # "Could not load libtorchcodec"，而且 backend= 参数会被忽略（换后端也救不了）。
 # 本项目三条音频分支统一用 librosa.load（走 libsndfile，系统只需 libsndfile1）。
-import opensmile
 import unicodedata
 import librosa
 import math
@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # SPLIT / TEXT_MODEL / SPLIT_* 都在 paths.py 里统一决定（读环境变量）
 from paths import (SPLIT, TEXT_MODEL, AUDIO_MODEL, SPLIT_ROOT, SPLIT_AUDIO_DIR,
                    SPLIT_TEXT_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV)
-from core.model_download import resolve
+from core import feature_spec
+from core import encoders
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -36,93 +37,48 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #     COGNIALIGN_SPLIT=test COGNIALIGN_TEXT_MODEL=chinese python preprocess/extract_features.py
 textual_model = TEXT_MODEL          # 来自 paths.py：test 默认 chinese，其余 distil
 audio_model = AUDIO_MODEL
-# ── 停顿开关 ────────────────────────────────────────────────────────────
+# ── 编码器参数 / 数据集超参：全部从配置文件读 ──────────────────────────
+# 以前 `pauses`、`max_length`、`segment_length` 和「模型名 → 文件名后缀」的
+# 映射表都硬写死在这里，改了还得记得手动去改 configs/*.yaml（注释里原本就
+# 写着"必须同时改"）—— 典型的改一处忘一处。现在这些值只有一份，在
+# configs/*.yaml 的 `dataset:` / `encoders:` 两段里，改配置就切换，不动这里。
+#
+# 用哪个文本 / 音频模型仍由环境变量决定（paths.py 按 COGNIALIGN_SPLIT 切：
+# train→distil，test→chinese），这里传进去覆盖配置里的默认值。
+# 想换配置文件：设 COGNIALIGN_CONFIG=/path/to/xxx.yaml
+spec = feature_spec.load_default(textual_model=textual_model, audio_model=audio_model)
+
 # True  = 用 transcription_pause 列（按停顿插了 . , ... 的那版）
 # False = 用 transcription 列（纯词流，没有停顿标记）
-#
-# 🚨 改这里必须**同时**改 modules/configs/*.yaml 里的 `pauses`，否则训练直接崩：
-#      dataset.py 按 yaml 的 pauses 拼文件名（True -> <uid>distil_pauses.pt），
-#      而本脚本按这里的 pauses 决定往哪个名字写。
-#      两边不一致 = 训练时 FileNotFoundError。
-#   （本脚本不读 yaml —— 它没有配置文件这个入参，只能靠人工对齐。）
-# 改了之后产出的文件名会多 `_pauses` 后缀，因此与不带停顿的旧特征**并存不覆盖**，
-# 两种配置可以各跑一套、互不影响。训练的结果目录也会多一个 `P_`
-# （distil_wav2vec2_P_cross_mean），不会覆盖旧结果。
-pauses = True
+pauses = spec.pauses
 
 pauses_data = '_pauses' if pauses else ''
-name_mapping_text = {
-    'bert': '',
-    'distil': 'distil',
-    'chinese': 'chinese',
-    'roberta': 'roberta',
-    'mistral': 'mistral',
-    'qwen': 'qwen',
-    'stella': 'stella'
-}
-textual_model_data = name_mapping_text.get(textual_model, '')
-name_mapping_audio = {
-    'wav2vec2': 'audio',
-    'egemaps': 'egemaps',
-    'mel': 'mel'
-}
-audio_model_data = '_' + name_mapping_audio.get(audio_model, '')
+# 特征文件名中间那两段（'distil' 和 '_audio'），查配置的 encoders 段。
+# ⚠️ 音频文件名里带着文本模型那段后缀，所以换文本模型时音频也得重跑。
+textual_model_data = spec.text_entry().get('suffix', '')
+audio_model_data = '_' + spec.audio_entry().get('suffix', '')
 
 # 所有模型一律经 model_download.resolve() 拿本地路径：
 # 本地 models/<名字>/ 里已经有就直接用（不发任何网络请求），
 # 没有才下载到那里。不再直接写 repo 名 —— 那样即使本地有缓存，
 # transformers 也会先去 huggingface.co 校验版本，这台机器连不上。
-if textual_model == 'bert':
-    _path = resolve("bert-base-uncased")
-    tokenizer = BertTokenizer.from_pretrained(_path)
-    model = BertModel.from_pretrained(_path).to(device)
-elif textual_model == 'roberta':
-    _path = resolve("roberta-base")
-    tokenizer = AutoTokenizer.from_pretrained(_path)
-    model = RobertaModel.from_pretrained(_path).to(device)
-elif textual_model == 'distil':
-    _path = resolve("distilbert-base-uncased")
-    tokenizer = AutoTokenizer.from_pretrained(_path)
-    model = DistilBertModel.from_pretrained(_path).to(device)
-elif textual_model == 'chinese':
-    # test 集是中文语料。bert-base-chinese 的 tokenizer 是**按字切分**的
-    # （一个汉字一个 token，且不带 ## 前缀），正好和逐词时间戳表里的单字对得上，
-    # 所以脚本② 的 token 分组逻辑不用改也能用。
-    _path = resolve("bert-base-chinese")
-    tokenizer = BertTokenizer.from_pretrained(_path)
-    model = BertModel.from_pretrained(_path).to(device)
-elif textual_model == 'stella':
-    _path = resolve("NovaSearch/stella_en_1.5B_v5")
-    tokenizer = AutoTokenizer.from_pretrained(_path, trust_remote_code=True)
-    model = AutoModel.from_pretrained(_path, trust_remote_code=True)
-elif textual_model == 'mistral':
-    _path = resolve("mistralai/Mistral-7B-v0.1")
-    # 需要 Access Token（gated 模型）；首次下载时设 HF_TOKEN 环境变量，
-    # 本地已有的话完全不需要。
-    tokenizer = AutoTokenizer.from_pretrained(_path)
-    tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModel.from_pretrained(_path)
-elif textual_model == 'qwen':
-    _path = resolve("Qwen/Qwen2.5-7B")
-    tokenizer = AutoTokenizer.from_pretrained(_path)
-    model = AutoModel.from_pretrained(_path)
+# 加载哪个模型、用哪个 tokenizer / 模型类，全部看配置（见 core/encoders.py）。
+# 以前这里是 7 个 `elif textual_model == '...'`，仓库名和类名都硬写在代码里，
+# 加一个模型就要动这个文件。现在加模型只需改 configs/*.yaml 的 encoders 段。
+tokenizer, model = encoders.load_text(spec.text_entry(), device)
 
 model.eval()
 
-if audio_model == 'wav2vec2':
-    _path = resolve("facebook/wav2vec2-base-960h")
-    processor = Wav2Vec2Processor.from_pretrained(_path)
-    wav2vec_model = Wav2Vec2Model.from_pretrained(_path).to(device)
-    wav2vec_model.eval()
-    segment_length = 50
-elif audio_model == 'egemaps':
-    smile = opensmile.Smile(
-        feature_set=opensmile.FeatureSet.eGeMAPSv02,
-        feature_level=opensmile.FeatureLevel.Functionals,
-    )
-    segment_length = 10
-else:
-    segment_length = 50
+# 音频侧同理：kind 决定走哪条算法路径（'hf' 神经网络 / 'opensmile' / 'mel_librosa'），
+# payload 是 processor 或 Smile 对象，audio_encoder 是模型（后两种为 None）。
+audio_kind = audio_payload = audio_encoder = None
+if audio_model:
+    audio_kind, audio_payload, audio_encoder = encoders.load_audio(spec.audio_entry(), device)
+
+# 音频每秒多少帧 —— 把时间戳的「秒」换算成帧号。
+# 读配置里 encoders.audio.<模型>.fps：wav2vec2=50、egemaps=10、mel=50。
+# ⚠️ 这个值填错**不报错**，但整条样本的对齐会整体错位。
+segment_length = spec.fps()
 
 # 当前 split 对应的路径，在 paths.py 里统一决定（SPLIT_* 那一组）
 ROOT_DIR = SPLIT_ROOT
@@ -138,7 +94,8 @@ print(f"处理 split: {SPLIT}  |  文本模型: {textual_model}  |  数据根: {
 # 所以提到 512（DistilBERT 位置编码的硬上限），只剩 adrso276（593）还会超。
 # ⚠️ 改了这里，产出的 .pt 形状会从 (200, F) 变成 (512, F)，与论文设置不同，
 #    分数不能和原文直接对比。
-max_length = 512
+# 具体取值在配置的 dataset.max_length（以前是硬写死在这里的 512）
+max_length = spec.max_length
 
 # 续跑开关：设 COGNIALIGN_SKIP_DONE=1 时，两个特征文件都已产出的样本直接跳过。
 # 默认关闭 —— 不设就是原来的行为（全部重做一遍）。
@@ -253,7 +210,7 @@ def preprocess_text():
         if audio_model != '':
             audio_path = os.path.join(root_path, row['diagno'], row['uid'] + '.wav')
 
-            if audio_model == 'wav2vec2':
+            if audio_kind == 'hf':
                 # 读音频统一用 librosa（和 egemaps 分支同一套），**不要用
                 # torchaudio.load**：torchaudio 2.11 起强制走 TorchCodec，
                 # 而 TorchCodec 需要外部 FFmpeg 库。没有 ffmpeg 的机器上
@@ -264,9 +221,9 @@ def preprocess_text():
                 y, sample_rate = librosa.load(audio_path, sr=16000, mono=True)
                 wave_form = torch.from_numpy(y).float()
 
-                inputs_audio = processor(wave_form, sampling_rate=sample_rate, return_tensors="pt").to(device)
+                inputs_audio = audio_payload(wave_form, sampling_rate=sample_rate, return_tensors="pt").to(device)
                 with torch.no_grad():
-                    outputs_audio = wav2vec_model(**inputs_audio)
+                    outputs_audio = audio_encoder(**inputs_audio)
 
                 # 输出是 50 Hz（16k 下采样 320 倍），正好对应上面的 segment_length = 50
                 last_hidden_states_audio = outputs_audio.last_hidden_state.squeeze(0).cpu()
@@ -274,7 +231,7 @@ def preprocess_text():
 
                 if torch.isnan(last_hidden_states_audio).any():
                     last_hidden_states_audio = torch.nan_to_num(last_hidden_states_audio, nan=0.0)
-            elif audio_model == 'egemaps':
+            elif audio_kind == 'opensmile':
                 y, sr = librosa.load(audio_path)
                 frame_size = 0.1
 
@@ -283,7 +240,7 @@ def preprocess_text():
 
                 features = []
                 for frame in frames:
-                    features.append(smile.process_signal(frame, sr))
+                    features.append(audio_payload.process_signal(frame, sr))
                 
                 features = np.vstack(features)
 
@@ -299,7 +256,7 @@ def preprocess_text():
                 if torch.isnan(last_hidden_states_audio).any():
                     print(f"ERROR BEFORE in {row['diagno']}, {row['uid']}: NaN values in features_audio")
                     last_hidden_states_audio = torch.nan_to_num(last_hidden_states_audio, nan=0.0)
-            elif audio_model == 'mel':
+            elif audio_kind == 'mel_librosa':
                 y, sr = librosa.load(audio_path)
 
                 win_length = int(0.02 * sr)  # 20 ms en samples

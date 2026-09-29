@@ -19,7 +19,6 @@
 """
 
 import os
-import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
@@ -165,44 +164,23 @@ except Exception as e:
 
 
 # --------------------------------------------------------------------------
-# 4b) 读源码里的配置（正则，绝不执行）
+# 4b) 用哪个模型、序列多长 —— 从配置文件读
 # --------------------------------------------------------------------------
-EMBED_SRC = os.path.join(MODULES_DIR, "preprocess", "extract_features.py")
+# 以前这一段是去抓 extract_features.py 的源码文本（正则匹配 `max_length = 512`），
+# 那边换个写法就抓不到；TEXT_REPO / AUDIO_REPO 又是两张重复的模型清单。
+# 现在统一问 core/feature_spec.py（它读 configs/*.yaml 的 encoders / dataset 段）。
+from core import feature_spec  # noqa: E402
 
-
-def grab(src, name):
-    m = re.search(r"^%s\s*=\s*['\"]?([^'\"\n#]+)['\"]?" % re.escape(name), src, re.M)
-    return m.group(1).strip() if m else None
-
-
-TEXT_REPO = {
-    "bert": "bert-base-uncased",
-    "distil": "distilbert-base-uncased",
-    "chinese": "bert-base-chinese",
-    "roberta": "roberta-base",
-    "stella": "NovaSearch/stella_en_1.5B_v5",
-    "mistral": "mistralai/Mistral-7B-v0.1",
-    "qwen": "Qwen/Qwen2.5-7B",
-}
-AUDIO_REPO = {"wav2vec2": "facebook/wav2vec2-base-960h"}
-
-textual = audio = maxlen = None
+# 模型名优先听环境变量（paths.py 按 COGNIALIGN_SPLIT 切：train→distil，test→chinese）
+textual = getattr(paths, "TEXT_MODEL", None)
+audio = getattr(paths, "AUDIO_MODEL", None)
+maxlen = None
+spec = None
 try:
-    with open(EMBED_SRC, encoding="utf-8") as f:
-        src = f.read()
-    textual = grab(src, "textual_model")
-    audio = grab(src, "audio_model")
-    maxlen = grab(src, "max_length")
-    # ⚠️ 脚本② 现在写的是 `textual_model = TEXT_MODEL`（值来自 paths.py，会跟着
-    # COGNIALIGN_SPLIT 变：train -> distil，test -> chinese），grab 抓到的是
-    # **变量名**而不是真实取值，于是后面会误报"不在已知清单里"，也不会去检查
-    # 该下载哪个模型。真实取值直接问 paths.py（它只读环境变量，无副作用）。
-    if textual not in TEXT_REPO:
-        textual = getattr(paths, "TEXT_MODEL", textual)
-    if audio not in AUDIO_REPO:
-        audio = getattr(paths, "AUDIO_MODEL", audio)
+    spec = feature_spec.load_default(textual_model=textual, audio_model=audio)
+    maxlen = spec.max_length
 except Exception as e:
-    warn("读不到 extract_features.py 的配置: %s" % e)
+    warn("读不到配置文件里的编码器参数: %s" % e)
 
 
 # --------------------------------------------------------------------------
@@ -289,7 +267,12 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
 
     # ---- 已完成特征（续跑判断依据）----
     if need_pt or need_words:
-        n_txt_pt = n_aud_pt = 0
+        n_txt_pt = n_aud_pt = n_other_pt = 0
+        # 后缀统一从配置读（见 core/feature_spec.py），不再硬编码
+        # "_audio.pt / _egemaps.pt / _mel.pt"。只统计**当前配置**的两种，
+        # 别的配置遗留下来的特征单独计数 —— 否则打印的数字会跟直觉对不上。
+        t_tail = (spec.text_suffix() + ".pt") if spec is not None else None
+        a_tail = (spec.audio_suffix() + ".pt") if spec is not None else None
         for dx in ("ad", "cn"):
             d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
             if not os.path.isdir(d):
@@ -297,14 +280,19 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
             for x in os.listdir(d):
                 if not x.endswith(".pt"):
                     continue
-                if x.endswith("_egemaps.pt") or x.endswith("_mel.pt") or x.endswith("_audio.pt"):
+                if a_tail and x.endswith(a_tail):
                     n_aud_pt += 1
-                else:
+                elif t_tail and x.endswith(t_tail):
                     n_txt_pt += 1
+                else:
+                    n_other_pt += 1
         if n_txt_pt or n_aud_pt:
-            info("已有特征: 文本 %d 个 / 音频 %d 个（--resume 会跳过这些样本）" % (n_txt_pt, n_aud_pt))
+            info("已有特征（当前配置）: 文本 %d 个 / 音频 %d 个（--resume 会跳过这些样本）"
+                 % (n_txt_pt, n_aud_pt))
         else:
             info("已有特征: 无（全新跑）")
+        if n_other_pt:
+            info("另有 %d 个其它配置留下的旧特征（当前配置用不到，留着不影响）" % n_other_pt)
 
 
 # --------------------------------------------------------------------------
@@ -315,15 +303,15 @@ if model_download is not None and paths is not None:
 
     need = []
     if MODE == "preprocess":
-        if textual in TEXT_REPO:
-            need.append((TEXT_REPO[textual], "文本侧（%s）" % textual))
+        repo_text = spec.repo('text') if (spec is not None and textual) else ''
+        repo_audio = spec.repo('audio') if (spec is not None and audio) else ''
+        if repo_text:
+            need.append((repo_text, "文本侧（%s）" % textual))
         elif textual:
-            warn("脚本里的 textual_model=%r 不在已知清单里，无法预判要哪个模型" % textual)
-        if audio in AUDIO_REPO:
-            need.append((AUDIO_REPO[audio], "音频侧（%s）" % audio))
-        elif audio and audio not in ("egemaps", "mel"):
-            warn("脚本里的 audio_model=%r 不在已知清单里" % audio)
-        else:
+            warn("配置里没登记 textual_model=%r，无法预判要哪个模型" % textual)
+        if repo_audio:
+            need.append((repo_audio, "音频侧（%s）" % audio))
+        elif audio:
             info("音频侧 %s 不需要下载模型（egemaps 用 openSMILE，mel 用 librosa 算）" % audio)
     elif MODE == "asr":
         need.append(("Systran/faster-whisper-small", "语音转写"))

@@ -7,7 +7,7 @@
 
 | 目录 | 管什么 |
 |---|---|
-| `core/` | 通用基础：读配置、训练循环、预训练模型下载 |
+| `core/` | 通用基础：读配置、训练循环、预训练模型下载、编码器参数的唯一出处 |
 | `dataset/` | 数据侧：读特征、5 折划分、一次性摆数据 |
 | `networks/` | 模型结构：几种融合编码器 |
 | `preprocess/` | 特征提取流水线：① 逐词时间戳 → ② 对齐存特征 |
@@ -22,7 +22,7 @@
 |---|---|
 | 换数据 / 模型的存放位置 | **别改代码**，设环境变量，见 `paths.py` 顶部注释 |
 | 换数据集、重新摆目录结构 | `dataset/build_dataset.py` |
-| 换文本 / 音频编码器 | `preprocess/extract_features.py` 里的 `textual_model` / `audio_model`，**还有** `configs/*.yaml`（两处必须对上） |
+| 换文本 / 音频编码器 | **只改 `configs/*.yaml`**：在 `encoders` 段加一段，再把 `model.textual_model` / `model.audio_model` 指过去 |
 | 改网络结构 / 融合方式 | `networks/model.py` |
 | 调学习率、轮数、batch | `configs/default.yaml` |
 | 改训练 / 验证循环 | `core/utils.py` |
@@ -63,10 +63,11 @@ modules/logs/<配置名>/model_fold_<N>.pth  ──► 手动复制到 checkpoin
 2. 🚨 **脚本① 和脚本② 都没有 `if __name__ == "__main__":` 保护**，
    对它们 `import` 或 `--help` 会真的开跑，并**静默覆盖**已有的逐词表。
    要检查它们只能读源码 / 用 `ast`。
-3. **换音频编码器要三处一起改**：`extract_features.py` 的 `audio_model`、
-   `configs/*.yaml` 的 `model.audio_model`、还有文件名后缀的映射表
-   （extract_features.py / dataset.py / verify_features.py / run_preprocess.sh 四处各有一份）。
-   改完必须用**词最多、时间贴着音频末尾**的极端样本验证。
+3. **换音频编码器**：只在 `configs/*.yaml` 的 `encoders.audio` 段加一段
+   —— 写清 `suffix` / `dim` / `fps` / `repo` / `processor` / `model`，
+   不是 HF 模型就写 `loader: opensmile` 或 `mel_librosa`；再把 `model.audio_model`
+   指过去。**不用动任何 .py**（后缀、帧率、维度、加载方式都从配置读）。
+   改完必须用**词最多、时间贴着音频末尾**的极端样本验证（帧率一变，对齐边界最容易出错）。
 4. 🚨 **uid 必须当字符串读**：test 的 uid 是 `"0002"` 这种纯数字串，
    被 pandas 推成整数就变成 `2`，拼路径时直接 TypeError。只有跑 test 才暴露。
 5. 中文生僻字（锨镊鳊笤）在 bert-base-chinese 里是 `[UNK]`，会让对齐整条错位。

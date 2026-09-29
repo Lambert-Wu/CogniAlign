@@ -37,7 +37,9 @@ CogniAlign/
 │   ├── evaluate.py                 # 拿训好的权重测一遍：准确率 / AUC / 混淆矩阵
 │   ├── core/                       # 通用基础（与任务无关）
 │   │   ├── utils.py                # 种子、读 yaml 配置、训练循环、存盘
-│   │   └── model_download.py       # 预训练模型：先找本地，没有才下载
+│   │   ├── model_download.py       # 预训练模型：先找本地，没有才下载
+│   │   ├── feature_spec.py         # 编码器参数的唯一出处（读 configs 的 encoders 段）
+│   │   └── encoders.py             # 按配置加载编码器（不再有 if 模型名 的分支）
 │   ├── dataset/                    # 数据侧
 │   │   ├── dataset.py              # 读特征 + 5 折划分 + DataLoader
 │   │   └── build_dataset.py        # 一次性把语料摆成 data/diagnosis/

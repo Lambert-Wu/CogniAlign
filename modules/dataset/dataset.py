@@ -8,6 +8,7 @@ from sklearn.model_selection import KFold
 # COGNIALIGN_SPLIT=test 会把它们切到 data/diagnosis/test/。
 # SPLIT=train 时 SPLIT_* 就等于下面注释里的 train 路径，行为完全不变。
 from paths import SPLITS_DIR, SPLIT_TEXT_DIR, SPLIT_AUDIO_DIR, SPLIT_LABELS_CSV
+from core import feature_spec
 
 # 路径集中在 paths.py，默认指向项目内 data/diagnosis/train/
 root_text_path = SPLIT_TEXT_DIR + os.sep
@@ -33,21 +34,10 @@ class AdressoDataset(Dataset):
         
         return self.features[idx], self.labels[idx]
 
-name_mapping_text = {
-    'bert': '',
-    'distil': 'distil',
-    'chinese': 'chinese',
-    'roberta': 'roberta',
-    'mistral': 'mistral',
-    'qwen': 'qwen',
-    'stella': 'stella'
-}
-
-name_mapping_audio = {
-    'wav2vec2': 'audio',
-    'egemaps': 'egemaps',
-    'mel': 'mel'
-}
+# 「模型名 → 文件名后缀」的映射表现在只有一份，在 configs/*.yaml 的 encoders: 段。
+# 这里不再抄第二份 —— 以前 extract_features.py、本文件、verify_features.py
+# 各存了一张同样的表，改一处忘两处，特征就会"存得进去、读不出来"。
+# 要拿后缀就用 core.feature_spec.from_config(config)。
 
 
 def read_CSV(config):
@@ -63,8 +53,11 @@ def read_CSV(config):
     features = []
     labels = []
 
-    pauses_data = '_pauses' if config.model.pauses else ''
-    audio_data = '_' + name_mapping_audio[config.model.audio_model] if config.model.audio_model != '' else ''
+    # 文件名后缀从配置里查（单一真相，见 core/feature_spec.py）。
+    # 用传进来的 config，这样 `--config 另一套.yaml` 才能真的生效。
+    spec = feature_spec.from_config(config)
+    text_suffix = spec.text_suffix()
+    audio_suffix = spec.audio_suffix()
 
 
     for index, row in labels_pd.iterrows():
@@ -74,13 +67,12 @@ def read_CSV(config):
 
 
         if config.model.textual_model != '':
-            text_embeddings_path = os.path.join(root_text_path, row['dx'], row['adressfname'] + 
-                                                    name_mapping_text[config.model.textual_model] + pauses_data + '.pt')
-            
+            text_embeddings_path = os.path.join(root_text_path, row['dx'],
+                                                row['adressfname'] + text_suffix + '.pt')
+
         if config.model.audio_model != '':
-            textual_data = name_mapping_text[config.model.textual_model] if config.model.textual_model != '' else 'distil'
-            audio_embeddings_path = os.path.join(root_text_path, row['dx'], row['adressfname'] + textual_data 
-                                                 + pauses_data + audio_data + '.pt')
+            audio_embeddings_path = os.path.join(root_text_path, row['dx'],
+                                                 row['adressfname'] + audio_suffix + '.pt')
         
         if config.model.multimodality:
             features.append((torch.load(audio_embeddings_path).to(device), torch.load(text_embeddings_path).to(device)))

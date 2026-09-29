@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""数据集路径集中配置。
+r"""数据集路径集中配置。
 
 原代码把路径以 '/dataset/diagnosis/...' 的形式写死在 dataset.py 和两个
 preprocess 脚本里（作者 Linux 集群上的绝对路径），换机器必然跑不通。
