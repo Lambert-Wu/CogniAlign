@@ -201,7 +201,9 @@ def main():
 
     device = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
     split = paths.SPLIT
-    textual = args.textual_model or ('chinese' if split == 'test' else 'distil')
+    # split → 用哪个文本模型的映射已经在 paths.py 算好了（paths.TEXT_MODEL），
+    # 这里不再重写一遍 —— 以前两处各写一份，改一处忘一处就会不一致
+    textual = args.textual_model or paths.TEXT_MODEL
 
     print('当前 split : %s（%s）' % (split, paths.SPLIT_ROOT))
     print('权重       : %s' % args.checkpoint)

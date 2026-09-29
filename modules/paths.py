@@ -61,8 +61,9 @@ MODELS_DIR = os.environ.get(
     "COGNIALIGN_MODELS_DIR",
     os.path.join(_PROJECT_ROOT, "models"),
 )
-WHISPER_MODEL_DIR = os.path.join(MODELS_DIR, "faster-whisper-small")
-DISTIL_MODEL_DIR = os.path.join(MODELS_DIR, "distilbert-base-uncased")
+# （这里原本还有 WHISPER_MODEL_DIR / DISTIL_MODEL_DIR 两个常量，
+#   全项目没人引用，属于死代码，已删除。模型目录一律用
+#   core.model_download.resolve(<repo 名>) 现算。）
 
 
 # --------------------------------------------------------------- 当前 split
