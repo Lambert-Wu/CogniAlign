@@ -156,27 +156,61 @@ CFG_PATH="$MODULES_DIR/$CONFIG"
 # 入参，靠这个环境变量找配置。不 export 的话它们会去读 default.yaml，
 # 用 -f 换了配置就会误报"特征不齐"。
 export COGNIALIGN_CONFIG="$CONFIG"
-yaml_get() {   # yaml_get <key>
-    sed -n "s/^  $1: *'\{0,1\}\([^'#]*\)'\{0,1\}.*/\1/p" "$CFG_PATH" 2>/dev/null | head -1 | tr -d ' '
-}
 
-PATH_NAME=""
+# ⚠️ 以前这里是 `sed` 抓 yaml 里的字面量（还按"两个空格缩进"硬匹配），
+#    注释里出现同名键就会抓错。现在和 run_preprocess.sh 一样交给 python 读配置。
+#
+# ⚠️ 更要紧的是：读出来的**模型名要 export 出去**。verify_features.py /
+#    check_env.py 没有 --config 入参，靠这两个环境变量决定去核对**哪一套**特征。
+#    不 export 的话它们按 split 的默认走（train → distil + wav2vec2、特征目录 text/），
+#    于是核对的是**老特征**：老特征齐全时自检照样"通过"，等 train.py 真按配置去
+#    找 <split>/text_xlmr_xlsr/ 时才崩 —— 典型的"自检说没事，一跑就挂"。
+_text=""; _audio=""; _feat_dir=""; _text_suf=""; _audio_suf=""; _pauses="0"
+_fusion=""; _pooling=""
 if [ -f "$CFG_PATH" ]; then
-    _text="$(yaml_get textual_model)"
-    _audio="$(yaml_get audio_model)"
-    _pauses="$(yaml_get pauses)"
-    _fusion="$(yaml_get fusion)"
-    _pooling="$(yaml_get pooling)"
-    _name=""
-    if [ -n "$_text" ]; then _name="${_text}_"; fi
-    if [ -n "$_audio" ]; then _name="${_name}${_audio}_"; fi
-    if [ "$_pauses" = "True" ]; then _name="${_name}P_"; fi
-    _name="${_name}${_fusion}"
-    PATH_NAME="${_name}_${_pooling}"
-    RESULT_DIR="$MODULES_DIR/logs/$PATH_NAME"
-else
-    RESULT_DIR="<配置文件缺失，算不出来>"
+    _cfg="$("$PYTHON" -c "
+import os, sys
+sys.path.insert(0, os.environ['COGNIALIGN_PROJECT_ROOT'] + '/modules')
+from core import feature_spec
+cfg = feature_spec.load_default().cfg
+m = cfg.get('model', {}) or {}
+text_m = str(m.get('textual_model', '') or '')
+audio_m = str(m.get('audio_model', '') or '')
+spec = feature_spec.load_default(textual_model=text_m or None,
+                                 audio_model=audio_m or None)
+print(text_m)
+print(audio_m)
+print(spec.features_dir())
+print(spec.text_suffix())
+print(spec.audio_suffix())
+print('1' if spec.pauses else '0')
+print(str(m.get('fusion', '') or ''))
+print(str(m.get('pooling', '') or ''))
+" 2>/dev/null || true)"
+    if [ -n "$_cfg" ]; then
+        { read -r _text     || true
+          read -r _audio    || true
+          read -r _feat_dir || true
+          read -r _text_suf || true
+          read -r _audio_suf || true
+          read -r _pauses   || true
+          read -r _fusion   || true
+          read -r _pooling  || true ; } <<EOF
+$_cfg
+EOF
+    fi
 fi
+
+if [ -n "$_text" ];  then export COGNIALIGN_TEXT_MODEL="$_text";  fi
+if [ -n "$_audio" ]; then export COGNIALIGN_AUDIO_MODEL="$_audio"; fi
+
+# 结果目录名，规则同 utils.save_config()：{文本}_{音频}_{P_}{融合}_{池化}
+_name=""
+if [ -n "$_text" ];  then _name="${_text}_";  fi
+if [ -n "$_audio" ]; then _name="${_name}${_audio}_"; fi
+if [ "$_pauses" = "1" ]; then _name="${_name}P_"; fi
+PATH_NAME="${_name}${_fusion}_${_pooling}"
+RESULT_DIR="$MODULES_DIR/logs/$PATH_NAME"
 
 # =====================================================================
 # 「worker」模式：跑 → 核对 → （失败时）排错指引
@@ -193,6 +227,8 @@ if [ "$WORKER" = 1 ]; then
     echo " 配置文件 : $CONFIG"
     echo " 数据根   : $COGNIALIGN_DATA_ROOT"
     echo " 结果目录 : $RESULT_DIR"
+    echo " 用哪套特征: <split>/$_feat_dir/   （文本 $_text + 音频 $_audio）"
+    echo " 期望文件名: <uid>$_text_suf.pt 与 <uid>$_audio_suf.pt"
     echo " wandb    : $WANDB_MODE_CHOICE"
     echo " 续跑     : $COGNIALIGN_RESUME（1 = 已跑完的折跳过）"
     echo "======================================================"
@@ -278,8 +314,9 @@ if [ "$WORKER" = 1 ]; then
         echo "     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126"
         echo "  2) 特征文件不全 / 文件名对不上"
         echo "     python modules/tools/verify_features.py        # 会逐条指出缺哪个 uid 的哪种特征"
-        echo "     最常见的坑：configs/*.yaml 里的 audio_model 和后缀对不上"
-        echo "     （wav2vec2 -> <uid>distil_audio.pt；egemaps -> <uid>distil_egemaps.pt）"
+        echo "     这次训练要找的是 <split>/$_feat_dir/ 下的"
+        echo "     <uid>$_text_suf.pt 与 <uid>$_audio_suf.pt —— 名字由配置的"
+        echo "     encoders 段（suffix）和 dataset 段（pauses / features_dir）决定，"
         echo "  3) CUDA 显存不够 —— 实测这个模型 batch_size=32 只要约 2 GB，一般不会"
         echo "     真报 OOM 就把 configs/*.yaml 里的 batch_size 调小"
         echo "  4) wandb 卡住 / 报 API key"
@@ -336,6 +373,8 @@ echo "步骤 2/2  启动训练"
 echo "------------------------------------------------------"
 echo "配置文件 : $CONFIG"
 echo "结果目录 : $RESULT_DIR"
+echo "用哪套特征: <split>/$_feat_dir/   （文本 $_text + 音频 $_audio）"
+echo "期望文件名: <uid>$_text_suf.pt 与 <uid>$_audio_suf.pt"
 
 WORKER_ARGS=(--_worker -f "$CONFIG" -w "$WANDB_MODE_CHOICE")
 if [ "$RESUME" = 1 ]; then
