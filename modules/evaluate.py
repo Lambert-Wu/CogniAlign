@@ -229,11 +229,22 @@ def main():
     # 只保留某一折的验证集 / 训练集
     if args.fold is not None:
         part = 'train' if args.on_train else 'val'
-        if split != 'train':
-            raise SystemExit('--fold 要配合训练集用（val_uids 是按 train 的 235 条划分的），'
-                             '当前 split=%s' % split)
-        sel = np.load(os.path.join(paths.SPLITS_DIR, '%s_uids%d.npy' % (part, args.fold)),
-                      allow_pickle=True)
+        # ⚠️ 这里以前写死「--fold 只能配 train 用」，理由是"折划分只有 train 有"。
+        #    那个前提已经变了：现在 test（中文）也能有自己的折划分
+        #    （paths.SPLITS_DIR 跟着 split 走，见 tools/make_splits.py），
+        #    「用中文 80 条自己切 5 折训练」这个实验就要在 test 下用 --fold。
+        #    所以改成**看文件在不在**：划分文件存在就允许，不存在才报错。
+        split_path = os.path.join(paths.SPLITS_DIR, '%s_uids%d.npy' % (part, args.fold))
+        if not os.path.exists(split_path):
+            raise SystemExit(
+                '找不到这一折的划分文件：%s\n'
+                '  · 当前 split=%s，划分目录 = %s\n'
+                '  · 该 split 还没做过 5 折划分？跑一下：\n'
+                '      COGNIALIGN_SPLIT=%s python modules/tools/make_splits.py --apply'
+                % (split_path, split, paths.SPLITS_DIR, split))
+        # 不加 allow_pickle：划分文件是定长字符串数组（<U8），和英文那份格式一致。
+        # 加了反而会掩盖"格式写错"这类问题。
+        sel = np.load(split_path)
         sel_set = {str(u) for u in sel}
         keep = [i for i, u in enumerate(uids) if str(u) in sel_set]
         if not keep:

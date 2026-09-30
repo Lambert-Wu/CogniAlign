@@ -45,7 +45,9 @@ AUDIO_DIR = os.path.join(TRAIN_ROOT, "audio")
 # ⚠️ 这里**只有 .csv**；特征 .pt 在 feat_* 目录里（见下面的 feature_dir）。
 WORDS_DIR = os.path.join(TRAIN_ROOT, "words")
 SEGMENTATION_DIR = os.path.join(TRAIN_ROOT, "segmentation")
-SPLITS_DIR = os.path.join(TRAIN_ROOT, "splits")
+# ⚠️ SPLITS_DIR **不在这里定义** —— 它要跟着 split 走（train / test 各一份），
+#    所以放在下面 SPLIT_ROOT 定好之后再算。原来这里写死 TRAIN_ROOT，
+#    会导致「用中文自切 5 折」时读写都指向英文那份划分（详见下面的注释）。
 
 LABELS_CSV = os.path.join(TRAIN_ROOT, "adresso-train-mmse-scores.csv")
 TRANSCRIPTIONS_CSV = os.path.join(TRAIN_ROOT, "text_transcriptions.csv")
@@ -112,6 +114,16 @@ else:
     SPLIT_WORDS_DIR = WORDS_DIR
     SPLIT_LABELS_CSV = LABELS_CSV
     SPLIT_TRANSCRIPTIONS_CSV = TRANSCRIPTIONS_CSV
+
+# 折划分文件（train_uids<n>.npy / val_uids<n>.npy）放哪。
+# ⚠️ 必须**跟着 split 走**，和 SPLIT_ROOT 保持一致。这里以前写死成 TRAIN_ROOT，
+#    于是「拿中文(test)自己切 5 折训练」时会发生两件坏事：
+#      · 读：去 data/train/splits/ 拿英文那 235 条的划分，uid 对不上中文的 80 条
+#            → 折里匹配不到任何样本
+#      · 写：set_splits() 会把中文的划分**覆盖掉英文的**，毁掉已有实验
+#    改成按 split 分开后，中英文各有一份，互不干扰：
+#      train → data/train/splits/   test → data/test/splits/
+SPLITS_DIR = os.path.join(SPLIT_ROOT, "splits")
 
 
 def feature_dir(name="distil"):

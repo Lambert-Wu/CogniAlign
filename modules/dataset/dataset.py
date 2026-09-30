@@ -18,7 +18,9 @@ from core import feature_spec
 
 # 标签表同样跟着 split 走（test 是 test/test_labels.csv）
 csv_labels_path = SPLIT_LABELS_CSV
-# 5 折划分只在 train 上有，所以 SPLITS_DIR 不跟着 split 变
+# 折划分也**跟着 split 走**（paths.SPLITS_DIR = <当前 split>/splits/）。
+# 原先这里写死"只有 train 有划分"，于是「拿中文(test)自己切 5 折训练」时
+# 会读英文那份划分、uid 全对不上。现在 train / test 各有一份，互不干扰。
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 max_length_wav2vec = 4000
