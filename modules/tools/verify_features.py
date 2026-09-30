@@ -34,8 +34,27 @@ QUICK = "--quick" in sys.argv
 import paths  # noqa: E402
 from core import feature_spec  # noqa: E402
 
-textual_model = paths.TEXT_MODEL    # 由 paths.py 决定，跟着 COGNIALIGN_SPLIT 走
-audio_model = paths.AUDIO_MODEL
+# ⚠️ 模型名（文本/音频）优先从**配置文件**读，而不是按 split 猜。
+#    以前这里写死 `paths.TEXT_MODEL`（跟着 COGNIALIGN_SPLIT 走：train→distil、
+#    test→chinese），核对别的实验时会拿错模型去拼文件名 ——
+#    例如 `COGNIALIGN_CONFIG=configs/xlmr_wav2vec2.yaml` 时它仍按 distil 找，
+#    明明 470 个 .pt 都在也报「缺 235 条」，还把它们全列成"多出的文件"。
+#
+#    优先级（和 run_preprocess.sh 的 split_info() **完全一致**，别各写一套）：
+#      1. model.split_textual_model.<split>   —— 按 split 覆盖（老实验靠它）
+#      2. model.textual_model                 —— 配置里的通用值
+#      3. paths.TEXT_MODEL                    —— 最后才按 split 猜
+_cfg0 = feature_spec.load_default().cfg
+_m0 = _cfg0.get("model", {}) or {}
+
+
+def _pick(key, fallback):
+    per_split = _m0.get("split_" + key) or {}
+    return per_split.get(paths.SPLIT) or _m0.get(key) or fallback
+
+
+textual_model = _pick("textual_model", paths.TEXT_MODEL)
+audio_model = _pick("audio_model", paths.AUDIO_MODEL)
 
 # 超参和文件名后缀全部从配置文件读（encoders: / dataset: 两段）。
 # 以前这里是去抓 extract_features.py 的源码文本（正则匹配 `max_length = 512`），

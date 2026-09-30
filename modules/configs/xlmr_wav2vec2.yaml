@@ -10,7 +10,9 @@
 #     python tools/collect_xlmr_wav2vec2.py --apply
 # 从两处现成产物汇总而来（xlmr 文本取自 feat_xlmr_xlsr/，wav2vec2 音频取自 feat_distil/）。
 # ⚠️ 音频文件名带文本模型前缀是本项目的历史命名规则（见 core/feature_spec.py
-#    的 audio_suffix），所以这里必须叫 <uid>xlmr_pauses_wav2vec2.pt。
+#    的 audio_suffix），所以这里必须叫 <uid>xlmr_pauses_audio.pt。
+# ⚠️ 是 _audio.pt，不是 _wav2vec2.pt —— wav2vec2 在 encoders.audio 里登记的
+#    suffix 是 'audio'（见本文件 encoders 段），文件名跟着登记值走，不跟模型名走。
 #
 # 跑法：
 #     bash run_preprocess.sh -f configs/xlmr_wav2vec2.yaml -s all

@@ -3,7 +3,9 @@
 背景（为什么要做这一步）：
     项目里音频文件名 = <文本模型后缀>_pauses_<音频模型后缀>.pt
     （见 core/feature_spec.py 的 audio_suffix()）。所以「xlmr 文本 + wav2vec2 音频」
-    这套组合，音频文件必须叫 <uid>xlmr_pauses_wav2vec2.pt；
+    这套组合，音频文件必须叫 <uid>xlmr_pauses_audio.pt
+    （⚠️ 是 _audio，不是 _wav2vec2 —— wav2vec2 在 encoders.audio 里登记的
+     suffix 是 'audio'，文件名跟登记值走）；
     而盘上现成的 wav2vec2 音频叫 <uid>distil_pauses_audio.pt / <uid>chinese_pauses_audio.pt
     —— 名字对不上，dataset.py 会找不到文件。
 
@@ -11,7 +13,7 @@
     1. 文本：<split>/feat_xlmr_xlsr/<dx>/<uid>xlmr_pauses.pt
              -> <split>/feat_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses.pt
     2. 音频：<split>/feat_distil/<dx>/<uid><文本前缀>_pauses_audio.pt
-             -> <split>/feat_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses_wav2vec2.pt
+             -> <split>/feat_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses_audio.pt
        音频张量一字不改（同一批音频、同一个 wav2vec2 模型、参数完全相同），
        只是换个符合命名规则的文件名。
 
