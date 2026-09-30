@@ -1,0 +1,203 @@
+# ── 实验配置：XLM-RoBERTa（文本）+ Wav2Vec2-base-960h（音频）───────────────
+#
+# 目的：把「文本换成多语言大模型」和「音频保持原有的 wav2vec2」拆开看。
+#   · 和 default.yaml（xlmr + xlsr）比 → 差在音频编码器（xlsr vs wav2vec2）
+#   · 和 legacy_distil_wav2vec2.yaml（distil + wav2vec2）比
+#                                      → 差在文本编码器（xlmr vs distil）
+#   这样能把两个变量分开，而不是一起换、不知道是谁的功劳。
+#
+# 特征在 <split>/text_xlmr_wav2vec2/（新混合目录），由
+#     python tools/collect_xlmr_wav2vec2.py --apply
+# 从两处现成产物汇总而来（xlmr 文本取自 text_xlmr_xlsr/，wav2vec2 音频取自 text/）。
+# ⚠️ 音频文件名带文本模型前缀是本项目的历史命名规则（见 core/feature_spec.py
+#    的 audio_suffix），所以这里必须叫 <uid>xlmr_pauses_wav2vec2.pt。
+#
+# 跑法：
+#     bash run_preprocess.sh -f configs/xlmr_wav2vec2.yaml -s all
+#     bash run_train.sh       -f configs/xlmr_wav2vec2.yaml
+
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+# 脚本②（extract_features.py）和训练都要读这两个值，以前是硬写死在 py 里的，
+# 改了 py 还得记得手动改这里 —— 现在只有这一份。
+dataset:
+  max_length: 512       # 文本/音频统一对齐到这么长的序列
+  pauses: true          # true = 用带停顿标记的那版转写（文件名会多一段 _pauses）
+  # 特征 .pt 放在 <split>/ 下的哪个子目录里。默认 'text' —— 
+  # 和逐词表 .csv 挤在同一个目录，是沿用已久的老行为。
+  # 换模型做对比实验时改成别的名字（如 'text_xlmr_xlsr'），新老两套特征
+  # 就分开放、互不覆盖；逐词表 .csv 不会跟着动（它始终在 text/）。
+  # ⚠️ 提取端（extract_features.py）和读取端（dataset.py）都查这一行，
+  #    所以不会出现"存到一个目录、读另一个目录"。
+  features_dir: 'text_xlmr_wav2vec2'
+  # 只用音频、不用文本时，文件名里还是带一段文本后缀（老命名规则遗留）。
+  # 本项目一直都是文本+音频双模态，这个值用不到，留在这里是为了不把它写死回 py。
+  text_fallback: 'distil'
+
+# ── 编码器登记表 ────────────────────────────────────────────────────────
+# 换模型只改这里，不动任何 .py。原先这张表在三处各写了一份，加载代码里还挂着
+# 7 个 elif 分支硬编码仓库名和模型类 —— 现在都收在这一处。
+#
+#   suffix     特征文件名的后缀        dim   输出维度
+#   repo       HuggingFace 仓库名      fps   每秒多少帧（只有音频侧有）
+#   tokenizer / model / processor     用 transformers 里的哪个类加载
+#   subword_prefix / word_start_prefix  分词器怎么标「子词 / 词首」——
+#       决定 token 能不能拼回单词，进而决定音频对齐能否成功。
+#       WordPiece（bert/distil）标子词 '##'；SentencePiece（xlmr）标词首 '▁'；
+#       byte-BPE（roberta）标词首 'Ġ'。不写 subword_prefix 时默认 '##'。
+#   loader     不是 HF 模型时怎么加载：opensmile / mel_librosa
+#   trust_remote_code / pad_token_from_eos / opensmile_*   个别模型的特例开关
+#
+# 加一个新模型 = 在下面加一段，跑起来就能用（记得 dim 要等于模型的输出维度）
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    # bert-base-chinese 的 tokenizer 是**按字切分**的（一个汉字一个 token，
+    # 且不带 ## 前缀），正好和逐词时间戳表里的单字对得上 —— test 集能用它。
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+      # RoBERTa 是 byte-level BPE：词首带 'Ġ'（U+0120），子词不带。
+      # ⚠️ 这一行是**新增的修正** —— 以前对齐逻辑写死 '##'，roberta 这条线
+      #    其实一直是坏的（只是本项目没跑过它，所以没暴露）。
+      word_start_prefix: 'Ġ'
+    stella:
+      suffix: 'stella'
+      repo: 'NovaSearch/stella_en_1.5B_v5'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      trust_remote_code: true
+    # mistral 是 gated 模型，首次下载要设 HF_TOKEN；本地已有则完全不需要
+    mistral:
+      suffix: 'mistral'
+      repo: 'mistralai/Mistral-7B-v0.1'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      pad_token_from_eos: true
+    qwen:
+      suffix: 'qwen'
+      repo: 'Qwen/Qwen2.5-7B'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+    # 多语言（覆盖 100 种语言）。768 维，和 distil / chinese 同维度 ——
+    # 所以模型结构不用动，只是特征的来源换了。
+    # AutoTokenizer / AutoModel 实测都能自动认出它（XLMRobertaTokenizer / XLMRobertaModel）。
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      # SentencePiece：词首带 '▁'（U+2581），子词不带 —— 和 WordPiece 的
+      # '##' 规则**正好相反**。不写这个，token 就拼不回词，
+      # 整条样本会因为"对齐不上（音频段数+2 != token 数）"被跳过。
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    # 多语言（53 种语言）预训练的音频编码器，输出 1024 维。
+    # ⚠️ 它是**没做过微调**的预训练模型，仓库里**根本没有 tokenizer 文件**
+    #    （vocab.json / tokenizer_config.json 全是 404）。默认的 AutoProcessor
+    #    会去加载 tokenizer、然后抛 TypeError（已实测）——
+    #    所以必须像下面这样显式指定 processor: 'Wav2Vec2FeatureExtractor'。
+    # ⚠️ dim=1024 ≠ model.hidden_size(768)：网络会**自动**挂一层 ResNet 投影
+    #    （networks/model.py 的 audio_needs_projection 按维度判断），不用改代码。
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+    # 下面两个不是神经网络，用传统特征：openSMILE / librosa
+    egemaps:
+      suffix: 'egemaps'
+      dim: 88
+      fps: 10
+      loader: 'opensmile'
+      opensmile_feature_set: 'eGeMAPSv02'
+      opensmile_feature_level: 'Functionals'
+    mel:
+      suffix: 'mel'
+      # 这里是编码器**原始输出**的维度（mel 谱是 80 维），不是升维之后的 768。
+      # 网络里发现 dim ≠ model.hidden_size 就会自动挂一层 ResNet 升维
+      # （见 networks/model.py 的 audio_needs_projection）。
+      dim: 80
+      fps: 50
+      loader: 'mel_librosa'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  # ── 早停看哪个指标 ─────────────────────────────────────────────────────
+  # 'loss'（越小越好）/ 'accuracy'（越大越好，旧行为）。
+  # 这个实验是**新跑的**，用新的 'loss' 判据：验证集只有 47 条 → 准确率只有
+  # 48 个取值，用 accuracy 判会出现"ep2 就定终身"的假早停
+  # （实测见 checkpoints/2026-09-30_baseline_xlm-xls_pause 的 fold_2 / fold_3）。
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean' # 'mean', 'cls'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  # 文本/音频编码器：名字要和上面 encoders 段里登记的键一致。
+  # 文本用 xlmr（多语言，train 英文 / test 中文共用一套），
+  # 音频保持 wav2vec2-base（768 维，和 hidden_size 相同 → 不挂投影层）。
+  textual_model: 'xlmr'
+  audio_model: 'wav2vec2'
+  # ⚠️ 这里**故意不写 split_textual_model**：那是"test 语料是中文，文本侧
+  #    换成 bert-base-chinese"的老设定。本实验 train / test 都用 xlmr，
+  #    写了反而会把 test 拐去 chinese、去找根本不存在的 chinese 特征。
+  #    要跑"test 用 chinese"的对照，见 legacy_distil_wav2vec2.yaml。
+
+  # fusion 只用来拼结果目录名（model_name = <文本>_<音频>_[P_]<fusion>）；
+  # 真正决定用哪个网络类的是下面的 architecture。
+  fusion: 'cross'
+  # 用哪个网络结构，键对应 networks/model.py 末尾的 ARCHITECTURES：
+  #   cross_attention / bidirectional_cross_attention / elementwise / plain_transformer
+  architecture: 'cross_attention'
+  # 交叉注意力是否带门控（对应 GatedCrossAttentionFusion）
+  gated: false
+
+  # ⚠️ pauses 已移到 dataset 段（以前这里还有一份，同一个语义写两遍，改一处忘一处）。
+
+model_name: ''
