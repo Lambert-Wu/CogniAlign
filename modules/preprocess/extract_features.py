@@ -330,6 +330,17 @@ def preprocess_text():
             subword_prefix = str(spec.text_entry().get('subword_prefix', '##') or '')
             word_start_prefix = str(spec.text_entry().get('word_start_prefix', '') or '')
 
+            # ── 词表里没有的字，分词器给的是什么标记 ────────────────────
+            # 各家写法不一样：BERT 系是 '[UNK]'，XLM-R（SentencePiece）是 '<unk>'
+            # —— 只认前一种的话，xlmr 路线一遇到生僻字就错位，从那个字往后
+            # 全部对不上，整条样本被跳过（实测 test 集因此丢了 3 条：鲈 / 獭 / 荠）。
+            # 所以这里直接问 tokenizer 要，不写死任何字符串。
+            unk_forms = {'[unk]', 'unk'}
+            _unk = str(getattr(tokenizer, 'unk_token', '') or '').lower()
+            if _unk:
+                unk_forms.add(_unk)                       # '<unk>'
+                unk_forms.add('[' + _unk + ']')           # '[<unk>]'（万一）
+
             current_word = ""
             current_tokens = []
             current_token_ids = []
@@ -366,6 +377,15 @@ def preprocess_text():
             # Save the last word
             if current_word:
                 word_mapping.append((current_word, current_tokens, current_token_ids))
+            elif current_tokens and word_mapping:
+                # 尾巴上剩下一个**光秃秃的词首标记**（如单独的 '▁'），后面没有字了。
+                # 它开了一个新词却没能关上，`if current_word:` 判空就被整个丢掉
+                # —— 少算 1 个 token，最后 `段数 + 2 != token 数` 永远差 1，
+                # 整条样本被跳过（实测 0004：转写 546 token 被截到 512，
+                # 正好卡在 '▁' 上，差 1）。
+                # 它代表的只是词尾那个空格，并进上一个词最合适。
+                _w, _t, _i = word_mapping[-1]
+                word_mapping[-1] = (_w, _t + current_tokens, _i + current_token_ids)
 
             word_level_timestamp_path = os.path.join(root_text_path, row['diagno'], row['uid'] + '.csv')
 
@@ -408,7 +428,7 @@ def preprocess_text():
                 # 最后 `音频段数 + 2 != token 数` 会把**整条样本**跳过
                 # （测试集 80 条里因此丢了 5 条）。
                 # ------------------------------------------------------------------
-                if cleaned_word.lower() in ('[unk]', 'unk') and idx_probs < len(words):
+                if cleaned_word.lower() in unk_forms and idx_probs < len(words):
                     start = words[idx_probs][1]
                     end = words[idx_probs][2]
 
