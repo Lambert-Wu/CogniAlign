@@ -4,12 +4,40 @@
 # Linux / macOS / Git Bash 通用
 # ---------------------------------------------------------------------
 # 用法：
-#     bash run_train.sh                    # 自检 → 前台训练（默认配置）
+#     bash run_train.sh                    # 自检 → 前台训练（默认：xlmr + xlsr）
 #     bash run_train.sh -b                 # 自检 → 后台训练
 #     bash run_train.sh -c                 # 只做自检，不跑
 #     bash run_train.sh -f configs/qwen.yaml   # 换配置文件
 #     bash run_train.sh -w offline         # 用 wandb 本地记录（默认完全不用 wandb）
 #     bash run_train.sh -r -b              # 续跑（已跑完的折跳过）+ 放到后台
+#
+# ---------------------------------------------------------------------
+# 【最常用】跑哪套特征 = 用哪份配置（不加 -f 就是默认那份）
+# ---------------------------------------------------------------------
+# 本脚本**不写死任何模型** —— 它读配置里的 model.textual_model /
+# model.audio_model / dataset.features_dir，再去对应的特征目录找 .pt。
+# 所以「换一套特征训练」= 换一份配置文件，不用改这个脚本、更不用改 .py。
+#
+#   想跑什么                          命令
+#   -------------------------------   ---------------------------------------------
+#   xlmr + xlsr（默认）               bash run_train.sh
+#     -> data/<split>/feat_xlmr_xlsr/
+#   xlmr + wav2vec2                   bash run_train.sh -f configs/xlmr_wav2vec2.yaml
+#     -> data/<split>/feat_xlmr_wav2vec2/
+#   distil + wav2vec2（老实验）        bash run_train.sh -f configs/legacy_distil_wav2vec2.yaml
+#     -> data/<split>/feat_distil/
+#
+# ⚠️ 特征必须是**同一份配置**提的。配置写着 xlmr+xlsr，特征却只有 distil 那套，
+#    训练会报找不到文件 —— 文件名（<uid><文本后缀>.pt / <uid><音频后缀>.pt）
+#    对不上。先用 run_preprocess.sh 配同一份配置把特征提出来：
+#        bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2.yaml
+#
+# ⚠️ 本机（Windows）跑要显式指定解释器（PATH 里第一个 python3 没装 torch）：
+#        PYTHON=D:/anaconda3/envs/alzheimer/python.exe bash run_train.sh
+#    本机别加 -b（后台进程会被杀）；Linux 服务器上 -b 正常。
+#
+# ⚠️ 看训练水平必须加 --fold N（那是 evaluate.py 的参数），否则会把训过的
+#    样本混进验证集、分数虚高。这个脚本只负责训练，评估另跑 evaluate.py。
 #
 # 关于续跑：训练中途断了（SSH 断开、被 kill、机器重启等）之后用 -r 重跑。
 #   粒度是"折"不是"epoch" —— 权重只在每折跑完时才存盘，所以断在半路的
@@ -58,7 +86,7 @@ usage() {
     cat <<'EOF'
 CogniAlign 训练一键脚本
 
-    bash run_train.sh                     自检 → 前台训练（默认配置）
+    bash run_train.sh                     自检 → 前台训练（默认：xlmr + xlsr）
     bash run_train.sh -b                  自检 → 后台训练
     bash run_train.sh -c                  只做自检，不跑
     bash run_train.sh -f configs/qwen.yaml   换配置文件
@@ -66,16 +94,30 @@ CogniAlign 训练一键脚本
     bash run_train.sh -r                  续跑：已跑完的折跳过，只补剩下的
     bash run_train.sh -h                  看这段帮助
 
+跑哪套特征 = 用哪份配置（脚本不写死模型，读配置里的模型名去找特征目录）：
+    bash run_train.sh                                     # xlmr + xlsr（默认）
+    bash run_train.sh -f configs/xlmr_wav2vec2.yaml       # xlmr + wav2vec2
+    bash run_train.sh -f configs/legacy_distil_wav2vec2.yaml   # distil + wav2vec2
+
+对应特征目录（<split> 是 train 或 test）：
+    xlmr + xlsr        -> data/<split>/feat_xlmr_xlsr/
+    xlmr + wav2vec2    -> data/<split>/feat_xlmr_wav2vec2/
+    distil + wav2vec2  -> data/<split>/feat_distil/
+
 说明：
   · 配置里的 cross_validation: True 会跑 5 折，每折存一个 model_fold_<n>.pth
   · 结果目录 = logs/<文本模型>_<音频模型>_<融合>_<池化>/，脚本开跑前会打印出来
   · 默认 WANDB_MODE=disabled（train.py 顶层会 wandb.login()，不设会卡在等输入 key）
   · -r 续跑的粒度是"折"：断在半路的那一折要重跑，跑完的折不会重跑
+  · 特征必须和配置配套（同一份配置提的），否则文件名对不上、报找不到文件
 
 环境变量（都可不设）：
     PYTHON                 指定解释器，默认自动找 python3 / python
     COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data
     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
+
+本机（Windows）示例（必须带解释器，别加 -b）：
+    PYTHON=D:/anaconda3/envs/alzheimer/python.exe bash run_train.sh
 EOF
 }
 

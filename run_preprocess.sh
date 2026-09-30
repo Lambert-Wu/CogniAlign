@@ -4,19 +4,35 @@
 # Linux / macOS / Git Bash 通用
 # ---------------------------------------------------------------------
 # 用法：
-#     bash run_preprocess.sh                  # 跑训练集（默认）
+#     bash run_preprocess.sh                  # 跑训练集（默认：xlmr + xlsr）
 #     bash run_preprocess.sh -s test          # 跑测试集
 #     bash run_preprocess.sh -s all           # 训练集 → 测试集，一次跑完
 #     bash run_preprocess.sh -s all -b        # 上面那个放到后台（推荐）
 #     bash run_preprocess.sh -c               # 只做自检，不跑
 #     bash run_preprocess.sh -r               # 跳过已产出特征的样本（断点续跑）
 #     bash run_preprocess.sh -b -r            # 后台续跑
-#     bash run_preprocess.sh -f configs/xlmr_xlsr.yaml   # 换配置文件
+#     bash run_preprocess.sh -f configs/xlmr_wav2vec2.yaml   # 换配置文件
 #
+# ---------------------------------------------------------------------
+# 【最常用】提哪套特征 = 用哪份配置（不加 -f 就是默认那份）
+# ---------------------------------------------------------------------
 # 换模型 / 换实验：只需要 -f 指向另一份 configs/*.yaml。
 # 模型名、特征输出目录、文件名后缀、停顿开关**全部从那份配置读**，
 # 不用再手工 export COGNIALIGN_TEXT_MODEL / COGNIALIGN_AUDIO_MODEL。
-# ⚠️ 训练侧对应的是 run_train.sh 的 -f，两边必须指向同一份配置。
+#
+#   想提什么                          命令
+#   -------------------------------   ---------------------------------------------
+#   xlmr + xlsr（默认）               bash run_preprocess.sh -s all
+#     -> data/<split>/feat_xlmr_xlsr/
+#   xlmr + wav2vec2                   bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2.yaml
+#     -> data/<split>/feat_xlmr_wav2vec2/
+#   distil + wav2vec2（老实验）        bash run_preprocess.sh -s all -f configs/legacy_distil_wav2vec2.yaml
+#     -> data/<split>/feat_distil/
+#
+# ⚠️ 训练侧对应的是 run_train.sh 的 -f，两边必须指向**同一份**配置 ——
+#    否则提的特征文件名和训练要找的对不上，训练会报找不到文件。
+#    例：bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2.yaml
+#        bash run_train.sh          -f configs/xlmr_wav2vec2.yaml
 #
 # 关于「覆盖」：默认就是全量重算 —— 每个样本都会重新提一遍特征并**覆盖**同名
 # 文件（不加 -r 就一定是这个行为）。日志开头会打印「本次将覆盖 N 个已存在的
@@ -93,14 +109,24 @@ usage() {
     cat <<'EOF'
 CogniAlign 特征提取一键脚本
 
-    bash run_preprocess.sh               跑训练集（默认配置）
+    bash run_preprocess.sh               跑训练集（默认：xlmr + xlsr）
     bash run_preprocess.sh -s test       跑测试集
     bash run_preprocess.sh -s all        训练集 → 测试集，一次跑完
     bash run_preprocess.sh -s all -b     上面那个放到后台（推荐）
     bash run_preprocess.sh -c            只做自检，不跑
     bash run_preprocess.sh -r            跳过已产出特征的样本（断点续跑）
-    bash run_preprocess.sh -f configs/xlmr_xlsr.yaml   换配置文件
+    bash run_preprocess.sh -f configs/xlmr_wav2vec2.yaml   换配置文件
     bash run_preprocess.sh -h            看这段帮助
+
+提哪套特征 = 用哪份配置（不加 -f 就是默认那份）：
+    bash run_preprocess.sh -s all                                  # xlmr + xlsr
+    bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2.yaml    # xlmr + wav2vec2
+    bash run_preprocess.sh -s all -f configs/legacy_distil_wav2vec2.yaml   # distil + wav2vec2
+
+对应特征目录（<split> 是 train 或 test）：
+    xlmr + xlsr        -> data/<split>/feat_xlmr_xlsr/
+    xlmr + wav2vec2    -> data/<split>/feat_xlmr_wav2vec2/
+    distil + wav2vec2  -> data/<split>/feat_distil/
 
 换模型 / 换实验：只用 -f 指到另一份 configs/*.yaml。模型名、特征输出目录、
          文件名后缀、停顿开关全从那份配置读，不用手工 export 环境变量。
