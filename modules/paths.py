@@ -78,8 +78,19 @@ SPLIT = os.environ.get("COGNIALIGN_SPLIT", "train").strip().lower()
 if SPLIT not in ("train", "test"):
     raise ValueError("COGNIALIGN_SPLIT 只能是 train 或 test，收到: %r" % SPLIT)
 
-_DEFAULT_TEXT_MODEL = "chinese" if SPLIT == "test" else "distil"
-TEXT_MODEL = os.environ.get("COGNIALIGN_TEXT_MODEL", _DEFAULT_TEXT_MODEL).strip()
+def text_model_for(split=None):
+    """某个 split 用哪个文本模型：环境变量优先，否则按 split 的语种挑。
+
+    抽成函数是因为 `tools/scan_unknown_chars.py --all` 要同时扫 train 和 test，
+    两边语种不同、模型也不同 —— 规则写两遍迟早不一致。
+    """
+    env = os.environ.get("COGNIALIGN_TEXT_MODEL", "").strip()
+    if env:
+        return env
+    return "chinese" if (split or SPLIT) == "test" else "distil"
+
+
+TEXT_MODEL = text_model_for(SPLIT)
 AUDIO_MODEL = os.environ.get("COGNIALIGN_AUDIO_MODEL", "wav2vec2").strip()
 
 if SPLIT == "test":

@@ -84,25 +84,22 @@ TAG_RE = re.compile(r'<\|[^|]*\|>')     # SenseVoice 会输出 <|zh|><|NEUTRAL|>
 # ---------------------------------------------------------------------------
 # 生僻字 -> 同音常用字
 #
-# 这 4 个字不在 bert-base-chinese 的词表里（21128 个 token 没覆盖到），
-# 分词会变成 [UNK]。而脚本② 是拿词表逐字去对 BERT 的输出，
-# [UNK] 对不上真字 → 从这个字往后全部错位 → 结尾
-# `音频段数 + 2 != token 数` 把**整条样本**跳过（测试集 80 条因此丢了 5 条）。
+# 有些字不在文本模型的词表里（XLM-R 缺 鲈/獭/荠，bert-base-chinese 缺
+# 锨/镊/鳊/笤），分词会变成 unk。脚本② 是拿逐字表去对模型输出，
+# unk 对不上真字 → 从这个字往后全部错位 → 结尾
+# `音频段数 + 2 != token 数` 把**整条样本**跳过。
 #
-# 换成同音的常用字：读音不变（语音侧按时间切音频，完全不受影响），
-# 文本侧也拿到了一个正常字，比 [UNK] 有用。
-#     锨 xiān -> 先      镊 niè -> 聂      鳊 biān -> 边      笤 tiáo -> 条
+# 换成同音常用字：读音不变（语音侧按时间切音频，完全不受影响），
+# 文本侧拿到一个正常的字，比 unk 有用。
 #
-# ⚠️ 换语料后如果又冒出别的生僻字，往这张表里加即可（键=原字，值=同音常用字）。
-# 想知道哪些字 BERT 不认得：
-#     python -c "import csv,glob,collections,sys;sys.path.insert(0,'modules');\
-# from transformers import AutoTokenizer as T;from core.model_download import resolve;\
-# t=T.from_pretrained(resolve('bert-base-chinese'));\
-# c=collections.Counter(w['word'] for p in glob.glob('data/diagnosis/test/text/*/*.csv')\
-# for w in csv.DictReader(open(p,encoding='utf-8-sig')));\
-# print([k for k in c if len(k)==1 and t.tokenize(k)==['[UNK]']])"
+# ⚠️ 这张表**不写在这里**：它在 configs/default.yaml 的 dataset.rare_char_map。
+#    换语料 / 换模型只改配置，不动这个文件（详见 core/feature_spec.rare_char_map）。
+#    想知道当前语料还有没有模型认不出的字：
+#        python modules/tools/scan_unknown_chars.py
 # ---------------------------------------------------------------------------
-RARE_CHAR_MAP = {'锨': '先', '镊': '聂', '鳊': '边', '笤': '条'}
+from core import feature_spec
+
+RARE_CHAR_MAP = feature_spec.load_default().rare_char_map()
 
 # 音频时长和最后一个字的时间允许的误差（秒）
 DURATION_TOL = 0.5

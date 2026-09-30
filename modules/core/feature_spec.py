@@ -122,6 +122,28 @@ class Spec(object):
         return self.text_suffix() + '_' + self.audio_entry().get('suffix', '')
 
     # ------------------------------------------------------------ 参数
+    def rare_char_map(self):
+        """语料里的**生僻字 → 同音常用字**（脚本① sensevoice.py 生成逐词表时换）。
+
+        为什么需要：有些字不在文本模型的词表里（XLM-R 缺 鲈/獭/荠，
+        bert-base-chinese 缺 锨/镊/鳊/笤），分词会变成 unk，逐字对齐从那个字
+        起全部错位 → 整条样本被跳过。换成同音常用字后读音不变
+        （语音侧按时间切音频，完全不受影响），文本侧拿到一个正常的字。
+
+        为什么在这里读：它是**语料属性**而不是实验参数 —— 同一段录音里的同一个
+        生僻字，不管跑哪套模型都该换成同一个字。所以真相只有一处：
+        `configs/default.yaml` 的 `dataset.rare_char_map`；某份实验配置没写
+        这一段时自动回落到默认值（legacy_*.yaml 就不用重复维护一份）。
+
+        换语料 / 换文本模型后想知道还有没有漏网的生僻字：
+            python modules/tools/scan_unknown_chars.py
+        """
+        m = self.cfg.get('dataset', {}).get('rare_char_map', None)
+        if m is None:
+            with open(DEFAULT_CONFIG, encoding='utf-8') as f:
+                m = DotMap(yaml.safe_load(f)).get('dataset', {}).get('rare_char_map', {})
+        return {str(k): str(v) for k, v in dict(m).items()}
+
     def features_dir(self):
         """特征 `.pt` 存放的子目录名（相对 `<split>/`），默认 `'text'`。
 

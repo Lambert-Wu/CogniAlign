@@ -37,8 +37,11 @@ def _cls(name, role):
     return cls
 
 
-def load_text(entry, device=None):
-    """加载文本编码器，返回 (tokenizer, model)。
+def load_tokenizer(entry):
+    """只加载**分词器**，不加载模型本体。
+
+    有些场景根本用不上模型：脚本① 生成逐词表前要挑出生僻字、
+    核对特征文件时要算 token 数 —— 没必要把几 GB 的权重也拉起来。
 
     entry 是配置里 `encoders.text.<名字>` 那一小段。
     """
@@ -52,11 +55,25 @@ def load_text(entry, device=None):
         extra['trust_remote_code'] = True
 
     tokenizer = _cls(entry.get('tokenizer', 'AutoTokenizer'), 'tokenizer').from_pretrained(path, **extra)
-    model = _cls(entry.get('model', 'AutoModel'), 'model').from_pretrained(path, **extra)
 
     # 个别模型（如 mistral）没有 pad token，沿用老代码的做法拿 eos 顶上
     if entry.get('pad_token_from_eos'):
         tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
+
+
+def load_text(entry, device=None):
+    """加载文本编码器，返回 (tokenizer, model)。
+
+    entry 是配置里 `encoders.text.<名字>` 那一小段。
+    """
+    tokenizer = load_tokenizer(entry)
+
+    repo = entry.get('repo')
+    extra = {}
+    if entry.get('trust_remote_code'):
+        extra['trust_remote_code'] = True
+    model = _cls(entry.get('model', 'AutoModel'), 'model').from_pretrained(resolve(repo), **extra)
 
     if device is not None:
         model = model.to(device)
