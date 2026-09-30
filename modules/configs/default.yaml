@@ -170,6 +170,19 @@ train:
   weight_decay: 0.01
   early_stopping: True
   early_stopping_patience: 20
+  # ── 早停看哪个指标 ─────────────────────────────────────────────────────
+  # 'loss'（默认，越小越好）/ 'accuracy'（越大越好，改判据前的旧行为）
+  #
+  # 为什么默认 loss：验证集只有 47 条 → 准确率只有 48 个可能取值，
+  # 判据又要求"严格更高"，分数在同一台阶上抖一抖就把 patience 耗光。
+  # 实测（checkpoints/2026-09-30_baseline_xlm-xls_pause）：第 2 折 ep6 摸到
+  # 59.6% 后 20 轮没超过 → ep26 停（只训 26 轮）；第 3 折 ep2 摸到 61.7%
+  # → ep22 停（只训 22 轮）。模型刚起步就被判死刑。
+  # loss 是连续值，不会卡台阶，能真实反映"还在不在进步"。
+  early_stopping_metric: 'loss'
+  # 只有改进量 **大于** 这个数才算刷新（loss 是低于才算）。
+  # 0.0 = 保持"严格更好"的原语义，不改变判据严格程度；想滤掉噪声可调大
+  early_stopping_min_delta: 0.0
   cross_validation: True
   cross_validation_folds: 5
 

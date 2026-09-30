@@ -103,7 +103,7 @@ def get_metrics_classification(true_labels, pred_labels):
     
     return accuracy, f1, recall, precision
 
-def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_scheduler, num_epochs, model_name, early_stopping, early_stopping_patience, cross_val=False, num_cross_val=0):
+def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_scheduler, num_epochs, model_name, early_stopping, early_stopping_patience, cross_val=False, num_cross_val=0, early_stopping_metric='loss', early_stopping_min_delta=0.0):
     """Train the model with early stopping."""
     wandb.init(project="WordLevelFusion", config={"epochs": num_epochs})
     wandb.watch(model)
@@ -113,12 +113,23 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
     
     log_path = f'logs/{model_name}/train_stats_{num_cross_val}.txt' if cross_val else f'logs/{model_name}/train_stats.txt'
     
-    # best_value 必须从 -inf 起（原代码是 0）：
-    # 验证准确率有可能整轮都是 0（样本少 / 模型没学到东西），
-    # 那时 `validation_value > best_value` 永远不成立 → best_weights 始终是 None
-    # → 结尾 load_state_dict(None) 直接 TypeError 崩掉（实测踩过）。
-    best_value, patience = -float("inf"), 0
+    # ── 早停判据 ────────────────────────────────────────────────────────────
+    # `early_stopping_metric`（配置项 train.early_stopping_metric）：
+    #   'loss'     —— 验证损失，**越小越好**（默认）。损失是连续值，不会像准确率
+    #                 那样卡在台阶上（验证集只有 47 条 → 准确率只有 48 个取值），
+    #                 所以能真实反映"模型还在不在进步"。
+    #   'accuracy' —— 验证准确率，越大越好（旧行为）。
+    #
+    # 为什么默认改成 loss（实测依据）：
+    #   旧的 accuracy 判据下，第 2 折 ep6 摸到 59.6% 后连续 20 轮没超过 → ep26 停，
+    #   整折只训 26 轮；第 3 折 ep2 摸到 61.7% → ep22 停，只训 22 轮。
+    #   验证集只有 47 条，准确率严格大于的判据几乎等于"原地抖动就消耗耐心"，
+    #   模型刚起步就被判死刑。改看 loss 后判据是连续的，不会出现这种假停。
+    # ────────────────────────────────────────────────────────────────────────
+    higher_is_better = (early_stopping_metric == 'accuracy')
+    best_value, patience = (-float("inf") if higher_is_better else float("inf")), 0
     best_epoch, best_weights, rest_best_values = 0, None, []
+    best_metric_extra = {}
     
     num_training_steps = num_epochs * len(train_dataloader)
     progress_bar = tqdm(range(num_training_steps))
@@ -167,11 +178,22 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
             log.write(f'Loss: {avg_loss}\nAccuracy: {accuracy}\nF1 Score: {f1}\nRecall: {recall}\nPrecision: {precision}\n')
             wandb.log({"train_loss": avg_loss, "train_ACC": accuracy, "train_F1": f1})
             
-            validation_value, rest_values = evaluation(model, valid_dataloader, lossfn, log)
+            validation_value, rest_values, val_extra = evaluation(model, valid_dataloader, lossfn, log)
             
-            if validation_value > best_value:
+            # 按配置的判据取这一轮用来比较的数
+            #   'loss'     —— 越小越好；'accuracy' —— 越大越好（旧行为）
+            current = (val_extra['accuracy'] if higher_is_better else val_extra['loss'])
+            # 只有改进量 > min_delta 才算"刷新"。
+            # 注意 loss 方向：current 比 best 小得够多才算改进
+            # （min_delta=0 时退化和旧行为一致，仍是"严格更好"，不会因此少训）。
+            improved = (current > best_value + early_stopping_min_delta
+                        if higher_is_better
+                        else current < best_value - early_stopping_min_delta)
+            
+            if improved:
                 best_epoch, best_weights = epoch + 1, copy.deepcopy(model.state_dict())
-                best_value, rest_best_values = validation_value, rest_values
+                best_value, rest_best_values = current, rest_values
+                best_metric_extra = val_extra
                 patience = 0
             else:
                 patience += 1
@@ -183,11 +205,15 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
         if not rest_best_values:
             rest_best_values = [0, 0, 0]
         
-        log.write(f'Best validation accuracy: {best_value}\n')
+        # 汇总行按判据改名，避免出现 "Best validation accuracy: 0.43" 这种
+        # 把 loss 当 accuracy 写的误导（旧版本写死了 accuracy 这个词）。
+        best_metric_name = 'accuracy' if higher_is_better else 'loss'
+        log.write(f'Best validation {best_metric_name}: {best_value}\n')
+        log.write(f'Best validation accuracy: {best_metric_extra.get("accuracy", 0)}\n')
         log.write(f'Best validation F1: {rest_best_values[0]}\nBest validation Recall: {rest_best_values[1]}\nBest validation Precision: {rest_best_values[2]}\n')
         log.write(f'Best epoch: {best_epoch}\n')
     
-    # 兜底：理论上 best_weights 不会是 None（best_value 从 -inf 起，
+    # 兜底：理论上 best_weights 不会是 None（best_value 从 ±inf 起，
     # 第一个 epoch 必定会保存一次），但白跑一整折再崩不值得，这里再加一道保护。
     if best_weights is not None:
         model.load_state_dict(best_weights)
@@ -226,7 +252,10 @@ def evaluation(model, dataloader, lossfn, log, test=False):
     log.write(f'Loss: {avg_loss}\nAccuracy: {accuracy}\nF1 Score: {f1}\nRecall: {recall}\nPrecision: {precision}\n')
     wandb.log({"test_loss": avg_loss, "test_UAR": accuracy, "test_F1": f1} if test else {"validation_loss": avg_loss, "validation_ACC": accuracy, "validation_F1": f1})
     
-    return accuracy, [f1, recall, precision]
+    # 返回值从二元组变成三元组：多带一个 metrics 字典，把 avg_loss 交出去，
+    # 早停才能按"验证 loss"判（见 train() 的 early_stopping_metric）。
+    # 只有 train() 内部调用它，已同步改成解包 3 个值。
+    return accuracy, [f1, recall, precision], {'loss': avg_loss, 'accuracy': accuracy}
 
 
 def get_model_statistics(model='all'):

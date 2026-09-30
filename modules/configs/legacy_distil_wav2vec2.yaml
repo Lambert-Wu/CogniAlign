@@ -150,6 +150,12 @@ train:
   weight_decay: 0.01
   early_stopping: True
   early_stopping_patience: 20
+  # ── 早停看哪个指标（默认 'loss'；这里显式写 'accuracy' 以复现旧实验结果）──
+  # 旧实验（这套配置）当年是用"验证准确率"当判据跑出来的，
+  # 要复现它就必须沿用同一个判据，否则停在不同轮次、数字对不上。
+  # 新实验（default.yaml）用 'loss' —— 理由见那边配置里的注释。
+  early_stopping_metric: 'accuracy'
+  early_stopping_min_delta: 0.0
   cross_validation: True
   cross_validation_folds: 5
 
