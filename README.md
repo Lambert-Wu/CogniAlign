@@ -42,7 +42,7 @@ CogniAlign/
 │   │   └── encoders.py             # 按配置加载编码器（不再有 if 模型名 的分支）
 │   ├── dataset/                    # 数据侧
 │   │   ├── dataset.py              # 读特征 + 5 折划分 + DataLoader
-│   │   └── build_dataset.py        # 一次性把语料摆成 data/diagnosis/
+│   │   └── build_dataset.py        # 一次性把语料摆成 data/
 │   ├── networks/                   # 模型结构
 │   │   └── model.py                # 几种融合编码器；用哪个由配置的 architecture 选
 │   ├── preprocess/                 # 特征提取流水线（先①后②）
@@ -129,7 +129,7 @@ wheel 只有 PyTorch 官方源上有，PyPI 上不存在。
 
 | 目录 | 内容 | 怎么来 |
 |---|---|---|
-| `data/diagnosis/` | 音频 + 标签表 + 5 折划分 | 开发机上跑 `modules/dataset/build_dataset.py` 生成后 rsync，或在服务器上重新生成 |
+| `data/` | 音频 + 词级时间戳 + 特征 + 标签表 + 5 折划分 | 开发机上跑 `modules/dataset/build_dataset.py` 生成后 rsync，或在服务器上重新生成 |
 | `models/distilbert-base-uncased/` | 脚本② 的**文本**编码器（257 MB） | **本地有就直接用**；缺失时才自动下载 |
 | `models/wav2vec2-base-960h/` | 脚本② 的**音频**编码器（约 380 MB，`audio_model='wav2vec2'` 时用） | 同上 |
 | `models/faster-whisper-small/` | 脚本① 的转写模型（464 MB，英文语料用） | 同上 |
@@ -151,7 +151,7 @@ source env.sh
 
 | 变量 | 指向 | 不设时的默认值 |
 |---|---|---|
-| `COGNIALIGN_DATA_ROOT` | `diagnosis` 目录**本身**（`train/` 的父目录） | `<项目根>/data/diagnosis` |
+| `COGNIALIGN_DATA_ROOT` | 数据集目录**本身**（`train/` 的父目录） | `<项目根>/data` |
 | `COGNIALIGN_MODELS_DIR` | 模型权重所在目录（里面再按模型名分子目录） | `<项目根>/models` |
 | `COGNIALIGN_OFFLINE` | 设成 `1` 表示禁止下载模型，本地没有就直接报错 | 不设（本地没有才下载） |
 | `MADRESS_ROOT` | 源语料项目根（只有重新生成数据集时才要） | `D:\桌面\科研\madress-2023` |
@@ -174,7 +174,7 @@ bash run_preprocess.sh -c        # 先只做自检：依赖 / 数据 / 模型 / 
 bash run_preprocess.sh -b        # 后台跑（约 3 小时），日志自动落 logs/preprocess/
 bash run_preprocess.sh -b -r     # 断点续跑：跳过已产出特征的样本
 
-# 跑 test 集（中文语料）：加 COGNIALIGN_SPLIT=test，路径会自动切到 data/diagnosis/test/
+# 跑 test 集（中文语料）：加 COGNIALIGN_SPLIT=test，路径会自动切到 data/test/
 COGNIALIGN_SPLIT=test bash run_preprocess.sh -b
 ```
 

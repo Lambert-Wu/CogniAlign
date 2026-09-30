@@ -139,7 +139,7 @@ def main():
 
     import librosa
     samples = pick(list_samples(), args.n, args.longest)
-    print("样本: %d 条（取自 %s）" % (len(samples), paths.SPLIT_TEXT_DIR))
+    print("样本: %d 条（取自 %s）" % (len(samples), paths.SPLIT_AUDIO_DIR))
     print()
 
     rows = []

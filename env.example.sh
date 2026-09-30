@@ -14,11 +14,11 @@
 
 # ---------------------------------------------------------------------
 # 1) 数据集位置
-#    指向 diagnosis 目录**本身** —— 也就是 train/ 和 test/ 的父目录。
-#    默认：<项目根>/data/diagnosis
+#    指向数据集目录**本身** —— 也就是 train/ 和 test/ 的父目录。
+#    默认：<项目根>/data
 #    什么时候要设：数据不在项目里（比如放在大盘 /data 上）
 # ---------------------------------------------------------------------
-# export COGNIALIGN_DATA_ROOT=/data/ADReSSo/diagnosis
+# export COGNIALIGN_DATA_ROOT=/data/ADReSSo
 
 # ---------------------------------------------------------------------
 # 2) madress-2023 项目根目录
@@ -26,7 +26,7 @@
 #    默认：D:\桌面\科研\madress-2023（只在开发机上有意义）
 #    什么时候要设：只有在服务器上重新生成数据集时才需要
 #                  （modules/dataset/build_dataset.py）
-#    注意：如果你是把做好的 data/diagnosis/ 直接 rsync 过去的，
+#    注意：如果你是把做好的 data/ 直接 rsync 过去的，
 #          这个变量**根本不用设**。
 # ---------------------------------------------------------------------
 # export MADRESS_ROOT=/data/madress-2023
@@ -77,7 +77,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 当前解析结果（显示「默认」的表示没设，会用代码里的默认值）：
 EOF
     printf '  %-22s %s\n' "COGNIALIGN_DATA_ROOT" \
-        "${COGNIALIGN_DATA_ROOT:-<项目根>/data/diagnosis（默认）}"
+        "${COGNIALIGN_DATA_ROOT:-<项目根>/data（默认）}"
     printf '  %-22s %s\n' "COGNIALIGN_MODELS_DIR" \
         "${COGNIALIGN_MODELS_DIR:-<项目根>/models（默认）}"
     printf '  %-22s %s\n' "COGNIALIGN_OFFLINE" \

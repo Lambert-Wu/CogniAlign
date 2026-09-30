@@ -1,26 +1,31 @@
 # -*- coding: utf-8 -*-
 r"""数据集路径集中配置。
 
-原代码把路径以 '/dataset/diagnosis/...' 的形式写死在 dataset.py 和两个
+原代码把路径以 '/dataset/<语种>/...' 的形式写死在 dataset.py 和两个
 preprocess 脚本里（作者 Linux 集群上的绝对路径），换机器必然跑不通。
-这里统一收拢，默认指向本项目内的 data/diagnosis/。
+这里统一收拢，默认指向本项目内的 data/。
 
 换数据位置不用改代码，设环境变量即可（两个平台写法都给出）：
-    Windows:  set COGNIALIGN_DATA_ROOT=D:\datasets\ADReSSo\diagnosis
-    Linux:    export COGNIALIGN_DATA_ROOT=/data/ADReSSo/diagnosis
+    Windows:  set COGNIALIGN_DATA_ROOT=D:\datasets\ADReSSo
+    Linux:    export COGNIALIGN_DATA_ROOT=/data/ADReSSo
 
 本模块只用 os.path / __file__ 推导路径，不写死平台或盘符，
-Windows 与 Linux 都能直接用（默认都指向本项目内的 data/diagnosis/）。
+Windows 与 Linux 都能直接用（默认都指向本项目内的 data/）。
 
 目录结构（与各处 os.path.join 的写法一一对应）：
-    <root>/train/audio/<cn|ad>/<uid>.wav              原始录音
-    <root>/train/text/<cn|ad>/<uid>.csv               词级时间戳，脚本①生成
-    <root>/train/text/<cn|ad>/<uid><模型>.pt          文本特征，脚本②生成
-    <root>/train/text/<cn|ad>/<uid><模型>_<音频>.pt   音频特征，脚本②生成
-    <root>/train/segmentation/<cn|ad>/<uid>.csv       可选，用来剔掉访谈者的话
-    <root>/train/adresso-train-mmse-scores.csv        标签表，需含 adressfname/dx
-    <root>/train/text_transcriptions.csv              脚本①生成
-    <root>/train/splits/{train,val}_uids<0..4>.npy    5 折划分
+    <root>/train/audio/<cn|ad>/<uid>.wav          原始录音
+    <root>/train/words/<cn|ad>/<uid>.csv          词级时间戳，脚本①生成
+    <root>/train/feat_<模型>/<cn|ad>/<uid><后缀>.pt  特征，脚本②生成
+        feat_distil/          旧实验（distil + wav2vec2）
+        feat_xlmr_xlsr/       xlmr + xlsr
+        feat_xlmr_wav2vec2/   xlmr + wav2vec2
+    <root>/train/segmentation/<cn|ad>/<uid>.csv   可选，用来剔掉访谈者的话
+    <root>/train/adresso-train-mmse-scores.csv    标签表，需含 adressfname/dx
+    <root>/train/text_transcriptions.csv          脚本①生成
+    <root>/train/splits/{train,val}_uids<0..4>.npy 5 折划分
+
+命名约定：`audio/`（原始音频）、`words/`（逐词时间戳）、`splits/`（折划分）
+是固定名；特征目录一律 `feat_<文本模型>_<音频模型>`，一眼能看出是哪套模型产的。
 """
 
 import os
@@ -30,25 +35,27 @@ _PROJECT_ROOT = os.path.dirname(_HERE)
 
 DATA_ROOT = os.environ.get(
     "COGNIALIGN_DATA_ROOT",
-    os.path.join(_PROJECT_ROOT, "data", "diagnosis"),
+    os.path.join(_PROJECT_ROOT, "data"),
 )
 
 TRAIN_ROOT = os.path.join(DATA_ROOT, "train")
 
 AUDIO_DIR = os.path.join(TRAIN_ROOT, "audio")
-TEXT_DIR = os.path.join(TRAIN_ROOT, "text")
+# 逐词时间戳表的目录（脚本① 的产物）。
+# ⚠️ 这里**只有 .csv**；特征 .pt 在 feat_* 目录里（见下面的 feature_dir）。
+WORDS_DIR = os.path.join(TRAIN_ROOT, "words")
 SEGMENTATION_DIR = os.path.join(TRAIN_ROOT, "segmentation")
 SPLITS_DIR = os.path.join(TRAIN_ROOT, "splits")
 
 LABELS_CSV = os.path.join(TRAIN_ROOT, "adresso-train-mmse-scores.csv")
 TRANSCRIPTIONS_CSV = os.path.join(TRAIN_ROOT, "text_transcriptions.csv")
 
-# test 集：结构和 train 一样（audio/<dx>/<uid>.wav、text/<dx>/<uid>.csv），
+# test 集：结构和 train 一样（audio/<dx>/<uid>.wav、words/<dx>/<uid>.csv），
 # 标签表文件名不同（test_labels.csv）。注意 test 的 uid 是纯数字串（"0002"），
 # 全程必须保持字符串，一旦被当成整数就会变成 "2" 而找不到文件。
 TEST_ROOT = os.path.join(DATA_ROOT, "test")
 TEST_AUDIO_DIR = os.path.join(TEST_ROOT, "audio")
-TEST_TEXT_DIR = os.path.join(TEST_ROOT, "text")
+TEST_WORDS_DIR = os.path.join(TEST_ROOT, "words")
 TEST_LABELS_CSV = os.path.join(TEST_ROOT, "test_labels.csv")
 TEST_TRANSCRIPTIONS_CSV = os.path.join(TEST_ROOT, "text_transcriptions.csv")
 
@@ -96,25 +103,28 @@ AUDIO_MODEL = os.environ.get("COGNIALIGN_AUDIO_MODEL", "wav2vec2").strip()
 if SPLIT == "test":
     SPLIT_ROOT = TEST_ROOT
     SPLIT_AUDIO_DIR = TEST_AUDIO_DIR
-    SPLIT_TEXT_DIR = TEST_TEXT_DIR
+    SPLIT_WORDS_DIR = TEST_WORDS_DIR
     SPLIT_LABELS_CSV = TEST_LABELS_CSV
     SPLIT_TRANSCRIPTIONS_CSV = TEST_TRANSCRIPTIONS_CSV
 else:
     SPLIT_ROOT = TRAIN_ROOT
     SPLIT_AUDIO_DIR = AUDIO_DIR
-    SPLIT_TEXT_DIR = TEXT_DIR
+    SPLIT_WORDS_DIR = WORDS_DIR
     SPLIT_LABELS_CSV = LABELS_CSV
     SPLIT_TRANSCRIPTIONS_CSV = TRANSCRIPTIONS_CSV
 
 
-def feature_dir(name="text"):
-    """特征 `.pt` 的存放目录：`<当前 split>/<name>/`。
+def feature_dir(name="distil"):
+    """特征 `.pt` 的存放目录：`<当前 split>/feat_<name>/`。
 
     `name` 来自配置的 `dataset.features_dir`（见 core/feature_spec.py），
-    默认 `'text'` —— 和逐词表同目录，是沿用已久的老行为。
+    默认 `'distil'` —— 老实验（distil + wav2vec2）的特征目录。
 
-    ⚠️ **只有特征 .pt 跟着这个走**；逐词表的 `.csv` 始终在 SPLIT_TEXT_DIR。
-    所以换模型做对比实验时，把 features_dir 改成别的名字，
+    ⚠️ 逐词表的 `.csv` **不在这里** —— 它固定放在 SPLIT_WORDS_DIR（`words/`）。
+    所以换模型做对比实验时，把 features_dir 改成别的名字（如 'xlmr_xlsr'），
     新特征就和旧特征分开放了，而时间戳表不会被动到。
+
+    目录名统一加 `feat_` 前缀，和 `audio/`、`words/`、`splits/` 一眼区分开：
+    哪些是原始素材、哪些是跑出来的特征。
     """
-    return os.path.join(SPLIT_ROOT, name)
+    return os.path.join(SPLIT_ROOT, "feat_" + name)

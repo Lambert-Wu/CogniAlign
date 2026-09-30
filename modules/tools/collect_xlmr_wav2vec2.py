@@ -8,10 +8,10 @@
     —— 名字对不上，dataset.py 会找不到文件。
 
 本脚本做的事（**只复制、不改内容、不动源文件**）：
-    1. 文本：<split>/text_xlmr_xlsr/<dx>/<uid>xlmr_pauses.pt
-             -> <split>/text_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses.pt
-    2. 音频：<split>/text/<dx>/<uid><文本前缀>_pauses_audio.pt
-             -> <split>/text_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses_wav2vec2.pt
+    1. 文本：<split>/feat_xlmr_xlsr/<dx>/<uid>xlmr_pauses.pt
+             -> <split>/feat_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses.pt
+    2. 音频：<split>/feat_distil/<dx>/<uid><文本前缀>_pauses_audio.pt
+             -> <split>/feat_xlmr_wav2vec2/<dx>/<uid>xlmr_pauses_wav2vec2.pt
        音频张量一字不改（同一批音频、同一个 wav2vec2 模型、参数完全相同），
        只是换个符合命名规则的文件名。
 
@@ -34,12 +34,13 @@ import torch  # noqa: E402
 from paths import feature_dir, SPLIT_LABELS_CSV  # noqa: E402
 from core import feature_spec  # noqa: E402
 
-# 目标目录名（新混合目录）
-TARGET_DIR = 'text_xlmr_wav2vec2'
-# 源目录（逐词表所在的老目录，音频特征在这）
-SOURCE_TEXT_DIR = 'text'
+# 目标目录名（新混合目录）。⚠️ 传给 paths.feature_dir 时会自动加 feat_ 前缀，
+# 所以这里写不带前缀的短名，磁盘上就是 <split>/feat_xlmr_wav2vec2/。
+TARGET_DIR = 'xlmr_wav2vec2'
+# 源目录（音频特征在这；旧实验 distil+wav2vec2 的产物）
+SOURCE_TEXT_DIR = 'distil'
 # 源目录（xlmr 文本特征在这）
-SOURCE_XLMR_DIR = 'text_xlmr_xlsr'
+SOURCE_XLMR_DIR = 'xlmr_xlsr'
 
 
 def plan(config, apply_changes=False, verify=False):

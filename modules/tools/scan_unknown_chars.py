@@ -41,8 +41,8 @@ sys.path.insert(0, MODULES_DIR)
 import paths  # noqa: E402
 from core import feature_spec, encoders  # noqa: E402
 
-# 逐词表所在的目录：<split>/text/<dx>/<uid>.csv
-TEXT_DIRS = {'train': paths.TEXT_DIR, 'test': paths.TEST_TEXT_DIR}
+# 逐词表所在的目录：<split>/words/<dx>/<uid>.csv
+TEXT_DIRS = {'train': paths.WORDS_DIR, 'test': paths.TEST_WORDS_DIR}
 
 
 def is_cjk(ch):

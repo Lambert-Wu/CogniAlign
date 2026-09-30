@@ -156,7 +156,7 @@ try:
     info("模型目录 %s" % paths.MODELS_DIR)
     if not os.path.isdir(paths.DATA_ROOT):
         bad("数据集目录不存在: %s\n"
-            "       设环境变量 COGNIALIGN_DATA_ROOT 指向 diagnosis 目录（train/ 的父目录）" % paths.DATA_ROOT)
+            "       设环境变量 COGNIALIGN_DATA_ROOT 指向数据集目录（train/ 的父目录）" % paths.DATA_ROOT)
 except Exception as e:
     bad("paths/model_download 导入失败: %s" % e)
     paths = None
@@ -229,7 +229,7 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
     if need_words:
         n_word = 0
         for dx in ("ad", "cn"):
-            d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
+            d = os.path.join(paths.SPLIT_WORDS_DIR, dx)
             n = len([x for x in os.listdir(d) if x.endswith(".csv")]) if os.path.isdir(d) else 0
             n_word += n
         if n_word:
@@ -254,7 +254,7 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
             u, dx = r["adressfname"], r["dx"]
             if need_audio and not os.path.exists(os.path.join(paths.SPLIT_AUDIO_DIR, dx, u + ".wav")):
                 miss_wav.append(u)
-            if need_words and not os.path.exists(os.path.join(paths.SPLIT_TEXT_DIR, dx, u + ".csv")):
+            if need_words and not os.path.exists(os.path.join(paths.SPLIT_WORDS_DIR, dx, u + ".csv")):
                 miss_word.append(u)
         if miss_wav:
             bad("标签表里有 %d 条找不到对应音频（例: %s）" % (len(miss_wav), ", ".join(miss_wav[:5])))
@@ -273,8 +273,10 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
         # 别的配置遗留下来的特征单独计数 —— 否则打印的数字会跟直觉对不上。
         t_tail = (spec.text_suffix() + ".pt") if spec is not None else None
         a_tail = (spec.audio_suffix() + ".pt") if spec is not None else None
+        # ⚠️ 特征目录跟配置走（<split>/feat_<features_dir>/），不再是"逐词表目录"。
+        feat_root = paths.feature_dir(spec.features_dir()) if spec is not None else None
         for dx in ("ad", "cn"):
-            d = os.path.join(paths.SPLIT_TEXT_DIR, dx)
+            d = os.path.join(feat_root, dx) if feat_root else ""
             if not os.path.isdir(d):
                 continue
             for x in os.listdir(d):

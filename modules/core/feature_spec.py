@@ -15,7 +15,8 @@
     dataset:
       max_length: 512
       pauses: true
-      features_dir: 'text'    # 特征 .pt 放哪；换模型做对比实验时改成别的名字
+      features_dir: 'distil'  # 特征 .pt 放哪（实际目录名加 feat_ 前缀）；
+                              # 换模型做对比实验时改成别的名字
     encoders:
       text:
         distil: {suffix: 'distil', repo: 'distilbert-base-uncased', dim: 768}
@@ -79,11 +80,11 @@ class Spec(object):
         ds = cfg.get('dataset', {})
         self.pauses = bool(ds.get('pauses', False))
         self.max_length = int(ds.get('max_length', 512))
-        # 特征 .pt 放哪个子目录（相对 <split>/）。
-        # 默认 'text' —— 老行为：特征和逐词表 .csv 挤在同一个目录里。
-        # 做「换模型」对比实验时改成别的名字（如 'text_xlmr_xlsr'），
+        # 特征 .pt 放哪个子目录（相对 <split>/，实际目录名还要加 feat_ 前缀，
+        # 见 paths.feature_dir）。默认 'distil' —— 老实验（distil + wav2vec2）。
+        # 做「换模型」对比实验时改成别的名字（如 'xlmr_xlsr'），
         # 新老两套特征就能并存在不同目录，互不覆盖。
-        self._features_dir = str(ds.get('features_dir', 'text') or 'text').strip()
+        self._features_dir = str(ds.get('features_dir', 'distil') or 'distil').strip()
 
     # ------------------------------------------------------------ 查表
     def _entry(self, kind, name):
@@ -145,9 +146,10 @@ class Spec(object):
         return {str(k): str(v) for k, v in dict(m).items()}
 
     def features_dir(self):
-        """特征 `.pt` 存放的子目录名（相对 `<split>/`），默认 `'text'`。
+        """特征 `.pt` 存放的子目录名（相对 `<split>/`），默认 `'distil'`。
 
-        ⚠️ 逐词表的 `.csv` **不跟着这个走** —— 它始终在 `<split>/text/`。
+        ⚠️ 实际目录名 = `'feat_' + 这个值`（前缀由 `paths.feature_dir` 加）。
+        ⚠️ 逐词表的 `.csv` **不跟着这个走** —— 它固定在 `<split>/words/`。
         这里只决定 `.pt` 放哪，所以可以放心改（不会把时间戳表也搬走）。
         提取端（extract_features.py）和读取端（dataset.py）都查同一个配置，
         所以不会出现"存到一个目录、读另一个目录"的错位。

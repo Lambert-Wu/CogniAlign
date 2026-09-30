@@ -13,7 +13,7 @@
 
 产出（与脚本①完全一致的两种文件）
 ----------------------------------
-1. <TEXT_DIR>/<dx>/<uid>.csv        列 word,start,end,probability（逐词）
+1. <WORDS_DIR>/<dx>/<uid>.csv       列 word,start,end,probability（逐词）
 2. <TRAIN_ROOT>/text_transcriptions.csv  列 uid,diagno,transcription,
                                      transcription_pause,probablities（每样本一行）
 
@@ -39,16 +39,16 @@ import sys
 import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # modules/
-from paths import (TEXT_DIR, AUDIO_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV,
-                   TEST_TEXT_DIR, TEST_AUDIO_DIR, TEST_LABELS_CSV,
+from paths import (WORDS_DIR, AUDIO_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV,
+                   TEST_WORDS_DIR, TEST_AUDIO_DIR, TEST_LABELS_CSV,
                    TEST_TRANSCRIPTIONS_CSV)
 
 # 两个 split 各用哪套路径；要改只需要动这张表。
 SPLIT_PATHS = {
     'train': {'labels': LABELS_CSV, 'audio': AUDIO_DIR,
-              'text': TEXT_DIR, 'trans': TRANSCRIPTIONS_CSV},
+              'text': WORDS_DIR, 'trans': TRANSCRIPTIONS_CSV},
     'test': {'labels': TEST_LABELS_CSV, 'audio': TEST_AUDIO_DIR,
-             'text': TEST_TEXT_DIR, 'trans': TEST_TRANSCRIPTIONS_CSV},
+             'text': TEST_WORDS_DIR, 'trans': TEST_TRANSCRIPTIONS_CSV},
 }
 
 # 源词表的本机默认路径。换机器（Linux 服务器等）用 --src 或

@@ -39,7 +39,7 @@ sys.path.insert(0, MODULES_DIR)
 import paths  # noqa: E402
 from core import feature_spec  # noqa: E402
 
-TEXT_DIRS = {'train': paths.TEXT_DIR, 'test': paths.TEST_TEXT_DIR}
+TEXT_DIRS = {'train': paths.WORDS_DIR, 'test': paths.TEST_WORDS_DIR}
 TRANS_CSVS = {'train': paths.TRANSCRIPTIONS_CSV, 'test': paths.TEST_TRANSCRIPTIONS_CSV}
 
 

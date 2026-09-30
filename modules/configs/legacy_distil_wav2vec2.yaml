@@ -4,7 +4,7 @@
 #     bash run_preprocess.sh -f configs/legacy_distil_wav2vec2.yaml -s all
 #     bash run_train.sh       -f configs/legacy_distil_wav2vec2.yaml
 #
-# 特征落在 <split>/text/（老目录），不会碰到新模型的 text_xlmr_xlsr/。
+# 特征落在 <split>/feat_distil/，不会碰到新模型的 feat_xlmr_*/。
 
 # ── 数据集参数 ──────────────────────────────────────────────────────────
 # 脚本②（extract_features.py）和训练都要读这两个值，以前是硬写死在 py 里的，
@@ -12,13 +12,11 @@
 dataset:
   max_length: 512       # 文本/音频统一对齐到这么长的序列
   pauses: true          # true = 用带停顿标记的那版转写（文件名会多一段 _pauses）
-  # 特征 .pt 放在 <split>/ 下的哪个子目录里。默认 'text' —— 
-  # 和逐词表 .csv 挤在同一个目录，是沿用已久的老行为。
-  # 换模型做对比实验时改成别的名字（如 'text_xlmr_xlsr'），新老两套特征
-  # 就分开放、互不覆盖；逐词表 .csv 不会跟着动（它始终在 text/）。
-  # ⚠️ 提取端（extract_features.py）和读取端（dataset.py）都查这一行，
-  #    所以不会出现"存到一个目录、读另一个目录"。
-  features_dir: 'text'
+  # 特征 .pt 放在 <split>/feat_<这个名字>/ 里。
+  # ⚠️ 实际目录名 = 'feat_' + 这里的值（前缀由 paths.feature_dir 统一加），
+  #    所以写 'distil' 对应磁盘上的 <split>/feat_distil/。
+  # 老实验（distil + wav2vec2）的特征就在那里，不会碰到新实验的 feat_xlmr_*/。
+  features_dir: 'distil'
   # 只用音频、不用文本时，文件名里还是带一段文本后缀（老命名规则遗留）。
   # 本项目一直都是文本+音频双模态，这个值用不到，留在这里是为了不把它写死回 py。
   text_fallback: 'distil'

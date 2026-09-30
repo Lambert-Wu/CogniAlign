@@ -5,7 +5,7 @@ import torch
 import os
 from sklearn.model_selection import KFold
 # ⚠️ 用 SPLIT_* 而不是写死 train 的那套：跑 test（中文语料）时
-# COGNIALIGN_SPLIT=test 会把它们切到 data/diagnosis/test/。
+# COGNIALIGN_SPLIT=test 会把它们切到 data/test/。
 # SPLIT=train 时 SPLIT_* 就等于下面注释里的 train 路径，行为完全不变。
 from paths import SPLITS_DIR, SPLIT_LABELS_CSV, feature_dir
 from core import feature_spec

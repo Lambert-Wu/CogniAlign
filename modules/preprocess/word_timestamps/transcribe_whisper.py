@@ -13,7 +13,7 @@ from faster_whisper import WhisperModel
 
 # 路径集中在 modules/paths.py，本脚本在两级子目录里，先把 modules/ 加进 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from paths import AUDIO_DIR, TEXT_DIR, SEGMENTATION_DIR, TRANSCRIPTIONS_CSV
+from paths import AUDIO_DIR, WORDS_DIR, SEGMENTATION_DIR, TRANSCRIPTIONS_CSV
 from core.model_download import resolve
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ def preprocess_whisper():
                 # （Linux 服务器上很容易踩到，比如 /mnt/audio_data/...）。
                 # 改成直接用 paths.py 里的路径常量拼，跨平台且不再有这层隐患。
                 stem = file.replace('.wav', '.csv')
-                word_level_path = os.path.join(TEXT_DIR, diagno, stem)
+                word_level_path = os.path.join(WORDS_DIR, diagno, stem)
                 segmentation_path = os.path.join(SEGMENTATION_DIR, diagno, stem)
                 
                 excluding_times = []

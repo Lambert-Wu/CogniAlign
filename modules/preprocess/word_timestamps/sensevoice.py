@@ -10,7 +10,7 @@ WhisperX 底层是 Whisper（英文为主），念中文会掉字、认错字（
 
 产出（和脚本① `transcribe_whisper.py` 完全一样的两种文件，下游不用改）
 -----------------------------------------------------------------------
-1. <SPLIT_TEXT_DIR>/<dx>/<uid>.csv   列 word,start,end,probability
+1. <SPLIT_WORDS_DIR>/<dx>/<uid>.csv  列 word,start,end,probability
 2. <SPLIT_ROOT>/text_transcriptions.csv
    列 uid,diagno,transcription,transcription_pause,probablities
 
@@ -61,16 +61,16 @@ import time
 import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # modules/
-from paths import MODELS_DIR, TEST_AUDIO_DIR, TEST_TEXT_DIR, \
+from paths import MODELS_DIR, TEST_AUDIO_DIR, TEST_WORDS_DIR, \
     TEST_LABELS_CSV, TEST_TRANSCRIPTIONS_CSV, \
-    AUDIO_DIR, TEXT_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV
+    AUDIO_DIR, WORDS_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV
 
 # 两个 split 各用哪套路径；要加 split 只需要动这张表。
 SPLIT_PATHS = {
     'train': {'labels': LABELS_CSV, 'audio': AUDIO_DIR,
-              'text': TEXT_DIR, 'trans': TRANSCRIPTIONS_CSV},
+              'text': WORDS_DIR, 'trans': TRANSCRIPTIONS_CSV},
     'test': {'labels': TEST_LABELS_CSV, 'audio': TEST_AUDIO_DIR,
-             'text': TEST_TEXT_DIR, 'trans': TEST_TRANSCRIPTIONS_CSV},
+             'text': TEST_WORDS_DIR, 'trans': TEST_TRANSCRIPTIONS_CSV},
 }
 
 SV_REPO_LAST = 'SenseVoiceSmall'

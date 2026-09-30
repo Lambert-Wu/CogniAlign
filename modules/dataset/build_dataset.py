@@ -4,7 +4,7 @@
 设计原则
 --------
 1. 只读源目录：绝不修改、绝不删除 madress-2023 里的任何文件。
-2. 目标全部落在本项目 data/diagnosis/ 下，与代码里写死的
+2. 目标全部落在本项目 data/ 下，与代码里写死的
    `<root>/<split>/{audio,text,splits}` 结构一一对应。
 3. 可重复执行：目标已存在且内容一致的文件会跳过（按 md5 比，不比大小，
    因为换数据源后同名文件大小可能巧合相同、内容却不同）。
@@ -66,7 +66,7 @@ def audio_root(madress, source):
     return os.path.join(madress, "data", "processed", "subject_only")
 
 # 目标数据（本项目内）
-DATA_ROOT = os.path.join(PROJECT_ROOT, "data", "diagnosis")
+DATA_ROOT = os.path.join(PROJECT_ROOT, "data")
 TRAIN_ROOT = os.path.join(DATA_ROOT, "train")
 TEST_ROOT = os.path.join(DATA_ROOT, "test")
 
@@ -222,8 +222,13 @@ def prune_stale(dst_root, keep_uids, check_only):
 def make_dirs(check_only):
     if check_only:
         return
+    # 只建「原始素材」的目录。特征目录（feat_*）由脚本② 自己按配置建，
+    # 逐词表目录（words/）由脚本① 自己建 —— 这里不预先造一堆空目录。
     for dx in sorted(set(DX_MAP.values())):
-        os.makedirs(os.path.join(TRAIN_ROOT, "text", dx), exist_ok=True)
+        os.makedirs(os.path.join(TRAIN_ROOT, "audio", dx), exist_ok=True)
+        os.makedirs(os.path.join(TEST_ROOT, "audio", dx), exist_ok=True)
+        os.makedirs(os.path.join(TRAIN_ROOT, "words", dx), exist_ok=True)
+        os.makedirs(os.path.join(TEST_ROOT, "words", dx), exist_ok=True)
     os.makedirs(os.path.join(TRAIN_ROOT, "splits"), exist_ok=True)
 
 

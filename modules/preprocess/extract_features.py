@@ -23,7 +23,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # SPLIT / TEXT_MODEL / SPLIT_* 都在 paths.py 里统一决定（读环境变量）
 from paths import (SPLIT, TEXT_MODEL, AUDIO_MODEL, SPLIT_ROOT, SPLIT_AUDIO_DIR,
-                   SPLIT_TEXT_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV,
+                   SPLIT_WORDS_DIR, SPLIT_LABELS_CSV, SPLIT_TRANSCRIPTIONS_CSV,
                    feature_dir)
 from core import feature_spec
 from core import encoders
@@ -85,11 +85,11 @@ segment_length = spec.fps()
 ROOT_DIR = SPLIT_ROOT
 root_path = SPLIT_AUDIO_DIR + os.sep
 # 逐词表 .csv 的目录（脚本① 的产出）。**特征不放这儿**，别混了。
-root_text_path = SPLIT_TEXT_DIR + os.sep
-# 特征 .pt 的目录 —— 由配置的 dataset.features_dir 决定（见 core/feature_spec.py）。
-# 默认 'text' 就是上面那个目录（沿用已久的老行为）；
-# 换成别的名字（如 'text_xlmr_xlsr'）就把新模型的特征单独放一处，
-# 和旧特征并存互不覆盖。读取端 dataset.py 查的是同一个配置，不会错位。
+root_text_path = SPLIT_WORDS_DIR + os.sep
+# 特征 .pt 的目录 —— 由配置的 dataset.features_dir 决定（见 core/feature_spec.py），
+# 实际路径是 <split>/feat_<名字>/（前缀由 paths.feature_dir 统一加）。
+# 默认 'distil' 是老实验；换成别的名字（如 'xlmr_xlsr'）就把新模型的特征
+# 单独放一处，和旧特征并存互不覆盖。读取端 dataset.py 查的是同一个配置，不会错位。
 root_feat_path = feature_dir(spec.features_dir()) + os.sep
 textual_data = SPLIT_TRANSCRIPTIONS_CSV
 LABELS_PATH = SPLIT_LABELS_CSV

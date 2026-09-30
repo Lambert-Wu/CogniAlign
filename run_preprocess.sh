@@ -35,7 +35,7 @@
 #
 # 可设的环境变量（不设就用下面的默认值）：
 #     PYTHON                 指定解释器，默认自动找 python3 / python
-#     COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data/diagnosis
+#     COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data
 #     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
 #     COGNIALIGN_OFFLINE=1   禁止联网下载模型（本地没有就直接报错）
 #     COGNIALIGN_SPLIT       train|test，只在没给 -s 时作为默认值
@@ -117,7 +117,7 @@ CogniAlign 特征提取一键脚本
 
 环境变量（都可不设）：
     PYTHON                 指定解释器，默认自动找 python3 / python
-    COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data/diagnosis
+    COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data
     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
     COGNIALIGN_OFFLINE=1   禁止联网下载模型（本地没有就直接报错）
     COGNIALIGN_SPLIT       train|test，没给 -s 时的默认值
@@ -189,7 +189,7 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 export COGNIALIGN_PROJECT_ROOT="$HERE_PY"
-export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data/diagnosis}"
+export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data}"
 export COGNIALIGN_MODELS_DIR="${COGNIALIGN_MODELS_DIR:-$HERE_PY/models}"
 
 LOG_DIR="$HERE/logs/preprocess"
@@ -207,7 +207,7 @@ mkdir -p "$LOG_DIR"
 # 手写 test_labels.csv —— 两处各写一份迟早会不一致。
 # =====================================================================
 split_info() {
-    TEXT_MODEL=""; AUDIO_MODEL=""; LABELS_CSV=""; TEXT_DIR=""
+    TEXT_MODEL=""; AUDIO_MODEL=""; LABELS_CSV=""; WORDS_DIR=""
     PAUSES_SUF=""; TEXT_SUF=""; AUDIO_FULL_SUF=""; PAUSES_DESC=""; FEAT_DIR=""
 
     # 模型名从**配置文件**读 —— 不再要求手工 export COGNIALIGN_TEXT_MODEL /
@@ -238,7 +238,7 @@ spec = feature_spec.load_default(textual_model=text_m, audio_model=audio_m)
 print(text_m)
 print(audio_m)
 print(paths.SPLIT_LABELS_CSV)
-print(paths.SPLIT_TEXT_DIR)
+print(paths.SPLIT_WORDS_DIR)
 print(paths.feature_dir(spec.features_dir()))
 print('_pauses' if spec.pauses else '')
 print(spec.text_suffix())
@@ -249,7 +249,7 @@ print(spec.audio_suffix())
         { read -r TEXT_MODEL || true
           read -r AUDIO_MODEL || true
           read -r LABELS_CSV || true
-          read -r TEXT_DIR || true
+          read -r WORDS_DIR || true
           read -r FEAT_DIR || true
           read -r PAUSES_SUF || true
           read -r TEXT_SUF || true

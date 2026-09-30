@@ -6,9 +6,9 @@
 #                                      → 差在文本编码器（xlmr vs distil）
 #   这样能把两个变量分开，而不是一起换、不知道是谁的功劳。
 #
-# 特征在 <split>/text_xlmr_wav2vec2/（新混合目录），由
+# 特征在 <split>/feat_xlmr_wav2vec2/（新混合目录），由
 #     python tools/collect_xlmr_wav2vec2.py --apply
-# 从两处现成产物汇总而来（xlmr 文本取自 text_xlmr_xlsr/，wav2vec2 音频取自 text/）。
+# 从两处现成产物汇总而来（xlmr 文本取自 feat_xlmr_xlsr/，wav2vec2 音频取自 feat_distil/）。
 # ⚠️ 音频文件名带文本模型前缀是本项目的历史命名规则（见 core/feature_spec.py
 #    的 audio_suffix），所以这里必须叫 <uid>xlmr_pauses_wav2vec2.pt。
 #
@@ -22,13 +22,10 @@
 dataset:
   max_length: 512       # 文本/音频统一对齐到这么长的序列
   pauses: true          # true = 用带停顿标记的那版转写（文件名会多一段 _pauses）
-  # 特征 .pt 放在 <split>/ 下的哪个子目录里。默认 'text' —— 
-  # 和逐词表 .csv 挤在同一个目录，是沿用已久的老行为。
-  # 换模型做对比实验时改成别的名字（如 'text_xlmr_xlsr'），新老两套特征
-  # 就分开放、互不覆盖；逐词表 .csv 不会跟着动（它始终在 text/）。
-  # ⚠️ 提取端（extract_features.py）和读取端（dataset.py）都查这一行，
-  #    所以不会出现"存到一个目录、读另一个目录"。
-  features_dir: 'text_xlmr_wav2vec2'
+  # 特征 .pt 放在 <split>/feat_<这个名字>/ 里。
+  # ⚠️ 实际目录名 = 'feat_' + 这里的值（前缀由 paths.feature_dir 统一加），
+  #    所以写 'xlmr_wav2vec2' 对应磁盘上的 <split>/feat_xlmr_wav2vec2/。
+  features_dir: 'xlmr_wav2vec2'
   # 只用音频、不用文本时，文件名里还是带一段文本后缀（老命名规则遗留）。
   # 本项目一直都是文本+音频双模态，这个值用不到，留在这里是为了不把它写死回 py。
   text_fallback: 'distil'

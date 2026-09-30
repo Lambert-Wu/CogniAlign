@@ -23,7 +23,7 @@
 #
 # 可设的环境变量（不设就用默认值）：
 #     PYTHON                 指定解释器，默认自动找 python3 / python
-#     COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data/diagnosis
+#     COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data
 #     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
 # =====================================================================
 
@@ -74,7 +74,7 @@ CogniAlign 训练一键脚本
 
 环境变量（都可不设）：
     PYTHON                 指定解释器，默认自动找 python3 / python
-    COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data/diagnosis
+    COGNIALIGN_DATA_ROOT   数据集位置，默认 <项目根>/data
     COGNIALIGN_MODELS_DIR  模型位置，  默认 <项目根>/models
 EOF
 }
@@ -128,7 +128,7 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 export COGNIALIGN_PROJECT_ROOT="$HERE_PY"
-export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data/diagnosis}"
+export COGNIALIGN_DATA_ROOT="${COGNIALIGN_DATA_ROOT:-$HERE_PY/data}"
 export COGNIALIGN_MODELS_DIR="${COGNIALIGN_MODELS_DIR:-$HERE_PY/models}"
 
 # 续跑开关：train.py 读它来决定要不要跳过已存权重的折
@@ -164,7 +164,7 @@ export COGNIALIGN_CONFIG="$CONFIG"
 #    check_env.py 没有 --config 入参，靠这两个环境变量决定去核对**哪一套**特征。
 #    不 export 的话它们按 split 的默认走（train → distil + wav2vec2、特征目录 text/），
 #    于是核对的是**老特征**：老特征齐全时自检照样"通过"，等 train.py 真按配置去
-#    找 <split>/text_xlmr_xlsr/ 时才崩 —— 典型的"自检说没事，一跑就挂"。
+#    找 <split>/feat_xlmr_xlsr/ 时才崩 —— 典型的"自检说没事，一跑就挂"。
 _text=""; _audio=""; _feat_dir=""; _text_suf=""; _audio_suf=""; _pauses="0"
 _fusion=""; _pooling=""
 if [ -f "$CFG_PATH" ]; then
@@ -322,7 +322,7 @@ if [ "$WORKER" = 1 ]; then
         echo "  4) wandb 卡住 / 报 API key"
         echo "     用默认的 -w disabled，或先 wandb login 再 -w online"
         echo "  5) 5 折划分文件缺失"
-        echo "     data/diagnosis/train/splits/ 下应有 10 个 .npy（train_uids0-4 / val_uids0-4）"
+        echo "     data/train/splits/ 下应有 10 个 .npy（train_uids0-4 / val_uids0-4）"
         echo "########################################################"
     fi
     exit "$RC"
