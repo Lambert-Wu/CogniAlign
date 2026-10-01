@@ -77,6 +77,18 @@ def main():
     cos = torch.nn.functional.cosine_similarity
     ratios, cosA, cosD, cosE, dlogA, dlogD, dlogE = [], [], [], [], [], [], []
 
+    def run_layer(audio, text):
+        """过第一层交叉注意力。
+
+        ⚠️ 1024 维那套（configs/default.yaml）在进注意力前还有一层投影
+        （audio_proj_layer），直接调 layers[0] 会因为维度对不上而报错 ——
+        这里补上，和真实 forward 一致。
+        """
+        src = audio
+        if model.audio_proj_kind:
+            src = model.audio_proj_layer(src)
+        return model.layers[0](src, text.unsqueeze(0))
+
     with torch.no_grad():
         for fp in files:
             a = torch.load(fp, map_location='cpu')
@@ -92,10 +104,9 @@ def main():
             aD = a.clone()
             aD[~keep] = av.mean(dim=0)          # 特征层修法
 
-            lay = model.layers[0]               # 只有一层交叉注意力（n_layers=1）
-            sA = lay(a.unsqueeze(0), t.unsqueeze(0))
-            sB = lay(av.unsqueeze(0), t.unsqueeze(0))
-            sD = lay(aD.unsqueeze(0), t.unsqueeze(0))
+            sA = run_layer(a.unsqueeze(0), t)     # 只有一层交叉注意力（n_layers=1）
+            sB = run_layer(av.unsqueeze(0), t)
+            sD = run_layer(aD.unsqueeze(0), t)
 
             pA = sA.mean(dim=1)
             pB = sB.mean(dim=1)
