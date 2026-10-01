@@ -215,17 +215,23 @@ python train.py --config configs/default.yaml
 `modules/` 必须能被找到（直接跑时 Python 会自动把脚本所在目录的上级加进来，两个一键脚本也会替你 `cd` 好）。
 （`run_preprocess.sh` 已经替你 `cd` 好了。）
 
-> 🚨 **不要 `import` 这三个脚本，也不要对它们用 `--help`。**
-> `train.py`、`transcribe_whisper.py`、`extract_features.py` 都**没有**
+> 🚨 **不要 `import` 这几个脚本，也不要对它们用 `--help`。**
+>
+> `transcribe_whisper.py` 和 `extract_features.py` **没有**
 > `if __name__ == "__main__":` 保护，模块顶层就直接开跑。所以：
 >
 > - `python preprocess/extract_features.py --help` 会**照常跑完整个特征提取**
 > - 任何 `import extract_features`（含 `exec_module`、`runpy`）同样会真的开跑
-> - 后果不是报错，而是**静默覆盖**已有的 `text/<dx>/<uid>.csv` 和 `text_transcriptions.csv`
+> - 后果不是报错，而是**静默覆盖**已有的 `words/<dx>/<uid>.csv` 和 `text_transcriptions.csv`
 >
 > 要在不改数据的前提下检查这些脚本，只能读源码 / 用 `ast` 解析，
 > 或者把 `COGNIALIGN_DATA_ROOT` 指到一个只放 1 个样本的临时目录再跑（记得同时设 `COGNIALIGN_OFFLINE=1` 免得白下模型）。
 > 数据被覆盖后的恢复办法：重跑 `modules/preprocess/word_timestamps/from_whisperx.py`（幂等，秒级）。
+>
+> ⚠️ 更正（2026-10-01 用 ast 核实）：`train.py` / `from_whisperx.py` / `sensevoice.py`
+> **是有** `__main__` 保护的，上面这段以前把 `train.py` 也算进去了，不准确。
+> 但 `train.py` 模块顶层直接调了 `wandb.login()`，import 它仍会卡在等输入 key，
+> 所以「别 import `train.py`」这条建议本身仍然成立、只是原因不同。
 
 ### 6. 显存需求
 
