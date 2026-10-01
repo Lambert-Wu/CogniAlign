@@ -1,0 +1,188 @@
+# ── 对比实验：XLM-R（文本）+ XLS-R 经 **PCA 降到 768**（音频）─────────────
+#
+# 和 configs/default.yaml 的区别**只有音频侧怎么从 1024 变 768**：
+#
+#   default.yaml        XLS-R 原样输出 1024 维 -> 网络里挂一层 **随机初始化的
+#                       Linear** 降维（随训练一起学）
+#                       见 networks/model.py 的 audio_projection_kind()：
+#                       audio_dim(1024) > hidden_size(768) -> 'linear'
+#
+#   本文件            先用 **PCA** 把 1024 维压到 768 维，压完再喂给网络。
+#                       网络侧 audio_dim(768) == hidden_size(768) -> **不挂任何投影层**。
+#                       PCA 是无监督的、一次算定就不变，不占训练参数。
+#
+# 为什么这么干：原来那层 Linear 的 1024×768 个权重是**随机初始化**的，
+# 全靠 188 条训练样本去学 —— 参数比样本还多，学到的投影未必靠谱。
+# PCA 用全部有效音频帧（3.6 万行）按"方差最大的方向"挑 768 个方向，
+# 是个有数据支撑的固定变换，两者可以直接对比。
+#
+# ⚠️ 本目录的特征**不是** extract_features.py 直接产出的：
+#    先跑 default 那套拿到 1024 维特征，再用 PCA 工具压一遍。
+#       bash run_preprocess.sh -f configs/default.yaml -s all      # 出 feat_xlmr_xlsr/
+#       python modules/tools/pca_audio_reduce.py                   # 出 feat_xlmr_xlsr_pca/
+#    所以 encoders.audio.xlsr_pca 这一条**故意不写 repo** ——
+#    没有可加载的模型，它只是「降维后的特征」在文件命名 / 维度上的登记。
+
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+dataset:
+  max_length: 512
+  pauses: true
+  # ⚠️ 输出目录：<split>/feat_xlmr_xlsr_pca/
+  #    （输入是 <split>/feat_xlmr_xlsr/，见下面 pca.source_features_dir）
+  features_dir: 'xlmr_xlsr_pca'
+  text_fallback: 'distil'
+  rare_char_map:
+    锨: 先      # xiān
+    镊: 聂      # niè
+    鳊: 边      # biān
+    笤: 条      # tiáo
+    鲈: 卢      # lú
+    獭: 塔      # tǎ
+    荠: 记      # jì
+
+# ── PCA 降维参数（只有 tools/pca_audio_reduce.py 读这一段）────────────────
+pca:
+  # 目标编码器：降维后的特征在 encoders.audio 里登记成哪个名字。
+  # 它的 dim 就是降维的目标维度（768），suffix 决定输出文件名。
+  audio_model: 'xlsr_pca'
+  # 源特征在哪（相对 <split>/，实际目录名同样加 feat_ 前缀）。
+  source_features_dir: 'xlmr_xlsr'
+  # 源文件用哪个编码器条目（拿它的 suffix 拼文件名）。
+  source_audio_model: 'xlsr'
+  # 降到多少维。必须 <= 源维度，且 == encoders.audio.<audio_model>.dim
+  n_components: 768
+  # 在哪份数据上拟合 PCA。写 'train' 是为了**不偷看测试集** ——
+  # 测试集的录音如果参与了拟合，分数就虚高了。
+  fit_on: 'train'
+  # 拟合完应用到哪几份（train 和 test 都要，不然训练时找不到特征）。
+  apply_to: ['train', 'test']
+  # true = 压完再除以标准差（各维方差拉成 1）。
+  # 默认 false：PCA 只换基不缩放，各维仍是"方差从大到小"，后层网络更好接。
+  whiten: false
+  # PCA 参数（均值 / 主成分 / 解释方差）存哪，相对项目根解析。
+  # 存下来是为了**可复现**：换机器不用重跑 3.6 万行拟合，也便于核对。
+  model_out: 'checkpoints/pca_xlsr_768.pt'
+
+# ── 编码器登记表 ────────────────────────────────────────────────────────
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+      word_start_prefix: 'Ġ'
+    stella:
+      suffix: 'stella'
+      repo: 'NovaSearch/stella_en_1.5B_v5'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      trust_remote_code: true
+    mistral:
+      suffix: 'mistral'
+      repo: 'mistralai/Mistral-7B-v0.1'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      pad_token_from_eos: true
+    qwen:
+      suffix: 'qwen'
+      repo: 'Qwen/Qwen2.5-7B'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    # XLS-R 原始输出（1024 维）。本实验**不直接用它进网络**，它是 PCA 的输入。
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+    # ⚠️ 降维后的 XLS-R（768 维）。**故意没有 repo** —— 它不是能加载的模型，
+    #    只是特征在命名和维度上的登记条目（dim=768 == hidden_size，网络不挂投影层）。
+    #    用 extract_features.py 跑它会报「没配 repo」，这是预期行为：
+    #    这套特征要由 tools/pca_audio_reduce.py 从 feat_xlmr_xlsr/ 压出来。
+    xlsr_pca:
+      suffix: 'xlsr_pca'
+      dim: 768
+      fps: 50
+    egemaps:
+      suffix: 'egemaps'
+      dim: 88
+      fps: 10
+      loader: 'opensmile'
+      opensmile_feature_set: 'eGeMAPSv02'
+      opensmile_feature_level: 'Functionals'
+    mel:
+      suffix: 'mel'
+      dim: 80
+      fps: 50
+      loader: 'mel_librosa'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  # ⚠️ 用 PCA 后这一条必须是 'xlsr_pca'（dim 768），
+  #    写成 'xlsr'（dim 1024）的话网络会自动挂一层 Linear 做二次降维，
+  #    那就和 default.yaml 没区别了，白压。
+  audio_model: 'xlsr_pca'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+
+model_name: ''

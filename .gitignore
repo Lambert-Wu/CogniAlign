@@ -11,8 +11,13 @@ data/
 #    不是我们自己训练出来的。自己训练的产物放 checkpoints/，两者别混。
 models/
 
-# 自己训练出来的权重存档：从 modules/logs/<配置名>/ 复制过来的成品
-checkpoints/
+# 自己训练出来的权重存档：从 modules/logs/<配置名>/ 复制过来的成品。
+# ⚠️ 写成 `checkpoints/*` 而不是 `checkpoints/`：忽略目录本身的话，
+#    git 压根不会进去看，下面的例外就失效了。
+checkpoints/*
+# PCA 降维的参数存档是**例外**：它不是权重，而是别人拿到特征后要核对 /
+# 复现降维过程的凭据（tools/pca_audio_reduce.py 产出，几 MB）。
+!checkpoints/pca_*.pt
 
 # Ignore all files in the logs directory
 logs/*

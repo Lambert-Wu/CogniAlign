@@ -126,6 +126,21 @@ else:
 SPLITS_DIR = os.path.join(SPLIT_ROOT, "splits")
 
 
+def feature_dir_for(split, name="distil"):
+    """指定 split 的特征目录：`<root>/<split>/feat_<name>/`。
+
+    为什么单独有一个「指定 split」的版本：`SPLIT_ROOT` 是 **import 时定值的
+    模块级常量**，`COGNIALIGN_SPLIT` 改了也不会变（在一个进程里切 split 是
+    无效的，要切必须开新进程）。但有的工具要**同时**读写 train 和 test 两份特征
+    （例如 `tools/pca_audio_reduce.py`：在 train 上拟合 PCA，再应用到 train+test），
+    那就必须能显式指定 split，不能靠环境变量。
+
+    `feature_dir()` 就是它取当前 split 的特例 —— 目录名的拼法只有这一处。
+    """
+    root = TEST_ROOT if str(split).strip().lower() == "test" else TRAIN_ROOT
+    return os.path.join(root, "feat_" + name)
+
+
 def feature_dir(name="distil"):
     """特征 `.pt` 的存放目录：`<当前 split>/feat_<name>/`。
 
@@ -139,4 +154,4 @@ def feature_dir(name="distil"):
     目录名统一加 `feat_` 前缀，和 `audio/`、`words/`、`splits/` 一眼区分开：
     哪些是原始素材、哪些是跑出来的特征。
     """
-    return os.path.join(SPLIT_ROOT, "feat_" + name)
+    return feature_dir_for(SPLIT, name)
