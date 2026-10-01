@@ -44,6 +44,27 @@ class AdressoDataset(Dataset):
 # 要拿后缀就用 core.feature_spec.from_config(config)。
 
 
+def _check_seq_len(x, path, want, spec_max_length):
+    """特征的行数必须等于配置的 dataset.max_length。
+
+    为什么非要查这一下：**不查的话它会静默跑错**。
+    实测（2026-10-01）：配置写 `max_length: 320`、磁盘上的特征还是 512 行，
+    模型前向**照样跑通、一声不响**（网络接受任意长度 T，没人检查）。
+    于是你以为在测 320，实际喂进去的还是 512，几小时白跑。
+    典型触发场景：改了 max_length 却忘了重跑特征提取。
+    """
+    if x.dim() != 2 or int(x.shape[0]) != int(want):
+        raise ValueError(
+            "特征长度和配置对不上：\n"
+            "    %s\n"
+            "    磁盘上是 %s，但配置的 dataset.max_length=%d。\n"
+            "多半是改了 max_length 却还没重跑特征提取。请先跑：\n"
+            "    bash run_preprocess.sh -f <产出这套特征的配置文件> -s all\n"
+            "（如果就是想用现在这批特征，把配置里的 max_length 改回 %d。）"
+            % (path, tuple(x.shape) if x.dim() == 2 else tuple(x.shape),
+               spec_max_length, int(x.shape[0])))
+
+
 def read_CSV(config):
     # Read CSV with labels
     # ⚠️ 必须把 uid 列按字符串读：test 集的 uid 是纯数字串（"0002"），
@@ -82,12 +103,21 @@ def read_CSV(config):
                                                  row['adressfname'] + audio_suffix + '.pt')
         
         if config.model.multimodality:
-            features.append((torch.load(audio_embeddings_path).to(device), torch.load(text_embeddings_path).to(device)))
+            audio = torch.load(audio_embeddings_path)
+            text = torch.load(text_embeddings_path)
+            # 长度不对就直接报错，别让它在网络里"照跑不误"（理由见 _check_seq_len）
+            _check_seq_len(audio, audio_embeddings_path, spec.max_length, spec.max_length)
+            _check_seq_len(text, text_embeddings_path, spec.max_length, spec.max_length)
+            features.append((audio.to(device), text.to(device)))
         else:
             if config.model.textual_model != '':
-                features.append(torch.load(text_embeddings_path).to(device))
+                text = torch.load(text_embeddings_path)
+                _check_seq_len(text, text_embeddings_path, spec.max_length, spec.max_length)
+                features.append(text.to(device))
             elif config.model.audio_model != '':
-                features.append(torch.load(audio_embeddings_path).to(device))
+                audio = torch.load(audio_embeddings_path)
+                _check_seq_len(audio, audio_embeddings_path, spec.max_length, spec.max_length)
+                features.append(audio.to(device))
 
     return uids, features, labels
 
