@@ -25,7 +25,9 @@
 
 # ── 数据集参数 ──────────────────────────────────────────────────────────
 dataset:
-  max_length: 512
+  # ⚠️ 必须和 configs/default.yaml 的 max_length 一致 —— 那套配置产出源特征，
+  #    这里决定训练时读多长。两处不一致会读不到文件（长度对不上）。
+  max_length: 320
   pauses: true
   # ⚠️ 输出目录：<split>/feat_xlmr_xlsr_pca/
   #    （输入是 <split>/feat_xlmr_xlsr/，见下面 pca.source_features_dir）

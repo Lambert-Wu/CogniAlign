@@ -204,11 +204,15 @@ def fit_pca(matrix, n_components, whiten):
     }
 
 
-def signature(s, n_features):
+def signature(s, n_features, max_length):
     """PCA 参数对应的"配方"：换了任何一个都必须重新拟合。
 
-    防止改了配置（换源目录 / 换维度 / 换拟合集）却复用旧参数，
+    防止改了配置（换源目录 / 换维度 / 换拟合集 / 换序列长度）却复用旧参数，
     产出一个"看起来跑通了、其实对不上"的特征目录。
+
+    `max_length` 为什么要算进来：改序列长度会换一批帧（长样本被截断，
+    尾部那些帧直接没了），拟合出来的主成分就不一样了。不加这一条的话，
+    改完 `dataset.max_length` 复用旧参数不会报错，但特征对不上。
 
     ⚠️ `fill_padding` **故意不算进配方**：它只决定写出去的填充行填什么，
     不影响拟合（拟合只看有效帧）。同一个 PCA 参数既能产出"填充留零"那套、
@@ -220,8 +224,26 @@ def signature(s, n_features):
         'n_components': s['n_components'],
         'fit_on': s['fit_on'],
         'whiten': s['whiten'],
+        'max_length': int(max_length),
         'n_features': int(n_features),
     }
+
+
+def check_seq_len(files, want, split, what):
+    """源特征的实际行数必须等于配置的 dataset.max_length。
+
+    为什么单独查一遍：改了 `dataset.max_length` 但**忘了重跑特征提取**时，
+    磁盘上还是旧长度的特征。不查的话 PCA 照跑不误，压出来一个"长度和
+    配置对不上"的目录，训练时才炸 —— 那时已经白跑几小时了。
+    """
+    x = torch.load(files[0][2], map_location='cpu')
+    got = int(x.shape[0])
+    if got != want:
+        raise ValueError(
+            "%s（split=%s）的特征长度是 %d 行，但配置的 dataset.max_length=%d。\n"
+            "多半是改了 max_length 却还没重跑特征提取。请先跑：\n"
+            "    bash run_preprocess.sh -f <产出这套特征的配置文件> -s all"
+            % (what, split, got, want))
 
 
 def apply_pca(x, params, fill_padding='zero'):
@@ -338,14 +360,14 @@ def main():
     params = None
     if not args.refit and os.path.isfile(model_path):
         loaded = torch.load(model_path, map_location='cpu', weights_only=False)
-        if loaded.get('signature') == signature(s, src_dim):
+        if loaded.get('signature') == signature(s, src_dim, spec.max_length):
             params = loaded
             print("复用已存的 PCA 参数（拟合于 %d 个有效帧，%d 维 -> %d 维）"
                   % (loaded['n_samples_fit'], loaded['n_features'], loaded['n_components']))
         else:
             print("⚠️  已存参数的配方和当前配置不一致，将重新拟合：")
             print("    存档 %s" % loaded.get('signature'))
-            print("    当前 %s" % signature(s, src_dim))
+            print("    当前 %s" % signature(s, src_dim, spec.max_length))
 
     if params is None:
         base, files = list_audio_files(s['fit_on'], s['src_dir'], src_audio_suffix)
@@ -353,6 +375,7 @@ def main():
             raise FileNotFoundError(
                 "在 %s 下没找到任何 *%s.pt（拟合集 %s）—— "
                 "源特征跑出来了吗？" % (base, src_audio_suffix, s['fit_on']))
+        check_seq_len(files, spec.max_length, s['fit_on'], '源特征')
         print("扫描拟合集 %s：%d 个文件，目录 %s" % (s['fit_on'], len(files), os.path.relpath(base, ROOT)))
         matrix, feat_dim, empty = collect_valid_rows(files)
         print("  有效帧 %d 行 × %d 维（%.1f MB）"
@@ -375,7 +398,7 @@ def main():
 
         print("拟合 PCA ...")
         params = fit_pca(matrix, s['n_components'], s['whiten'])
-        params['signature'] = signature(s, feat_dim)
+        params['signature'] = signature(s, feat_dim, spec.max_length)
         # 只做记录、不参与一致性校验（理由见 signature 的注释）
         params['fill_padding_applied'] = s['fill_padding']
         os.makedirs(os.path.dirname(model_path) or '.', exist_ok=True)
@@ -399,6 +422,7 @@ def main():
         if not files:
             raise FileNotFoundError(
                 "split=%s 在 %s 下没找到 *%s.pt" % (split, src_base, src_audio_suffix))
+        check_seq_len(files, spec.max_length, split, '源特征')
         dst_base = paths.feature_dir_for(split, spec.features_dir())
 
         n_audio = 0
