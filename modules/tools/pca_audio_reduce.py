@@ -110,7 +110,20 @@ def pca_settings(spec):
         'apply_to': [str(s) for s in apply_to],
         'whiten': bool(cfg.get('whiten', False)),
         'model_out': str(cfg.get('model_out', 'checkpoints/pca_xlsr_768.pt')),
+        # 填充行（凑够 512 行的那些空白行）压完填什么：
+        #   'zero'  全零（**老行为**）。⚠️ 空白行进交叉注意力后会"复活"成
+        #           一个和真帧同量级的外来向量，最后 mean pooling 把它一起
+        #           平均进去 —— 实测池化结果跟"只喂真帧"的余弦只有 0.700
+        #           （见 tools/probe_padding_dilution.py）。
+        #   'mean'  填成**这条录音自己的真帧均值**。这样空白行贡献的是
+        #           它自己的平均，不再塞进外来方向 —— 实测余弦 0.992。
+        #           （对线性部分严格成立：全部行都取均值时，512 行的平均
+        #             == 真帧的平均；差的那点来自注意力里的 softmax 非线性。）
+        'fill_padding': str(cfg.get('fill_padding', 'zero')).strip().lower(),
     }
+
+
+FILL_CHOICES = ('zero', 'mean')
 
 
 def resolve_out(path):
@@ -196,6 +209,10 @@ def signature(s, n_features):
 
     防止改了配置（换源目录 / 换维度 / 换拟合集）却复用旧参数，
     产出一个"看起来跑通了、其实对不上"的特征目录。
+
+    ⚠️ `fill_padding` **故意不算进配方**：它只决定写出去的填充行填什么，
+    不影响拟合（拟合只看有效帧）。同一个 PCA 参数既能产出"填充留零"那套、
+    也能产出"填充填均值"那套，没必要为此重跑一遍拟合。
     """
     return {
         'source_features_dir': s['src_dir'],
@@ -207,12 +224,27 @@ def signature(s, n_features):
     }
 
 
-def apply_pca(x, params):
-    """把 PCA 用到一个 (T, D) 特征上。**填充行保持全零**。
+def apply_pca(x, params, fill_padding='zero'):
+    """把 PCA 用到一个 (T, D) 特征上，返回 (压完的特征, 有效行数)。
 
-    为什么填充行不跟着变换：PCA 带去均值，零行变换后会变成
-    `-mean @ components.T`（不是零），等于凭空造出 512 - 有效行 个"假帧"。
-    降维前后填充的语义必须一致 —— 原来是什么，压完还是什么。
+    填充行（凑够 512 行的那些空白行）压完填什么，由 `fill_padding` 决定：
+
+    'zero'（老行为）
+        压完仍是全零。⚠️ 为什么不能让零行跟着变换：PCA 带去均值，零行
+        变换后会变成 `-mean @ components.T`（非零），凭空造出几百个假帧。
+        但留成零也不好 —— 空白行进交叉注意力后会"复活"成一个和真帧
+        同量级的外来向量，最后被 mean pooling 一起平均进去
+        （实测池化结果跟"只喂真帧"的余弦只有 0.700，
+        见 tools/probe_padding_dilution.py）。
+
+    'mean'（推荐）
+        填成**这条录音自己的真帧均值**。空白行贡献的就是自己的平均，
+        不再掺进外来方向（实测余弦 0.992）。
+        对线性部分严格成立：全部 512 行都取均值时它们的平均 == 真帧的平均；
+        剩下那点误差来自注意力里的 softmax 非线性。
+
+    ⚠️ 判定填充用"整行全零"：源特征第 0 行是整段音频的均值（非零），
+       会被正确算作有效帧。
     """
     keep = x.abs().sum(dim=1) > 0
     out = torch.zeros(x.shape[0], params['n_components'], dtype=torch.float32)
@@ -220,7 +252,10 @@ def apply_pca(x, params):
         z = (x[keep] - params['mean']) @ params['components'].T
         if params['whiten']:
             z = z / torch.sqrt(params['explained_variance'])
-        out[keep] = z.float()
+        z = z.float()
+        out[keep] = z
+        if fill_padding == 'mean':
+            out[~keep] = z.mean(dim=0)
     return out, int(keep.sum())
 
 
@@ -272,6 +307,11 @@ def main():
             "pca.n_components=%d 大于源编码器 %s 的 dim=%d，降不了维"
             % (s['n_components'], s['src_audio'], src_dim))
 
+    if s['fill_padding'] not in FILL_CHOICES:
+        raise ValueError(
+            "配置的 pca.fill_padding=%r 不认识，只能是 %s"
+            % (s['fill_padding'], ' / '.join(FILL_CHOICES)))
+
     hidden = int(spec.cfg.get('model', {}).get('hidden_size', 768))
     if dst_dim != hidden:
         print("⚠️  目标维度 %d != model.hidden_size %d：网络仍会挂一层投影。"
@@ -287,6 +327,9 @@ def main():
     print("  源文件后缀  *%s.pt     目标 *%s.pt" % (src_audio_suffix, dst_audio_suffix))
     print("  拟合数据    %s（有效帧，不含零填充）" % s['fit_on'])
     print("  应用到      %s" % ', '.join(s['apply_to']))
+    print("  填充行      %s" % ('填成这条录音自己的真帧均值（推荐）'
+                                if s['fill_padding'] == 'mean'
+                                else '保持全零（会被 mean pooling 一起平均）'))
     print("  白化        %s" % ('开（各维方差拉成 1）' if s['whiten'] else '关（只换基，不缩放）'))
     print("  参数存档    %s" % os.path.relpath(model_path, ROOT))
     print("=" * 74)
@@ -333,6 +376,8 @@ def main():
         print("拟合 PCA ...")
         params = fit_pca(matrix, s['n_components'], s['whiten'])
         params['signature'] = signature(s, feat_dim)
+        # 只做记录、不参与一致性校验（理由见 signature 的注释）
+        params['fill_padding_applied'] = s['fill_padding']
         os.makedirs(os.path.dirname(model_path) or '.', exist_ok=True)
         torch.save(params, model_path)
         print("  参数已存 %s" % os.path.relpath(model_path, ROOT))
@@ -367,7 +412,7 @@ def main():
                 n_skip += 1
             else:
                 x = torch.load(fp, map_location='cpu')
-                out, nv = apply_pca(x, params)
+                out, nv = apply_pca(x, params, s['fill_padding'])
                 valid_rows += nv
                 total_rows += x.shape[0]
                 if not args.dry_run:
@@ -384,8 +429,9 @@ def main():
 
         print("\nsplit=%-5s 音频 %d 个、文本 %d 个 -> %s"
               % (split, n_audio, n_text, os.path.relpath(dst_base, ROOT)))
-        print("  有效帧 %d / 总行数 %d（其余是零填充，压完仍是零）"
-              % (valid_rows, total_rows))
+        print("  有效帧 %d / 总行数 %d（其余 %d 行是填充，压完%s）"
+              % (valid_rows, total_rows, total_rows - valid_rows,
+                 '填成这条录音的真帧均值' if s['fill_padding'] == 'mean' else '仍是全零'))
         if n_skip:
             print("  跳过已存在的 %d 个（--skip-existing）" % n_skip)
         grand['audio'] += n_audio

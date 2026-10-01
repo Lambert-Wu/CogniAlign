@@ -46,6 +46,9 @@ def main():
     ap.add_argument('-f', '--config', default='configs/xlmr_xlsr_pca.yaml')
     ap.add_argument('--split', default=None, help="默认 train；跨 split 请重开进程")
     ap.add_argument('--limit', type=int, default=0, help="每个 split 最多看几条（0=全部）")
+    ap.add_argument('--valid-from', choices=('source', 'self'), default='source',
+                    help="怎么认出哪些行是填充：source=去源特征目录找零行（默认）；"
+                         "self=看本特征自身的零行")
     args = ap.parse_args()
 
     os.environ.setdefault('COGNIALIGN_SPLIT', args.split or 'train')
@@ -74,6 +77,28 @@ def main():
     if not files:
         raise FileNotFoundError("%s 下没有 *%s.pt" % (feat_dir, audio_suffix))
 
+    # 认出填充行的第二条路：去源特征目录（1024 维、填充仍是零）里找零行。
+    # ⚠️ 为什么需要：如果目标特征是"填充填成自身均值"那套（pca.fill_padding:
+    #    'mean'），填充行**不再是零**，光看自己认不出来，会把 512 行全当有效帧
+    #    —— 那样 A 和 B 就完全一样，体检结果全是 1.000，看着"没问题"其实是假象。
+    src_dir = src_suffix = None
+    if args.valid_from == 'source':
+        p = spec.cfg.get('pca') or {}
+        if p.get('source_features_dir') and p.get('source_audio_model'):
+            src_dir = paths.feature_dir_for(split, str(p['source_features_dir']))
+            src_suffix = feature_spec.from_config(
+                spec.cfg, audio_model=str(p['source_audio_model'])).audio_suffix()
+
+    def valid_mask(fp, a):
+        """返回 (哪些行是真帧, 来源说明)。"""
+        if src_dir:
+            dx = os.path.basename(os.path.dirname(fp))
+            uid = os.path.basename(fp)[:-len(audio_suffix + '.pt')]
+            sf = os.path.join(src_dir, dx, uid + src_suffix + '.pt')
+            if os.path.isfile(sf):
+                return torch.load(sf, map_location='cpu').abs().sum(dim=1) > 0, '源文件'
+        return a.abs().sum(dim=1) > 0, '自身零行'
+
     cos = torch.nn.functional.cosine_similarity
     ratios, cosA, cosD, cosE, dlogA, dlogD, dlogE = [], [], [], [], [], [], []
 
@@ -94,7 +119,7 @@ def main():
             a = torch.load(fp, map_location='cpu')
             t = torch.load(fp.replace(audio_suffix + '.pt', text_suffix + '.pt'),
                            map_location='cpu')
-            keep = a.abs().sum(dim=1) > 0
+            keep, how = valid_mask(fp, a)
             nv = int(keep.sum())
             if nv == 0:
                 continue
@@ -130,6 +155,7 @@ def main():
     m = np.mean
     print("=" * 74)
     print("补零稀释体检  配置 %s   split=%s   %d 条" % (args.config, split, len(files)))
+    print("（填充行按%s认出来的）" % how)
     print("=" * 74)
     r = np.array(ratios)
     print("有效帧占比：中位 %.0f%%   最低 %.0f%%   最高 %.0f%%"
@@ -137,7 +163,7 @@ def main():
     print()
     print("以「只喂真帧(B)」为准，各喂法差多少（余弦越接近 1 越好，logit 差越小越好）：")
     print("  %-28s %8s %12s" % ("喂法", "余弦", "logit 平均差"))
-    print("  %-28s %8.3f %12.4f" % ("A 现状：512 行含零填充", m(cosA), m(dlogA)))
+    print("  %-28s %8.3f %12.4f" % ("A 现状：原样喂进去", m(cosA), m(dlogA)))
     print("  %-28s %8.3f %12.4f" % ("B 理想：只喂真帧（参照）", 1.0, 0.0))
     print("  %-28s %8.3f %12.4f" % ("D 填充改成自己的真帧均值", m(cosD), m(dlogD)))
     print("  %-28s %8.3f %12.4f" % ("E 填充位置清零+按有效行数", m(cosE), m(dlogE)))

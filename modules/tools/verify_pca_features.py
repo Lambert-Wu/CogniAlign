@@ -67,6 +67,7 @@ def main():
     src_dir = str(s.get('source_features_dir', 'xlmr_xlsr'))
     src_audio = str(s.get('source_audio_model', 'xlsr'))
     n_comp = int(s.get('n_components', 768))
+    fill = str(s.get('fill_padding', 'zero')).strip().lower()
 
     src_spec = feature_spec.from_config(spec.cfg, audio_model=src_audio)
     dst_spec = feature_spec.from_config(spec.cfg, audio_model=str(s.get('audio_model', 'xlsr_pca')))
@@ -84,6 +85,8 @@ def main():
     print("  目标 %s" % os.path.relpath(dst_base, ROOT))
     print("  音频 *%s.pt -> *%s.pt   文本 *%s.pt"
           % (src_audio_suffix, dst_audio_suffix, text_suffix))
+    print("  填充行      %s（按源特征的零行判定）"
+          % ('填成自身真帧均值' if fill == 'mean' else '全零'))
     print("=" * 74)
 
     problems = []
@@ -118,11 +121,22 @@ def main():
             rows_total += src.shape[0]
             rows_valid += int(keep.sum())
 
-            # 3. 填充行必须还是全零
-            pad_nonzero = int((dst[~keep].abs().sum(dim=1) > 0).sum())
-            if pad_nonzero:
-                problems.append("%s/%s 有 %d 行填充被 PCA 变成了非零"
-                                % (dx, uid, pad_nonzero))
+            # 3. 填充行的取值要看 pca.fill_padding 配的是哪种
+            if fill == 'zero':
+                # 配的是"留零"：填充行压完必须仍是全零（PCA 去均值会把零行
+                # 变成 -mean @ comp.T，凭空造出假帧）
+                pad_nonzero = int((dst[~keep].abs().sum(dim=1) > 0).sum())
+                if pad_nonzero:
+                    problems.append("%s/%s 有 %d 行填充被 PCA 变成了非零"
+                                    % (dx, uid, pad_nonzero))
+            elif bool(keep.any()) and int((~keep).sum()):
+                # 配的是"填自身均值"：所有填充行必须**彼此相同**，
+                # 且等于真帧压完之后的平均值
+                want = dst[keep].mean(dim=0)
+                err = (dst[~keep] - want).abs().max().item()
+                if err > 1e-5:
+                    problems.append("%s/%s 的填充行不等于真帧均值（最大偏差 %.2e）"
+                                    % (dx, uid, err))
             # 4. 有效行压完不该退化成零（说明投影把信息全抹了）
             if bool(keep.any()):
                 gone = int((dst[keep].abs().sum(dim=1) == 0).sum())
@@ -157,7 +171,8 @@ def main():
             print("   ... 还有 %d 条" % (len(problems) - 20))
         print("=" * 74)
         return 1
-    print("✅ 全部通过：形状对、填充仍为零、文本齐全")
+    print("✅ 全部通过：形状对、填充行处理正确（%s）、文本齐全"
+          % ('填成自身真帧均值' if fill == 'mean' else '仍为全零'))
     print("=" * 74)
     return 0
 
