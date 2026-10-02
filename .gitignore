@@ -15,9 +15,6 @@ models/
 # ⚠️ 写成 `checkpoints/*` 而不是 `checkpoints/`：忽略目录本身的话，
 #    git 压根不会进去看，下面的例外就失效了。
 checkpoints/*
-# PCA 降维的参数存档是**例外**：它不是权重，而是别人拿到特征后要核对 /
-# 复现降维过程的凭据（tools/pca_audio_reduce.py 产出，几 MB）。
-!checkpoints/pca_*.pt
 
 # Ignore all files in the logs directory
 logs/*
