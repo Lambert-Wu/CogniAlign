@@ -198,8 +198,9 @@ class GatedCrossAttentionFusion(nn.Module):
             nn.Linear(dim_feedforward, d_model),
         )
 
+        # 门控：G = σ(W_g · H_att + b_g)，逐个维度、只由注意力输出算出（W_g: d→d）
         self.gate = nn.Sequential(
-            nn.Linear(d_model * 2, d_model),
+            nn.Linear(d_model, d_model),
             nn.Sigmoid()
         )
 
@@ -210,12 +211,17 @@ class GatedCrossAttentionFusion(nn.Module):
         """
         Cross attention: src queries memory.
         Args:
-            src: Tensor (B, T, d_model) — query (e.g., audio)
+            src: Tensor (B, T, d_model) — query (e.g., audio), 记作 A
             memory: Tensor (B, T, d_model) — key/value (e.g., text)
             src_mask: Optional attention mask
             src_key_padding_mask: Optional padding mask
         Returns:
             Tensor (B, T, d_model): Fused output
+
+        门控融合（逐个维度在「原始表示 A」和「注意力输出 H_att」之间插值）：
+            G = σ(W_g · H_att + b_g)
+            H = G ⊙ H_att + (1 - G) ⊙ A
+        G→0 保留 A（不采纳注意力），G→1 完全采用 H_att。门只由 H_att 算出。
         """
 
         # Cross-attention with pre-norm
@@ -232,10 +238,9 @@ class GatedCrossAttentionFusion(nn.Module):
 
         attn_output = self.dropout1(attn_output)
 
-        # Gated fusion
-        gate_input = torch.cat([src, attn_output], dim=-1)  # (B, T, 2*d_model)
-        gate = self.gate(gate_input)  # (B, T, d_model)
-        fused = src + gate * attn_output  # Gated residual connection
+        # Gated fusion: G = σ(W_g H_att + b_g);  H = G⊙H_att + (1-G)⊙A
+        gate = self.gate(attn_output)                                # (B, T, d_model)
+        fused = gate * attn_output + (1.0 - gate) * src              # (B, T, d_model)
 
         # Feed-forward with post-norm
         fused = self.norm2(fused)
