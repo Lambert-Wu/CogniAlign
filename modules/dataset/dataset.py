@@ -44,25 +44,39 @@ class AdressoDataset(Dataset):
 # 要拿后缀就用 core.feature_spec.from_config(config)。
 
 
-def _check_seq_len(x, path, want, spec_max_length):
-    """特征的行数必须等于配置的 dataset.max_length。
+def _load_feature(path, spec):
+    """加载一个特征文件，并按配置截取到**训练长度**。
 
-    为什么非要查这一下：**不查的话它会静默跑错**。
-    实测（2026-10-01）：配置写 `max_length: 320`、磁盘上的特征还是 512 行，
-    模型前向**照样跑通、一声不响**（网络接受任意长度 T，没人检查）。
-    于是你以为在测 320，实际喂进去的还是 512，几小时白跑。
-    典型触发场景：改了 max_length 却忘了重跑特征提取。
+    这里其实是两件事，别混：
+
+    1. **文件本身的长度**必须等于 `dataset.max_length`
+       特征是对齐到这么长存出来的。对不上说明特征和配置不是一套，
+       报错让人重跑提取 —— 不查的话会**静默跑错**（实测：配置写 320、
+       磁盘上是 512，模型照样跑通、一声不响，你以为在测 320 其实喂的是 512）。
+
+    2. **训练时用多长**由 `train.seq_length` 决定，从前面截 n 行。
+       特征统一存 512，想试 320/384/512 只改这一个数、不用重提特征。
+       ⚠️ 截取不等于"按那个长度重新提取"：本身不超过 n 的样本逐位相同，
+       超过 n 的会有约 4.8% 差异（自注意力是全局的，详见 feature_spec）。
     """
-    if x.dim() != 2 or int(x.shape[0]) != int(want):
+    x = torch.load(path)
+    want = int(spec.max_length)
+    if x.dim() != 2 or int(x.shape[0]) != want:
         raise ValueError(
             "特征长度和配置对不上：\n"
             "    %s\n"
             "    磁盘上是 %s，但配置的 dataset.max_length=%d。\n"
             "多半是改了 max_length 却还没重跑特征提取。请先跑：\n"
             "    bash run_preprocess.sh -f <产出这套特征的配置文件> -s all\n"
-            "（如果就是想用现在这批特征，把配置里的 max_length 改回 %d。）"
-            % (path, tuple(x.shape) if x.dim() == 2 else tuple(x.shape),
-               spec_max_length, int(x.shape[0])))
+            "（如果就是想用现在这批特征，把配置里的 dataset.max_length 改成 %d；\n"
+            "  只是想让训练短一点、特征不动的话，该改的是 train.seq_length。）"
+            % (path, tuple(x.shape), want, int(x.shape[0])))
+
+    n = spec.train_seq_length()
+    if n < want:
+        # clone 而不是切片视图：把 512 长的原件放掉，只留要喂进去的那段
+        x = x[:n].clone()
+    return x
 
 
 def read_CSV(config):
@@ -102,22 +116,15 @@ def read_CSV(config):
             audio_embeddings_path = os.path.join(root_feat_path, row['dx'],
                                                  row['adressfname'] + audio_suffix + '.pt')
         
+        # 加载 + 按 train.seq_length 截取（文件长度不对会直接报错，理由见 _load_feature）
         if config.model.multimodality:
-            audio = torch.load(audio_embeddings_path)
-            text = torch.load(text_embeddings_path)
-            # 长度不对就直接报错，别让它在网络里"照跑不误"（理由见 _check_seq_len）
-            _check_seq_len(audio, audio_embeddings_path, spec.max_length, spec.max_length)
-            _check_seq_len(text, text_embeddings_path, spec.max_length, spec.max_length)
-            features.append((audio.to(device), text.to(device)))
+            features.append((_load_feature(audio_embeddings_path, spec).to(device),
+                             _load_feature(text_embeddings_path, spec).to(device)))
         else:
             if config.model.textual_model != '':
-                text = torch.load(text_embeddings_path)
-                _check_seq_len(text, text_embeddings_path, spec.max_length, spec.max_length)
-                features.append(text.to(device))
+                features.append(_load_feature(text_embeddings_path, spec).to(device))
             elif config.model.audio_model != '':
-                audio = torch.load(audio_embeddings_path)
-                _check_seq_len(audio, audio_embeddings_path, spec.max_length, spec.max_length)
-                features.append(audio.to(device))
+                features.append(_load_feature(audio_embeddings_path, spec).to(device))
 
     return uids, features, labels
 

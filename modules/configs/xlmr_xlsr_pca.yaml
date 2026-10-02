@@ -25,9 +25,10 @@
 
 # ── 数据集参数 ──────────────────────────────────────────────────────────
 dataset:
-  # ⚠️ 必须和 configs/default.yaml 的 max_length 一致 —— 那套配置产出源特征，
-  #    这里决定训练时读多长。两处不一致会读不到文件（长度对不上）。
-  max_length: 320
+  # 特征**文件**的长度，必须和 configs/default.yaml 的 max_length 一致
+  # （那套配置产出源特征，PCA 沿用它）。两处不一致会读不到文件。
+  # ⚠️ 训练实际用多长看 train.seq_length（在下面 train 段），不是这里。
+  max_length: 512
   pauses: true
   # ⚠️ 输出目录：<split>/feat_xlmr_xlsr_pca/
   #    （输入是 <split>/feat_xlmr_xlsr/，见下面 pca.source_features_dir）
@@ -158,6 +159,10 @@ encoders:
       loader: 'mel_librosa'
 
 train:
+  # 训练时取前多少行（特征文件本身是 512 行）。改这个不用重提特征。
+  # 详见 configs/default.yaml 里同一项的说明（含 4.8% 差异的实测）。
+  seq_length: 320
+
   batch_size: 32
   num_epochs: 200
   learning_rate: 0.00002

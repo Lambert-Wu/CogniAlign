@@ -156,6 +156,38 @@ class Spec(object):
         """
         return self._features_dir
 
+    def train_seq_length(self):
+        """**训练时**喂进网络的序列长度（取前多少个位置）。
+
+        和 `max_length` 的分工（2026-10-02 拆开，以前是同一个值管两件事）：
+
+            dataset.max_length    特征**文件**有多长 —— 提取时对齐到这么长，
+                                  改它必须重跑特征提取（磁盘上的 .pt 形状会变）
+            train.seq_length      训练时**用**多长 —— 从特征前面截这么多个位置，
+                                  改它不用重提特征，只是一个数字
+
+        想试 320 / 384 / 512 只改 `train.seq_length`，一套 512 的特征反复用。
+
+        ⚠️ 截取**不是严格等价**于"按那个长度重新提取"，实测：
+            长度 <= 目标：逐位完全相同（切掉的只是补的空白行）
+            长度 >  目标：整体差约 4.8%、余弦 0.9989
+          原因：自注意力是全局的，序列砍短后前面位置的表示也会跟着变。
+
+        配置里不写 `train.seq_length`（或写 0）就默认等于 `max_length`，即不截取。
+        """
+        raw = self.cfg.get('train', {}).get('seq_length', None)
+        if raw in (None, '', 0, '0'):
+            return self.max_length
+        n = int(raw)
+        if n <= 0:
+            raise ValueError("train.seq_length 必须是正数，收到 %r" % raw)
+        if n > self.max_length:
+            raise ValueError(
+                "train.seq_length=%d 大于 dataset.max_length=%d —— 特征只有 %d 行长，"
+                "截不出 %d 个位置。想用更长的序列得先重跑特征提取（改 dataset.max_length）。"
+                % (n, self.max_length, self.max_length, n))
+        return n
+
     def fps(self):
         """音频每秒多少帧（原 segment_length），把时间戳的「秒」换算成帧号。"""
         return int(self.audio_entry().get('fps', 50))

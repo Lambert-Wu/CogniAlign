@@ -89,14 +89,19 @@ def main():
             src_suffix = feature_spec.from_config(
                 spec.cfg, audio_model=str(p['source_audio_model'])).audio_suffix()
 
+    # 体检要反映"训练时真正喂进去的东西"：特征文件可能是 512 行，
+    # 而训练按 train.seq_length 截前 n 行，这里跟着截，否则量的还是旧长度的情况。
+    seq = spec.train_seq_length()
+
     def valid_mask(fp, a):
-        """返回 (哪些行是真帧, 来源说明)。"""
+        """返回 (哪些行是真帧, 来源说明)。长度与传进来的 a 对齐。"""
         if src_dir:
             dx = os.path.basename(os.path.dirname(fp))
             uid = os.path.basename(fp)[:-len(audio_suffix + '.pt')]
             sf = os.path.join(src_dir, dx, uid + src_suffix + '.pt')
             if os.path.isfile(sf):
-                return torch.load(sf, map_location='cpu').abs().sum(dim=1) > 0, '源文件'
+                m = torch.load(sf, map_location='cpu').abs().sum(dim=1) > 0
+                return m[:a.shape[0]], '源文件'
         return a.abs().sum(dim=1) > 0, '自身零行'
 
     cos = torch.nn.functional.cosine_similarity
@@ -119,6 +124,9 @@ def main():
             a = torch.load(fp, map_location='cpu')
             t = torch.load(fp.replace(audio_suffix + '.pt', text_suffix + '.pt'),
                            map_location='cpu')
+            if seq < a.shape[0]:                       # 按训练长度截取
+                a = a[:seq].clone()
+                t = t[:seq].clone()
             keep, how = valid_mask(fp, a)
             nv = int(keep.sum())
             if nv == 0:
