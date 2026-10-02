@@ -58,6 +58,10 @@ __pycache__/*
 *.tar.gz
 
 api.txt
+# README 教大家 `cp env.example.sh env.sh` 后填本地路径 —— 那个副本里可能有
+# 内网路径、token 之类，和 api.txt 一样不该进仓库。
+# （模板 env.example.sh 本身是要入库的，别一起忽略掉。）
+env.sh
 *.workbuddy
 
 # WorkBuddy 工作目录：本地的工作数据（记忆、日志、会话产物），不进仓库。
