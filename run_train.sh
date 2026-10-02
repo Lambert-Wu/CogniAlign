@@ -208,7 +208,7 @@ export COGNIALIGN_CONFIG="$CONFIG"
 #    于是核对的是**老特征**：老特征齐全时自检照样"通过"，等 train.py 真按配置去
 #    找 <split>/feat_xlmr_xlsr/ 时才崩 —— 典型的"自检说没事，一跑就挂"。
 _text=""; _audio=""; _feat_dir=""; _text_suf=""; _audio_suf=""; _pauses="0"
-_fusion=""; _pooling=""; _path_name=""
+_fusion=""; _pooling=""; _path_name=""; _folds=""
 if [ -f "$CFG_PATH" ]; then
     _cfg="$("$PYTHON" -c "
 import os, sys
@@ -231,6 +231,7 @@ print(str(m.get('pooling', '') or ''))
 # 结果目录名**不在这里拼**：规则只有一处，见 core/feature_spec.result_names()。
 # 以前 bash 自己拼一份、utils.save_config() 里另拼一份，两份必须手动保持一致。
 print(feature_spec.result_names(cfg)[1])
+print(int((cfg.get('train', {}) or {}).get('cross_validation_folds', 1) or 1))
 " 2>/dev/null || true)"
     if [ -n "$_cfg" ]; then
         { read -r _text     || true
@@ -241,7 +242,8 @@ print(feature_spec.result_names(cfg)[1])
           read -r _pauses   || true
           read -r _fusion   || true
           read -r _pooling  || true
-          read -r _path_name || true ; } <<EOF
+          read -r _path_name || true
+          read -r _folds    || true ; } <<EOF
 $_cfg
 EOF
     fi
@@ -307,7 +309,9 @@ if [ "$WORKER" = 1 ]; then
             echo
         fi
     fi
-    echo "注意：train.py 会连续跑 5 折；每个 epoch 的指标实时写进"
+    # ⚠️ 折数从配置读，别写死 5 —— 最小化测试的配置只跑 1 折，
+    #    写死会显示"会连续跑 5 折"、实际只跑 1 折，看着像出错了。
+    echo "注意：train.py 会连续跑 ${_folds:-?} 折；每个 epoch 的指标实时写进"
     echo "      $RESULT_DIR/train_stats_<折号>.txt"
     echo "      想看某折的进度就另开一个终端 tail -f 那个文件。"
     echo
