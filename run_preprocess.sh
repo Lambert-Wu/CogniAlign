@@ -503,7 +503,11 @@ echo
 echo "步骤 2/2  启动特征提取"
 echo "------------------------------------------------------"
 
-WORKER_ARGS=(--_worker -s "$SPLIT_CHOICE")
+# ⚠️ 必须把 -f 一起传给 worker：worker 里的 CONFIG 默认是 configs/default.yaml，
+#    而且它会 `export COGNIALIGN_CONFIG="$CONFIG"` 把继承来的值**覆盖掉** ——
+#    不传 -f 的话，`-f` 指定的配置对**实际提取**完全失效（只在主进程的自检/显示里
+#    生效），会静默地用错模型和输出目录。run_train.sh 里就是传了 -f 的，这里以前漏了。
+WORKER_ARGS=(--_worker -s "$SPLIT_CHOICE" -f "$CONFIG")
 if [ "$RESUME" = 1 ]; then
     WORKER_ARGS+=(-r)
 fi
