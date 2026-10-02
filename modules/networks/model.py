@@ -182,8 +182,15 @@ class CrossAttentionEncoderLayer(nn.Module):
 
 
 class GatedCrossAttentionFusion(nn.Module):
-    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation=nn.ReLU()):
-        """Gated Residual Cross-Attention Fusion Layer."""
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation=nn.ReLU(),
+                 gate_bias_init=0.0):
+        """Gated Residual Cross-Attention Fusion Layer.
+
+        gate_bias_init: 门控 W_g·H_att + b_g 里 b_g 的初值（pre-sigmoid）。
+            默认 0.0 → σ(0)=0.5（原始表示和注意力对半分）。想让门初始偏向
+            "开"（H≈H_att）就设 logit(p)，例如 p=0.9 → 2.1972。
+            （配置项 model.gate_bias_init；用来探索 σ 在 0.5 的吸引子。）
+        """
         super().__init__()
 
         self.norm1 = nn.LayerNorm(d_model)
@@ -203,6 +210,8 @@ class GatedCrossAttentionFusion(nn.Module):
             nn.Linear(d_model, d_model),
             nn.Sigmoid()
         )
+        # b_g 初值：默认 0 → σ=0.5；可设 logit(p) 让门初始偏向"开"
+        nn.init.constant_(self.gate[0].bias, float(gate_bias_init))
 
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
@@ -272,7 +281,8 @@ class CrossAttentionTransformerEncoder(nn.Module):
                     d_model=config.hidden_size,
                     nhead=config.n_heads,
                     dim_feedforward=config.intermediate_size,
-                    dropout=config.dropout
+                    dropout=config.dropout,
+                    gate_bias_init=float(config.get('gate_bias_init', 0.0))
                 ) for _ in range(config.n_layers)
             ])
         else:
@@ -358,7 +368,8 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
                     d_model=config.hidden_size,
                     nhead=config.n_heads,
                     dim_feedforward=config.intermediate_size,
-                    dropout=config.dropout
+                    dropout=config.dropout,
+                    gate_bias_init=float(config.get('gate_bias_init', 0.0))
                 ) for _ in range(config.n_layers)
             ])
 
@@ -367,7 +378,8 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
                     d_model=config.hidden_size,
                     nhead=config.n_heads,
                     dim_feedforward=config.intermediate_size,
-                    dropout=config.dropout
+                    dropout=config.dropout,
+                    gate_bias_init=float(config.get('gate_bias_init', 0.0))
                 ) for _ in range(config.n_layers)
             ])
         else:
