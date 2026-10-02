@@ -173,6 +173,53 @@ class Spec(object):
         return self.audio_entry().get('repo', '')
 
 
+def result_names(cfg):
+    """从配置算出**结果目录名**，返回 `(model_name, path_name)`。
+
+    规则（唯一出处，别再在别处拼一遍）：
+        model_name = {文本}_{音频}_[P_]{融合}[_{实验标签}]
+        path_name  = {model_name}_{池化}
+    训练结果落在 `logs/<path_name>/`（train.py 的 log_path 是相对路径，
+    而脚本要在 modules/ 下运行，所以实际是 modules/logs/<path_name>/）。
+
+    为什么要有「实验标签」（`model.run_tag`）：
+        ⚠️ 光看文本模型+音频模型+融合方式**不足以区分实验**。
+        实测（2026-10-02）：`configs/xlmr_xlsr_pca.yaml`（填充留零）和
+        `configs/xlmr_xlsr_pca_fill.yaml`（填充填自身均值）算出来是**同一个**
+        `xlmr_xlsr_pca_P_cross_mean` —— 它们只有特征目录不同。
+        先跑一个再跑另一个，后者会把前者的权重和日志**整个覆盖**，几小时白跑。
+        这类只看"用了哪个模型"分不开的对照实验，就在配置里写
+        `model.run_tag: 'fill'` 之类，把结果目录分开。
+
+    ⚠️ 以前这段逻辑在 `core/utils.py` 和 `run_train.sh` 里**各写了一份**
+    （Python 一份、bash 字符串拼接一份）。两份都得改、改漏一处就会出现
+    "脚本显示的结果目录"和"模型真正写进去的目录"不是一个地方。
+    现在都调这里，只有这一份。
+    """
+    if not isinstance(cfg, DotMap):
+        cfg = DotMap(cfg)
+    m = cfg.get('model', {}) or {}
+    spec = Spec(cfg)
+
+    name = ''
+    if m.get('textual_model'):
+        name += str(m['textual_model']) + '_'
+    if m.get('audio_model'):
+        name += str(m['audio_model']) + '_'
+    if spec.pauses:
+        name += 'P_'
+    name += str(m.get('fusion', '') or '')
+
+    model_name = name
+    path_name = '%s_%s' % (model_name, str(m.get('pooling', '') or ''))
+
+    tag = str(m.get('run_tag', '') or '').strip()
+    if tag:
+        path_name += '_' + tag
+
+    return model_name, path_name
+
+
 def from_config(cfg, textual_model=None, audio_model=None):
     """训练 / 评估用：按传进来的配置算（这样 `--config` 换配置才有效）。"""
     return Spec(cfg, textual_model=textual_model, audio_model=audio_model)

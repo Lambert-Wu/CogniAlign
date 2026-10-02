@@ -208,7 +208,7 @@ export COGNIALIGN_CONFIG="$CONFIG"
 #    于是核对的是**老特征**：老特征齐全时自检照样"通过"，等 train.py 真按配置去
 #    找 <split>/feat_xlmr_xlsr/ 时才崩 —— 典型的"自检说没事，一跑就挂"。
 _text=""; _audio=""; _feat_dir=""; _text_suf=""; _audio_suf=""; _pauses="0"
-_fusion=""; _pooling=""
+_fusion=""; _pooling=""; _path_name=""
 if [ -f "$CFG_PATH" ]; then
     _cfg="$("$PYTHON" -c "
 import os, sys
@@ -228,6 +228,9 @@ print(spec.audio_suffix())
 print('1' if spec.pauses else '0')
 print(str(m.get('fusion', '') or ''))
 print(str(m.get('pooling', '') or ''))
+# 结果目录名**不在这里拼**：规则只有一处，见 core/feature_spec.result_names()。
+# 以前 bash 自己拼一份、utils.save_config() 里另拼一份，两份必须手动保持一致。
+print(feature_spec.result_names(cfg)[1])
 " 2>/dev/null || true)"
     if [ -n "$_cfg" ]; then
         { read -r _text     || true
@@ -237,7 +240,8 @@ print(str(m.get('pooling', '') or ''))
           read -r _audio_suf || true
           read -r _pauses   || true
           read -r _fusion   || true
-          read -r _pooling  || true ; } <<EOF
+          read -r _pooling  || true
+          read -r _path_name || true ; } <<EOF
 $_cfg
 EOF
     fi
@@ -246,12 +250,16 @@ fi
 if [ -n "$_text" ];  then export COGNIALIGN_TEXT_MODEL="$_text";  fi
 if [ -n "$_audio" ]; then export COGNIALIGN_AUDIO_MODEL="$_audio"; fi
 
-# 结果目录名，规则同 utils.save_config()：{文本}_{音频}_{P_}{融合}_{池化}
-_name=""
-if [ -n "$_text" ];  then _name="${_text}_";  fi
-if [ -n "$_audio" ]; then _name="${_name}${_audio}_"; fi
-if [ "$_pauses" = "1" ]; then _name="${_name}P_"; fi
-PATH_NAME="${_name}${_fusion}_${_pooling}"
+# 结果目录名：{文本}_{音频}_{P_}{融合}[_{实验标签}]_{池化}
+# ⚠️ 这里**不再自己拼**，直接用 core/feature_spec.result_names() 算出来的那个，
+#    和 utils.save_config()（模型真正写进去的地方）保证是同一个字符串。
+#    以前两处各拼一份，加字段时漏改一处就会"脚本说写到 A、实际写到 B"。
+if [ -z "$_path_name" ]; then
+    echo "❌ 读不出结果目录名，配置有问题：$CONFIG" >&2
+    echo "   （检查 $CFG_PATH 里的 model 段是否完整）" >&2
+    exit 1
+fi
+PATH_NAME="$_path_name"
 RESULT_DIR="$MODULES_DIR/logs/$PATH_NAME"
 
 # =====================================================================

@@ -66,20 +66,16 @@ def build_config(config_file, textual_model, audio_model):
     if audio_model is not None:
         cfg.model.audio_model = audio_model
 
-    # 与 utils.save_config() 的算法一致（评估不调 save_config，
-    # 是因为它会顺手建日志目录、写文件）：
-    #   multimodality = 两条线都开着
-    #   model_name    = <文本>_<音频>_[P_]<融合方式>   ← 只用来拼结果目录名
-    # 停顿开关统一从配置的 dataset 段读（以前 model.pauses 和 dataset.pauses 两份，
-    # 改一处忘一处就对不上了）。
+    # 结果目录名**不在这里拼** —— 规则只有一处，见 core/feature_spec.result_names()。
+    # （评估不调 utils.save_config()，因为它会顺手建日志目录、写文件。）
+    # ⚠️ 这里以前是第三份手抄的算法（另外两份在 utils.save_config() 和
+    #    run_train.sh 里）。三处必须完全一致，否则评估会去**另一个目录**找权重，
+    #    或者报"找不到 checkpoint"却看不出为什么。加 run_tag 时尤其危险：
+    #    训练把结果写进了 ..._mean_fill/，而评估还在按 ..._mean/ 找。
     cfg.model.multimodality = cfg.model.textual_model != '' and cfg.model.audio_model != ''
-    textual = cfg.model.textual_model + '_' if cfg.model.textual_model != '' else ''
-    audio = cfg.model.audio_model + '_' if cfg.model.audio_model != '' else ''
     spec = feature_spec.from_config(cfg)
-    pauses = 'P_' if spec.pauses else ''
-    cfg.model_name = f"{textual}{audio}{pauses}{cfg.model.fusion}"
+    cfg.model_name, cfg.path_name = feature_spec.result_names(cfg)
     cfg.model.model_name = cfg.model_name
-    cfg.path_name = f"{cfg.model_name}_{cfg.model.pooling}"
 
     # 把音频编码器的输出维度带进 model 段，网络结构据此决定要不要挂 ResNet 升维
     # （见 networks/model.py 的 audio_projection_kind）

@@ -65,16 +65,13 @@ def save_config(config):
 
     config.model.multimodality = config.model.textual_model != '' and config.model.audio_model != ''
 
-    textual_data = config.model.textual_model + '_' if config.model.textual_model != '' else ''
-    audio_data = config.model.audio_model + '_' if config.model.audio_model != '' else ''
-    # 停顿开关统一从配置的 dataset 段读（以前 model.pauses 是另一份，同一个语义
-    # 写两遍，改一处忘一处结果目录名就跟特征文件名对不上了）
-    pauses_data = 'P_' if feature_spec.from_config(config).pauses else ''
-
-    config.model_name = f"{textual_data}{audio_data}{pauses_data}{config.model.fusion}"
+    # 结果目录名**不在这里拼** —— 规则只有一处，在 core/feature_spec.result_names()。
+    # 以前这里和 run_train.sh 各写了一份（Python 一份、bash 一份），
+    # 加一个"实验标签"要改两个地方，漏一处就会出现"脚本显示的结果目录"
+    # 和"模型真正写进去的目录"不是一个地方。
+    # ⚠️ 停顿开关也从那里读（它统一从配置的 dataset 段取，不再看 model.pauses）。
+    config.model_name, config.path_name = feature_spec.result_names(config)
     config.model.model_name = config.model_name
-
-    config.path_name = f"{config.model_name}_{config.model.pooling}"
 
     # ⚠️ log_path / config_file_path 必须在 path_name 更新**之后**才算。
     # 原代码把这两行放在函数开头，而那时 path_name 还是 get_config() 里那个
