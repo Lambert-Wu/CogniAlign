@@ -1,0 +1,118 @@
+# AGENTS.md
+
+Research code for ADReSSo Alzheimer's detection from speech: multimodal (text + audio)
+transformer over precomputed word-/frame-level embeddings. All Python lives under
+`modules/`; there is no package, no test suite, and no CI.
+
+Deep docs (Chinese) live in `modules/README.md` and the module/script docstrings. Read
+those before changing behavior — nearly every non-obvious decision is documented there.
+
+## Running things
+
+- **`cd modules` before running any module script or `*.py` directly.** Modules import
+  each other as siblings (`import paths`, `from core import ...`). The two root `.sh`
+  launchers do the `cd` for you.
+- Feature extraction: `bash run_preprocess.sh -s all` (default `xlmr` + `xlsr`).
+  Variants: `-f configs/...yaml`, `-s train|test|all`, `-b` background, `-r` skip
+  samples that already have features, `-c` self-check only.
+- Training: `bash run_train.sh` (same flags, plus `-w disabled|offline|online`).
+  `-r` resumes by **fold** (weights are only written when a fold finishes).
+- Evaluate trained weights: `COGNIALIGN_SPLIT=test python modules/evaluate.py \
+  --checkpoint checkpoints/<run>/model_fold_0.pth`. Use `--fold N` to score the
+  model on that fold's held-out val split; without it you score the full set and get
+  inflated numbers (`--on-train` is a sanity check only).
+- Env self-check: `python modules/tools/check_env.py --mode preprocess|asr|train`.
+- Feature check: `python modules/tools/verify_features.py [--quick]`.
+- PCA audio reduction: `python modules/tools/pca_audio_reduce.py -f configs/xlmr_xlsr_pca.yaml`.
+- Generate 5-fold splits for a split (test has none until you do):
+  `COGNIALIGN_SPLIT=test python modules/tools/make_splits.py --apply --stats`.
+
+There are no unit tests. Do not invent a test command; verify with `check_env.py`,
+`verify_features.py`, and small runs.
+
+## Install / environment
+
+- `pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126`
+  (the extra index is required: torch wheels carry `+cu126`). CPU machines: strip
+  `+cu126` and use `.../whl/cpu`. System dep `libsndfile1` is required (librosa/soundfile).
+- **Do not add `torchaudio`** — it drags in TorchCodec/FFmpeg; audio is read with
+  `librosa`. Do not add `openai-whisper`; ASR uses `faster-whisper` (PyAV, no external
+  ffmpeg). See the long rationale at the top of `requirements.txt`.
+- No `setup.py`/`pyproject.toml` — never add `-e .`.
+- HuggingFace traffic defaults to the `hf-mirror.com` mirror (set in the ASR/extract
+  scripts before importing transformers).
+
+## Critical gotchas
+
+- **Scripts without `if __name__ == "__main__":`**: `preprocess/extract_features.py`,
+  `preprocess/word_timestamps/transcribe_whisper.py` (and `preprocess/word_timestamps/__init__.py`).
+  Importing them, or passing `--help`, **runs the full pipeline and silently overwrites
+  existing artifacts**. Inspect source / use `ast`; never import them.
+- `train.py` calls `wandb.login()` at import/top level. Run it via `run_train.sh`
+  (sets `WANDB_MODE=disabled`) or export `WANDB_MODE=disabled`, otherwise it blocks
+  waiting for an API key.
+- `check_env.py` hard-fails (exit 1) for `--mode preprocess|train` without a usable GPU,
+  because CPU runs are 5–10× (extract) to tens of× (train) slower without erroring.
+  Only `--mode asr` tolerates CPU.
+- **Feature extraction and training must use the same config file.** Feature filenames
+  (`<uid><text_suffix>.pt`, `<uid><audio_suffix>.pt`) are derived from the config's
+  `encoders`/`dataset` sections; a mismatch surfaces as `FileNotFoundError` at train
+  time. `run_*.sh` export `COGNIALIGN_CONFIG` so tools agree on which config is active.
+- **`dataset.max_length` vs `train.seq_length`**: `max_length` is the on-disk feature
+  length (currently 512); changing it requires re-extracting features (and re-fitting
+  PCA). `train.seq_length` only truncates at train time and needs no re-extraction.
+  `dataset.py` errors if an on-disk `.pt` length disagrees with `max_length`.
+- **uid must stay a string.** test uids are zero-padded numerics (`"0002"`); pandas
+  int inference silently breaks path lookups. Always pass `dtype={'adressfname': str, 'uid': str}`.
+- **Same-model comparison configs can collide.** Result dir =
+  `{text}_{audio}_{pause|nopause}[_{fusion}][_{pooling}][_{run_tag}]`
+  (`core/feature_spec.result_names` is the only implementation; fusion/pooling only appear
+  when non-default). Configs differing only in feature dir (e.g. `xlmr_xlsr_pca` vs
+  `xlmr_xlsr_pca_fill`) map to the same dir and overwrite each other — set `model.run_tag`
+  to separate them.
+- 5-fold uses `StratifiedKFold` (balanced by `dx`), so each fold's class balance matches the
+  full set; fold-to-fold metric variance can still be large — don't over-read a single fold.
+- `paths.SPLIT_ROOT` and friends are resolved at import time from `COGNIALIGN_SPLIT`;
+  switching split requires a new process. Use `paths.feature_dir_for(split, name)` when
+  a tool must touch train and test in one process (e.g. `pca_audio_reduce.py`).
+- Shell scripts must keep LF endings (enforced by `.gitattributes`); CRLF makes `.sh`
+  fail on Linux with a misleading "bad interpreter: No such file or directory".
+
+## Config-driven design (change configs, not code)
+
+- `configs/*.yaml` `encoders:` registers every text/audio encoder (suffix, dim, repo,
+  tokenizer/model class, fps, loader). `dataset:` holds `max_length`, `pauses`,
+  `features_dir`, `rare_char_map`. `core/feature_spec.py` is the single source of truth
+  for all of it — do not hardcode model names, suffixes, dims, or frame rates in `.py`.
+- Add/swap a model by editing the YAML `encoders` entry and pointing
+  `model.textual_model` / `model.audio_model` at it. New network structures go in
+  `networks/model.py` and must be registered in the `ARCHITECTURES` dict at the bottom
+  (`cross_attention`, `bidirectional_cross_attention`, `elementwise`, `plain_transformer`);
+  `model.architecture` selects it for both train and eval via `networks.model.build()`.
+- `train` (English) and `test` (Chinese) are two splits of one codebase. Multilingual
+  defaults (`xlmr` + `xlsr`) are shared; the legacy config expresses a per-split text
+  model via `model.split_textual_model.test: chinese`.
+
+## Paths, data, outputs
+
+- All paths are centralized in `modules/paths.py`; never hardcode them.
+- Defaults: data in `data/` (gitignored), pretrained baselines in `models/` (gitignored),
+  own trained artifacts in `modules/logs/<path_name>/`, archived copies in
+  `checkpoints/` (gitignored except `checkpoints/pca_*.pt`).
+- Layout: `<root>/{train,test}/{audio,words,feat_<name>}/{ad,cn}/...`, label CSVs
+  (`adresso-train-mmse-scores.csv`, `test_labels.csv`), and `splits/{train,val}_uids<n>.npy`
+  per split.
+- Useful env vars: `COGNIALIGN_DATA_ROOT`, `COGNIALIGN_MODELS_DIR`,
+  `COGNIALIGN_SPLIT`, `COGNIALIGN_CONFIG`, `COGNIALIGN_OFFLINE=1`,
+  `COGNIALIGN_RESUME`, `PYTHON`.
+- Reruns of the same config overwrite that run's `modules/logs/<path_name>/`; move the
+  directory (with its `config.yaml`) to `checkpoints/` to keep it.
+
+## Data pipeline (for context)
+
+`preprocess/word_timestamps/*.py` (ASR → per-word `words/<dx>/<uid>.csv` +
+`text_transcriptions.csv`) → `preprocess/extract_features.py` (align words to audio,
+write `.pt`) → `dataset/dataset.py:read_CSV` → `train.py` → `evaluate.py`.
+ASR alternatives: `transcribe_whisper.py` (English), `sensevoice.py` (Chinese),
+`from_whisperx.py` (convert existing WhisperX output). All three must emit the same
+file schemas/pruning rules or script ② will skip samples.
