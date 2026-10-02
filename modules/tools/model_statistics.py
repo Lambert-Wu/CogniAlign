@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """打印某个已训练模型的参数规模（从仓库根目录搬过来的那个入口脚本）。
 
-⚠️ 注意：底层 `core.utils.get_model_statistics()` 按 `folder_name.split('_')`
-期望结果目录名是两段，而实际目录是四段（如 distil_wav2vec2_cross_mean），
-所以对所有现役目录都会跳过、打印不出东西。要用得先修那个函数。
+底层 `core.utils.get_model_statistics()` 现在直接用目录名做实验标识
+（池化默认 mean、不写进目录名），不再按 `_` 切成两段。
 
 用法
 ----

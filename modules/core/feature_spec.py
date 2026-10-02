@@ -209,16 +209,19 @@ def result_names(cfg):
     """从配置算出**结果目录名**，返回 `(model_name, path_name)`。
 
     规则（唯一出处，别再在别处拼一遍）：
-        model_name = {文本}_{音频}_[P_]{融合}[_{实验标签}]
-        path_name  = {model_name}_{池化}
+        model_name = {文本}_{音频}_{pause|nopause}
+        path_name  = model_name[_{融合}][_{池化}][_{实验标签}]
+        · 融合 / 池化**只在非默认时**才写进目录名（默认 cross / mean 省略），
+          名字更精简、可读；一旦改成别的值会自动带上，避免撞名。
+        · 停顿用 pause / nopause 明确写出（以前是隐晦的 P_）。
     训练结果落在 `logs/<path_name>/`（train.py 的 log_path 是相对路径，
     而脚本要在 modules/ 下运行，所以实际是 modules/logs/<path_name>/）。
 
     为什么要有「实验标签」（`model.run_tag`）：
-        ⚠️ 光看文本模型+音频模型+融合方式**不足以区分实验**。
+        ⚠️ 光看文本模型+音频模型**不足以区分实验**。
         实测（2026-10-02）：`configs/xlmr_xlsr_pca.yaml`（填充留零）和
-        `configs/xlmr_xlsr_pca_fill.yaml`（填充填自身均值）算出来是**同一个**
-        `xlmr_xlsr_pca_P_cross_mean` —— 它们只有特征目录不同。
+        `configs/xlmr_xlsr_pca_fill.yaml`（填充填自身均值）文本/音频/停顿都一样，
+        不加标签会算成**同一个** `xlmr_xlsr_pca_pause` —— 它们只有特征目录不同。
         先跑一个再跑另一个，后者会把前者的权重和日志**整个覆盖**，几小时白跑。
         这类只看"用了哪个模型"分不开的对照实验，就在配置里写
         `model.run_tag: 'fill'` 之类，把结果目录分开。
@@ -238,12 +241,19 @@ def result_names(cfg):
         name += str(m['textual_model']) + '_'
     if m.get('audio_model'):
         name += str(m['audio_model']) + '_'
-    if spec.pauses:
-        name += 'P_'
-    name += str(m.get('fusion', '') or '')
+    name += 'pause' if spec.pauses else 'nopause'
 
     model_name = name
-    path_name = '%s_%s' % (model_name, str(m.get('pooling', '') or ''))
+    path_name = name
+
+    # 非默认的融合 / 池化才写进目录名 —— 默认的 cross / mean 省略，名字更精简；
+    # 一旦改成别的值就自动带上，避免"只在融合或池化上不同"的实验悄悄撞名。
+    fusion = str(m.get('fusion', '') or '')
+    if fusion and fusion != 'cross':
+        path_name += '_' + fusion
+    pooling = str(m.get('pooling', '') or '')
+    if pooling and pooling != 'mean':
+        path_name += '_' + pooling
 
     tag = str(m.get('run_tag', '') or '').strip()
     if tag:

@@ -2,10 +2,10 @@
 #
 # 和 configs/legacy_distil_wav2vec2.yaml 的**唯一区别**是 `dataset.pauses: false`
 # （用不带停顿标记的那版转写）。结果目录因此是：
-#     logs/distil_wav2vec2_cross_mean/    （不带 P_）
-# 而 legacy_distil_wav2vec2.yaml 产出的是 logs/distil_wav2vec2_P_cross_mean/。
+#     logs/distil_wav2vec2_nopause/
+# 而 legacy_distil_wav2vec2.yaml 产出的是 logs/distil_wav2vec2_pause/。
 #
-# 用它跑（会覆盖 logs/distil_wav2vec2_cross_mean/ 的旧内容）：
+# 用它跑：
 #     bash run_train.sh -f configs/legacy_distil_wav2vec2_nopause.yaml
 #
 # 特征仍落在 <split>/feat_distil/（非停顿特征的文件名不带 _pauses）。
@@ -16,7 +16,7 @@
 dataset:
   max_length: 512       # 文本/音频统一对齐到这么长的序列
   pauses: false         # false = 用不带停顿标记的那版转写（文件名不带 _pauses）
-                        # 该目录（logs/distil_wav2vec2_cross_mean）就是靠这个开关区分的
+                        # 目录名里的 nopause 就是靠这个开关区分的
   # 特征 .pt 放在 <split>/feat_<这个名字>/ 里。
   # ⚠️ 实际目录名 = 'feat_' + 这里的值（前缀由 paths.feature_dir 统一加），
   #    所以写 'distil' 对应磁盘上的 <split>/feat_distil/。

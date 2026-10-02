@@ -13,11 +13,11 @@
 ----
     # 用单折权重评估测试集
     COGNIALIGN_SPLIT=test python modules/evaluate.py \
-        --checkpoint checkpoints/2026-09-27_distil_wav2vec2_cross_mean/model_fold_0.pth
+        --checkpoint checkpoints/2026-09-27_distil_wav2vec2_pause/model_fold_0.pth
 
     # 目录里有 5 折就都跑，再给平均
     COGNIALIGN_SPLIT=test python modules/evaluate.py \
-        --checkpoint checkpoints/2026-09-27_distil_wav2vec2_cross_mean
+        --checkpoint checkpoints/2026-09-27_distil_wav2vec2_pause
 
 ⚠️ 语种要自己留意
 ------------------
@@ -157,19 +157,20 @@ def report(tag, probs, ys, thr=0.5):
 def ckpt_textual_model(ckpt_path):
     """从权重所在目录名推断训练时用的文本模型。
 
-    目录名通常长这样：
-        distil_wav2vec2_cross_mean          <- <文本>_<音频>_<融合>_<池化>
-        2026-09-27_distil_wav2vec2_cross_mean   <- 本项目在前面加了日期
-    所以要先把末尾的融合/池化两段去掉，再丢掉日期前缀，剩下的第一段才是文本模型名。
+    目录名 = [YYYY-MM-DD_]{文本}_{音频}_{pause|nopause}[_融合][_池化][_tag]，例：
+        distil_wav2vec2_nopause
+        xlmr_xlsr_pca_pause_s512
+        2026-09-27_distil_wav2vec2_cross_mean（旧命名，同样适用）
+    去掉开头的日期段后，**第一段**就是文本模型名（音频名自带下划线也不影响）。
     """
     name = os.path.basename(os.path.dirname(os.path.abspath(ckpt_path)))
     if not name:
         return None
     parts = name.split('_')
-    head = parts[:-2] if len(parts) > 2 else parts
-    while head and re.match(r'^\d{4}-\d{2}-\d{2}$', head[0]):
-        head = head[1:]
-    return head[0] if head else None
+    i = 0
+    while i < len(parts) and re.match(r'^\d{4}-\d{2}-\d{2}$', parts[i]):
+        i += 1
+    return parts[i] if i < len(parts) else None
 
 
 def main():

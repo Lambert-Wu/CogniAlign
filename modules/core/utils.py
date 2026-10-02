@@ -264,11 +264,11 @@ def get_model_statistics(model='all'):
     models_used = set()
 
     for folder_name in folder_names:
-        try:
-            model_name, pooling = folder_name.split('_')  # Expected: "distilbert_base_cls"
-        except ValueError:
-            print(f"Warning: Unexpected folder name format {folder_name}, skipping.")
-            continue
+        # 目录名本身就是实验标识（{文本}_{音频}_{pause|nopause}[_tag]）。
+        # 池化默认 mean、已不写进目录名，这里**不再**按 '_' 切成两段
+        # （旧写法 folder_name.split('_') 对现役目录全部会跳过）。
+        model_name = folder_name
+        pooling = 'mean'
         
         if model != 'all' and model not in model_name:
             continue

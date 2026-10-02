@@ -217,11 +217,11 @@ model:
   gated: false
 
   # 结果目录标签（只影响 `modules/logs/<结果目录>/` 的名字，不影响任何计算）。
-  # 🚨 这份配置和 configs/xlmr_xlsr_pca.yaml 的文本模型、音频模型、融合方式
-  #    **完全一样**（只有特征目录和填充策略不同），不加标签两者算出来的结果目录
-  #    是同一个 `xlmr_xlsr_pca_P_cross_mean` —— 先跑一个再跑另一个，
+  # 🚨 这份配置和 configs/xlmr_xlsr_pca.yaml 的文本模型、音频模型、停顿都一样
+  #    （只有特征目录和填充策略不同），不加标签两者算出来的结果目录
+  #    是同一个 `xlmr_xlsr_pca_pause` —— 先跑一个再跑另一个，
   #    后者会把前者的权重和日志**整个覆盖**，几小时白跑。
-  #    加了标签 -> `xlmr_xlsr_pca_P_cross_mean_fill`，两份结果并存可对比。
+  #    加了标签 -> `xlmr_xlsr_pca_pause_fill`，两份结果并存可对比。
   run_tag: 'fill'
 
 model_name: ''
