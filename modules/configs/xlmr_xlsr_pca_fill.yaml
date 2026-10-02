@@ -88,7 +88,8 @@ pca:
   # 存下来是为了**可复现**：换机器不用重跑 3.6 万行拟合，也便于核对。
   # ⚠️ 两套配置共用同一个存档（PCA 参数本身一样），
   #    存档里的"配方"记录了 fill_padding，切换时会提示重算。
-  model_out: 'checkpoints/pca_xlsr_768.pt'
+  # ⚠️ 2026-10-02：从 checkpoints/ 挪到 modules/logs/（checkpoints/ 在 JupyterLab 里打不开）。
+  model_out: 'modules/logs/pca_xlsr_768.pt'
 
 # ── 编码器登记表 ────────────────────────────────────────────────────────
 encoders:
@@ -184,8 +185,9 @@ encoders:
 
 train:
   # 训练时取前多少行（特征文件本身是 512 行）。改这个不用重提特征。
-  # 详见 configs/default.yaml 里同一项的说明（含 4.8% 差异的实测）。
-  seq_length: 320
+  # 详见 configs/default.yaml 里同一项的说明。
+  # 2026-10-02：改成 512，和 xlmr_xlsr_pca 的 s512 实验对齐（只变补位策略这一个变量）。
+  seq_length: 512
 
   batch_size: 32
   num_epochs: 200

@@ -64,7 +64,10 @@ pca:
   whiten: false
   # PCA 参数（均值 / 主成分 / 解释方差）存哪，相对项目根解析。
   # 存下来是为了**可复现**：换机器不用重跑 3.6 万行拟合，也便于核对。
-  model_out: 'checkpoints/pca_xlsr_768.pt'
+  # ⚠️ 2026-10-02：从 checkpoints/ 挪到 modules/logs/ —— checkpoints/ 这个目录名
+  #    在 JupyterLab 里打不开（被 Jupyter 的 /api/contents/<path>/checkpoints 路由劫持），
+  #    放这里既能浏览、又不会在每次跑 PCA 时重新造出那个目录。
+  model_out: 'modules/logs/pca_xlsr_768.pt'
 
 # ── 编码器登记表 ────────────────────────────────────────────────────────
 encoders:
