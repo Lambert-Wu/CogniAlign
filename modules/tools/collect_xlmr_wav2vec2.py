@@ -1,4 +1,23 @@
-"""把「xlmr 文本 + wav2vec2 音频」凑成一套特征，放进一个新目录。
+"""🚫 已废弃（2026-10-02）：本脚本产出的特征**文本行与音频行错位**，不要再用。
+
+为什么错位
+----------
+它把 `<uid>distil/chinese_pauses_audio.pt`（按 **distil / chinese** 分词对齐的
+wav2vec2 音频）**原样改名**成 `<uid>xlmr_pauses_audio.pt`，但文本用的是 **xlmr**
+分词。两个分词器 token 数不同（实测同一条中文：xlmr=258 vs chinese=150），
+于是「文本第 i 行」和「音频第 i 行」**对不上**，融合模型拿到的是错位的 pair。
+用 `tools/check_alignment.py` 可当场发现（它报 80/80 不匹配）。
+
+正确做法
+--------
+直接用 extract_features.py 重跑（它会用正确的分词器对齐音频）：
+    bash run_preprocess.sh -f configs/xlmr_wav2vec2.yaml -s all
+
+本脚本保留仅为记录历史；默认**拒绝运行**，确要跑得显式加
+`--i-know-this-misaligns`。
+
+---- 以下为原始说明（已过时）----
+把「xlmr 文本 + wav2vec2 音频」凑成一套特征，放进一个新目录。
 
 背景（为什么要做这一步）：
     项目里音频文件名 = <文本模型后缀>_pauses_<音频模型后缀>.pt
@@ -165,7 +184,16 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--apply', action='store_true', help='真正复制（默认只干跑）')
     ap.add_argument('--verify', action='store_true', help='额外核对特征形状')
+    ap.add_argument('--i-know-this-misaligns', action='store_true',
+                    help='确认仍要运行这个会产出**错位特征**的废弃脚本')
     args = ap.parse_args()
+
+    if not args.i_know_this_misaligns:
+        print('🚫 本脚本已废弃：它产出的特征「文本行 ≠ 音频行」')
+        print('   （音频按 distil/chinese 对齐，却被改名成 xlmr；两个分词器 token 数不同）。')
+        print('   请改用：bash run_preprocess.sh -f configs/xlmr_wav2vec2.yaml -s all')
+        print('   确要强行运行，请加 --i-know-this-misaligns')
+        return 2
 
     config = feature_spec.load_default(textual_model='xlmr', audio_model='wav2vec2')
     return plan(config, apply_changes=args.apply, verify=args.verify)
