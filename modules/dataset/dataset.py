@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 import os
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 # ⚠️ 用 SPLIT_* 而不是写死 train 的那套：跑 test（中文语料）时
 # COGNIALIGN_SPLIT=test 会把它们切到 data/test/。
 # SPLIT=train 时 SPLIT_* 就等于下面注释里的 train 路径，行为完全不变。
@@ -170,14 +170,19 @@ def set_splits():
     # 被推断成 int 后 uid 会变成 2 而不是 "0002"。
     labels_pd = pd.read_csv(csv_labels_path, dtype={'adressfname': str, 'uid': str})
     uids = []
+    y = []
 
     for index, row in labels_pd.iterrows():
         uids.append(row['adressfname'])
+        # 分层用的类别：cn=0 / ad=1（和 read_CSV 里的标签一致）
+        y.append(0 if row['dx'] == 'cn' else 1)
 
-    # Split the uids into 5 folds with kfold from sklearn
-    kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+    # Split the uids into 5 folds with **stratified** kfold from sklearn
+    # 分层保证每折验证集的健康/患病比例和全集一致；普通 KFold 在这样的小
+    # 数据集上会出现某折比例明显偏离、单折指标波动很大。
+    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-    for i, (train_index, test_index) in enumerate(kfold.split(uids)):
+    for i, (train_index, test_index) in enumerate(kfold.split(uids, y)):
         print("TRAIN:", train_index, "TEST:", test_index)
         np.save(os.path.join(SPLITS_DIR, 'train_uids' + str(i)), np.array(uids)[train_index])
         np.save(os.path.join(SPLITS_DIR, 'val_uids' + str(i)), np.array(uids)[test_index])

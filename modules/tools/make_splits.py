@@ -12,7 +12,8 @@
 不能去覆盖英文那份 —— 否则已有实验的折划分就被毁了。
 
 划分规则和 build_dataset.py / dataset.set_splits() **完全一致**：
-    KFold(n_splits=5, shuffle=True, random_state=42)
+    StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+按 dx（cn/ad）**分层**，保证每折验证集的健康/患病比例和全集一致。
 这样中英文两套划分用的是同一套规则，结果可复现、可对照。
 
 用法
@@ -39,7 +40,7 @@ sys.path.insert(0, MODULES_DIR)
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from sklearn.model_selection import KFold  # noqa: E402
+from sklearn.model_selection import StratifiedKFold  # noqa: E402
 
 import paths  # noqa: E402
 
@@ -79,10 +80,14 @@ def main():
     print('样本数     : %d（健康 cn=%d / 患病 ad=%d）' % (len(uids), n_cn, n_ad))
     print()
 
-    kfold = KFold(n_splits=N_SPLITS, shuffle=SHUFFLE, random_state=RANDOM_STATE)
+    # 分层用的类别向量：cn=0 / ad=1（和 labels/dx 一致）。
+    # 用普通 KFold 时，样本这么少（235 条）会出现某折验证集的患病比例
+    # 明显偏离全集，单折指标波动很大；分层后每折比例都和全集一致。
+    y = [0 if dx_of[u] == 'cn' else 1 for u in uids]
+    kfold = StratifiedKFold(n_splits=N_SPLITS, shuffle=SHUFFLE, random_state=RANDOM_STATE)
 
     folds = []
-    for i, (tr_idx, va_idx) in enumerate(kfold.split(uids)):
+    for i, (tr_idx, va_idx) in enumerate(kfold.split(uids, y)):
         tr = [uids[j] for j in tr_idx]
         va = [uids[j] for j in va_idx]
         folds.append((tr, va))

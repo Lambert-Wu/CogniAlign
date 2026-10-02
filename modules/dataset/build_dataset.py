@@ -47,7 +47,7 @@ import shutil
 import sys
 
 import numpy as np
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 
 _MODULES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # modules/
 PROJECT_ROOT = os.path.dirname(_MODULES_DIR)                                  # 项目根
@@ -232,15 +232,20 @@ def make_dirs(check_only):
     os.makedirs(os.path.join(TRAIN_ROOT, "splits"), exist_ok=True)
 
 
-def build_splits(uids, splits_dir, check_only):
-    """与 dataset.set_splits() 完全相同的划分：KFold(5, shuffle, seed=42)。"""
-    kfold = KFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
+def build_splits(uids, labels_by_uid, splits_dir, check_only):
+    """与 dataset.set_splits() 完全相同的划分：StratifiedKFold(5, shuffle, seed=42)。
+
+    按 dx（cn/ad）**分层**，保证每折验证集的健康/患病比例和全集一致 ——
+    普通 KFold 在 235 条这种小数据集上会出现某折比例明显偏离。
+    """
+    y = [0 if labels_by_uid[u] == "cn" else 1 for u in uids]
+    kfold = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
     arr = np.array(uids)
     if check_only:
         print("[splits] 干跑：每折 验证/训练 = %s"
-              % [(len(va), len(tr)) for tr, va in kfold.split(uids)])
+              % [(len(va), len(tr)) for tr, va in kfold.split(uids, y)])
         return
-    for i, (tr, va) in enumerate(kfold.split(uids)):
+    for i, (tr, va) in enumerate(kfold.split(uids, y)):
         np.save(os.path.join(splits_dir, "train_uids%d.npy" % i), arr[tr])
         np.save(os.path.join(splits_dir, "val_uids%d.npy" % i), arr[va])
     print("[splits] %d 个样本写出 %d 折" % (len(uids), N_SPLITS))
@@ -318,7 +323,8 @@ def main():
     prune_stale(TRAIN_ROOT, {r["adressfname"] for r in train_rows}, args.check)
     prune_stale(TEST_ROOT, {r["adressfname"] for r in test_rows}, args.check)
 
-    build_splits(train_uids, os.path.join(TRAIN_ROOT, "splits"), args.check)
+    build_splits(train_uids, {r["adressfname"]: r["dx"] for r in train_rows},
+                 os.path.join(TRAIN_ROOT, "splits"), args.check)
 
     if args.check:
         print("\n干跑结束，没有写任何文件。去掉 --check 才会真正执行。")

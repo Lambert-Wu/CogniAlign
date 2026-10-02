@@ -161,7 +161,9 @@ encoders:
 train:
   # 训练时取前多少行（特征文件本身是 512 行）。改这个不用重提特征。
   # 详见 configs/default.yaml 里同一项的说明（含 4.8% 差异的实测）。
-  seq_length: 320
+  # ⚠️ 2026-10-02：本次实验改成 512，喂满整个序列（含文本 <pad> / 音频 0 的
+  #    补位行）。原来的 320 版结果见 logs/xlmr_xlsr_pca_P_cross_mean/。
+  seq_length: 512
 
   batch_size: 32
   num_epochs: 200
@@ -191,5 +193,10 @@ model:
   fusion: 'cross'
   architecture: 'cross_attention'
   gated: false
+
+  # 结果目录标签：seq_length=512 这一版和原来 320 那版结果目录名本来相同
+  # （名字里不含 seq_length），不加标签会整个覆盖掉 320 那次的权重和日志。
+  # 加了标签 -> logs/xlmr_xlsr_pca_P_cross_mean_s512/，两份并存可对比。
+  run_tag: 's512'
 
 model_name: ''
