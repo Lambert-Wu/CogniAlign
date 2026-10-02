@@ -116,6 +116,36 @@ def predict(model, features, labels, device, batch_size=32):
     return np.array(probs), np.array(ys)
 
 
+def bootstrap_ci(probs, ys, n_boot=2000, seed=0):
+    """对 acc / F1 / AUC 做 bootstrap 95% 置信区间。
+
+    样本少时（这里是 80 条中文）单点数字很容易被过度解读，论文里应报区间。
+    用固定 seed，保证同一份预测每次结果一致。
+    """
+    rng = np.random.default_rng(seed)
+    y = ys.astype(int)
+    p = np.asarray(probs, dtype=float)
+    n = len(y)
+    accs, f1s, aucs = [], [], []
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, n)
+        yy, pp = y[idx], p[idx]
+        pred = (pp >= 0.5).astype(int)
+        accs.append(accuracy_score(yy, pred))
+        f1s.append(f1_score(yy, pred, zero_division=0))
+        try:
+            aucs.append(roc_auc_score(yy, pp))
+        except ValueError:
+            pass
+
+    def ci(a):
+        if not a:
+            return float('nan'), float('nan')
+        return float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))
+
+    return ci(accs), ci(f1s), ci(aucs)
+
+
 def report(tag, probs, ys, thr=0.5):
     pred = (probs >= thr).astype(int)
     y = ys.astype(int)
@@ -146,6 +176,9 @@ def report(tag, probs, ys, thr=0.5):
     if best_t != thr:
         print('（换个切点会更好：阈值 %.2f 时 %.1f%%；默认用的是 0.50）'
               % (best_t, best_acc * 100))
+    (a_lo, a_hi), (f_lo, f_hi), (u_lo, u_hi) = bootstrap_ci(probs, ys)
+    print('95%% bootstrap CI：acc %.1f~%.1f%%   F1 %.3f~%.3f   AUC %.3f~%.3f'
+          % (a_lo * 100, a_hi * 100, f_lo, f_hi, u_lo, u_hi))
     return {'acc': float(acc), 'auc': float(auc),
             'f1': float(f1_score(y, pred, zero_division=0)),
             'precision': float(precision_score(y, pred, zero_division=0)),
