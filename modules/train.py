@@ -1,5 +1,6 @@
 from dataset.dataset import get_dataloaders
 from core.utils import set_seed, get_config, train, save_config
+from core import feature_spec
 from networks import model as model_module
 import torch
 import wandb
@@ -13,7 +14,9 @@ import os
 
 def set_up(config, train_dataloader, device, fold=0):
     """Set up model, optimizer, loss function, and scheduler."""
-    set_seed(42)
+    # 随机种子：COGNIALIGN_SEED > config.train.seed > 42（见 feature_spec.seed_of）。
+    # 多随机种子重复实验靠它；非默认种子会写进结果目录名的 _seed<N> 后缀。
+    set_seed(feature_spec.seed_of(config))
     
     # 用哪个网络结构由配置的 model.architecture 决定，训练和评估共用同一份实现
     # （见 networks/model.py 的 build）。以前这里和 evaluate.py 各写一份
@@ -40,6 +43,7 @@ def set_up(config, train_dataloader, device, fold=0):
             "dataset": "ADReSSo",
             "epochs": config.train.num_epochs,
             "batch_size": config.train.batch_size,
+            "seed": feature_spec.seed_of(config),
         }
     )
     

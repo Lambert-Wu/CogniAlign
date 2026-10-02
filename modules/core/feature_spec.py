@@ -205,6 +205,29 @@ class Spec(object):
         return self.audio_entry().get('repo', '')
 
 
+DEFAULT_SEED = 42
+
+
+def seed_of(cfg):
+    """本次训练的随机种子：环境变量 COGNIALIGN_SEED > 配置 train.seed > 42。
+
+    为什么支持环境变量：论文要做多随机种子重复（≥5 次）。种子若只写在配置里，
+    跑 5 个种子就得维护 5 份配置；用环境变量一行命令扫一遍即可：
+        for s in 0 1 2 3 4; do COGNIALIGN_SEED=$s bash run_train.sh -f configs/xxx.yaml; done
+    result_names() 会据此把**非默认**种子拼进结果目录名（`_seed<N>`），
+    所以多个种子不会互相覆盖。
+    """
+    env = os.environ.get('COGNIALIGN_SEED', '').strip()
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            raise ValueError('COGNIALIGN_SEED 必须是整数，收到 %r' % env)
+    t = cfg.get('train', {}) or {}
+    v = t.get('seed', None)
+    return DEFAULT_SEED if v in (None, '') else int(v)
+
+
 def result_names(cfg):
     """从配置算出**结果目录名**，返回 `(model_name, path_name)`。
 
@@ -214,6 +237,8 @@ def result_names(cfg):
         · 融合 / 池化**只在非默认时**才写进目录名（默认 cross / mean 省略），
           名字更精简、可读；一旦改成别的值会自动带上，避免撞名。
         · 停顿用 pause / nopause 明确写出（以前是隐晦的 P_）。
+        · 非默认随机种子（`COGNIALIGN_SEED` / `train.seed`）再追加 `_seed<N>`
+          （见 `seed_of()`），便于多种子重复实验互不覆盖。
     训练结果落在 `logs/<path_name>/`（train.py 的 log_path 是相对路径，
     而脚本要在 modules/ 下运行，所以实际是 modules/logs/<path_name>/）。
 
@@ -258,6 +283,11 @@ def result_names(cfg):
     tag = str(m.get('run_tag', '') or '').strip()
     if tag:
         path_name += '_' + tag
+
+    # 非默认随机种子才加后缀 —— 多种子重复实验不会互相覆盖（见 seed_of）。
+    seed = seed_of(cfg)
+    if seed != DEFAULT_SEED:
+        path_name += '_seed%d' % seed
 
     return model_name, path_name
 
