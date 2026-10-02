@@ -139,6 +139,22 @@ try:
         ok("CUDA 可用: %s (%.1f GB)" % (dev, total))
         if MODE == "preprocess" and total < 4:
             warn("显存不足 4 GB，特征提取是单样本跑、够用；但训练要降 batch_size")
+    elif MODE == "train":
+        # 🚨 训练**必须**有 GPU：算不成就不许开跑。
+        #    为什么宁可拦住也不让它落到 CPU：网络本身不大，但 5 折 × 最多 200 轮，
+        #    CPU 上会慢几十倍（几小时 -> 几天），而且它**不会报错**——
+        #    跑起来一切正常，只是慢到你以为是卡住了。与其让人白等，
+        #    不如在这里直接停下来说清楚。
+        bad("没有可用的 GPU（CUDA 不可用）—— **不允许开跑训练**。\n"
+            "       不接受退回 CPU 跑：那会慢几十倍（几小时变几天），而且不会报错，\n"
+            "       只会让你以为卡住了。请先把显卡环境修好再跑。\n"
+            "       排查顺序：\n"
+            "         ① 装的是不是 CUDA 版 torch：%s -c \"import torch;print(torch.__version__)\"\n"
+            "            版本号要带 +cuXXX；是 +cpu 的话重装（见上面依赖那节给的 URL）\n"
+            "         ② %s -c \"import torch;print(torch.version.cuda)\" 有没有值\n"
+            "         ③ 终端里 nvidia-smi 能不能看到显卡（驱动 / 容器没映射进去都不行）\n"
+            "         ④ 有没有把卡藏起来：CUDA_VISIBLE_DEVICES 被设成了空串或 -1"
+            % (sys.executable, sys.executable))
     else:
         info("没有 CUDA，会用 CPU 跑（特征提取会慢很多，约 5~10 倍）")
 except Exception as e:
