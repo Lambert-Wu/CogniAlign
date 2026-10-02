@@ -189,7 +189,8 @@ mkdir -p "$LOG_DIR"
 # -------------------------------------------- 从配置文件算出结果目录名
 # 规则同 utils.save_config()：
 #   model_name = {textual}_{audio}_{pause|nopause}
-#   path_name  = model_name[_{fusion}][_{pooling}][_{run_tag}]（融合/池化默认省略）
+#   path_name  = model_name[_{fusion}][_{pooling}][_{gated}][_{run_tag}]
+#                （融合/池化/门控默认省略；门控开启时追加 _gated）
 # ⚠️ train.py 里的 log_path 是相对路径 logs/（相对**当前工作目录**），
 #    而脚本必须在 modules/ 下运行（模块间是平级 import），
 #    所以结果实际落在 modules/logs/ 而不是仓库根的 logs/。

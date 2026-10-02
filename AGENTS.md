@@ -65,9 +65,9 @@ There are no unit tests. Do not invent a test command; verify with `check_env.py
 - **uid must stay a string.** test uids are zero-padded numerics (`"0002"`); pandas
   int inference silently breaks path lookups. Always pass `dtype={'adressfname': str, 'uid': str}`.
 - **Same-model comparison configs can collide.** Result dir =
-  `{text}_{audio}_{pause|nopause}[_{fusion}][_{pooling}][_{run_tag}]`
-  (`core/feature_spec.result_names` is the only implementation; fusion/pooling only appear
-  when non-default). Configs differing only in feature dir (e.g. `xlmr_xlsr_pca` vs
+  `{text}_{audio}_{pause|nopause}[_{fusion}][_{pooling}][_{gated}][_{run_tag}]`
+  (`core/feature_spec.result_names` is the only implementation; fusion/pooling/gated only
+  appear when non-default — `gated: true` appends `_gated`). Configs differing only in feature dir (e.g. `xlmr_xlsr_pca` vs
   `xlmr_xlsr_pca_fill`) map to the same dir and overwrite each other — set `model.run_tag`
   to separate them.
 - 5-fold uses `StratifiedKFold` (balanced by `dx`), so each fold's class balance matches the

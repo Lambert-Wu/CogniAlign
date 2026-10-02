@@ -233,9 +233,12 @@ def result_names(cfg):
 
     规则（唯一出处，别再在别处拼一遍）：
         model_name = {文本}_{音频}_{pause|nopause}
-        path_name  = model_name[_{融合}][_{池化}][_{实验标签}]
+        path_name  = model_name[_{融合}][_{池化}][_{门控}][_{实验标签}]
         · 融合 / 池化**只在非默认时**才写进目录名（默认 cross / mean 省略），
           名字更精简、可读；一旦改成别的值会自动带上，避免撞名。
+        · 门控（`model.gated: true`）同理：开启时才追加 `_gated`。它和融合/池化
+          一样是模型结构开关，不写就分不开 —— 同一份文本/音频/停顿下开不开门控
+          会算成同一个目录，后跑的覆盖先跑的。
         · 停顿用 pause / nopause 明确写出（以前是隐晦的 P_）。
         · 非默认随机种子（`COGNIALIGN_SEED` / `train.seed`）再追加 `_seed<N>`
           （见 `seed_of()`），便于多种子重复实验互不覆盖。
@@ -279,6 +282,11 @@ def result_names(cfg):
     pooling = str(m.get('pooling', '') or '')
     if pooling and pooling != 'mean':
         path_name += '_' + pooling
+
+    # 门控融合（model.gated）开启时才写进目录名 —— 它和融合/池化一样是模型结构
+    # 开关，不写就会和"不门控"的同一实验撞名、互相覆盖（见上面的 docstring）。
+    if m.get('gated', False):
+        path_name += '_gated'
 
     tag = str(m.get('run_tag', '') or '').strip()
     if tag:
