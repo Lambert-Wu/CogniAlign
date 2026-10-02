@@ -70,3 +70,6 @@ env.sh
 #        git rm -r --cached .workbuddy
 .workbuddy/
 logs/
+
+# Jupyter / JupyterLab 的 notebook 检查点目录（项目各处都有，统一忽略）。
+**/.ipynb_checkpoints/
