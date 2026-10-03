@@ -1,0 +1,195 @@
+# ── 公平对比用配置：distilbert + wav2vec2-base，**无停顿符号** + loss 选点 ────
+#
+# 和 configs/legacy_distil_wav2vec2_loss.yaml 的唯一区别是
+#     dataset.pauses: true  ->  false
+# 即用**不带停顿标记**的转写；其余（loss 选点、run_tag=loss）都相同。
+# 用来和 nopause 门控版做"开不开 GCA"的对比。
+#
+# 结果目录 = logs/distil_wav2vec2_nopause_loss_seed<N>/
+# 特征复用 <split>/feat_distil/（无停顿特征：<uid>distil.pt / <uid>distil_audio.pt）。
+#
+# 跑法：
+#     COGNIALIGN_SEED=0 bash run_train.sh -f configs/legacy_distil_wav2vec2_nopause_loss.yaml
+
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+# 脚本②（extract_features.py）和训练都要读这两个值，以前是硬写死在 py 里的，
+# 改了 py 还得记得手动改这里 —— 现在只有这一份。
+dataset:
+  max_length: 512       # 文本/音频统一对齐到这么长的序列
+  pauses: false         # false = 用**不带停顿标记**的转写（文件名不带 _pauses）
+  # 特征 .pt 放在 <split>/feat_<这个名字>/ 里。
+  # ⚠️ 实际目录名 = 'feat_' + 这里的值（前缀由 paths.feature_dir 统一加），
+  #    所以写 'distil' 对应磁盘上的 <split>/feat_distil/。
+  # 老实验（distil + wav2vec2）的特征就在那里，不会碰到新实验的 feat_xlmr_*/。
+  features_dir: 'distil'
+  # 只用音频、不用文本时，文件名里还是带一段文本后缀（老命名规则遗留）。
+  # 本项目一直都是文本+音频双模态，这个值用不到，留在这里是为了不把它写死回 py。
+  text_fallback: 'distil'
+
+# ── 编码器登记表 ────────────────────────────────────────────────────────
+# 换模型只改这里，不动任何 .py。原先这张表在三处各写了一份，加载代码里还挂着
+# 7 个 elif 分支硬编码仓库名和模型类 —— 现在都收在这一处。
+#
+#   suffix     特征文件名的后缀        dim   输出维度
+#   repo       HuggingFace 仓库名      fps   每秒多少帧（只有音频侧有）
+#   tokenizer / model / processor     用 transformers 里的哪个类加载
+#   subword_prefix / word_start_prefix  分词器怎么标「子词 / 词首」——
+#       决定 token 能不能拼回单词，进而决定音频对齐能否成功。
+#       WordPiece（bert/distil）标子词 '##'；SentencePiece（xlmr）标词首 '▁'；
+#       byte-BPE（roberta）标词首 'Ġ'。不写 subword_prefix 时默认 '##'。
+#   loader     不是 HF 模型时怎么加载：opensmile / mel_librosa
+#   trust_remote_code / pad_token_from_eos / opensmile_*   个别模型的特例开关
+#
+# 加一个新模型 = 在下面加一段，跑起来就能用（记得 dim 要等于模型的输出维度）
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    # bert-base-chinese 的 tokenizer 是**按字切分**的（一个汉字一个 token，
+    # 且不带 ## 前缀），正好和逐词时间戳表里的单字对得上 —— test 集能用它。
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+      # RoBERTa 是 byte-level BPE：词首带 'Ġ'（U+0120），子词不带。
+      # ⚠️ 这一行是**新增的修正** —— 以前对齐逻辑写死 '##'，roberta 这条线
+      #    其实一直是坏的（只是本项目没跑过它，所以没暴露）。
+      word_start_prefix: 'Ġ'
+    stella:
+      suffix: 'stella'
+      repo: 'NovaSearch/stella_en_1.5B_v5'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      trust_remote_code: true
+    # mistral 是 gated 模型，首次下载要设 HF_TOKEN；本地已有则完全不需要
+    mistral:
+      suffix: 'mistral'
+      repo: 'mistralai/Mistral-7B-v0.1'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      pad_token_from_eos: true
+    qwen:
+      suffix: 'qwen'
+      repo: 'Qwen/Qwen2.5-7B'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+    # 多语言（覆盖 100 种语言）。768 维，和 distil / chinese 同维度 ——
+    # 所以模型结构不用动，只是特征的来源换了。
+    # AutoTokenizer / AutoModel 实测都能自动认出它（XLMRobertaTokenizer / XLMRobertaModel）。
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      # SentencePiece：词首带 '▁'（U+2581），子词不带 —— 和 WordPiece 的
+      # '##' 规则**正好相反**。不写这个，token 就拼不回词，
+      # 整条样本会因为"对齐不上（音频段数+2 != token 数）"被跳过。
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    # 多语言（53 种语言）预训练的音频编码器，输出 1024 维。
+    # ⚠️ 它是**没做过微调**的预训练模型，仓库里**根本没有 tokenizer 文件**
+    #    （vocab.json / tokenizer_config.json 全是 404）。默认的 AutoProcessor
+    #    会去加载 tokenizer、然后抛 TypeError（已实测）——
+    #    所以必须像下面这样显式指定 processor: 'Wav2Vec2FeatureExtractor'。
+    # ⚠️ dim=1024 ≠ model.hidden_size(768)：网络会**自动**挂一层 ResNet 投影
+    #    （networks/model.py 的 audio_needs_projection 按维度判断），不用改代码。
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+    # 下面两个不是神经网络，用传统特征：openSMILE / librosa
+    egemaps:
+      suffix: 'egemaps'
+      dim: 88
+      fps: 10
+      loader: 'opensmile'
+      opensmile_feature_set: 'eGeMAPSv02'
+      opensmile_feature_level: 'Functionals'
+    mel:
+      suffix: 'mel'
+      # 这里是编码器**原始输出**的维度（mel 谱是 80 维），不是升维之后的 768。
+      # 网络里发现 dim ≠ model.hidden_size 就会自动挂一层 ResNet 升维
+      # （见 networks/model.py 的 audio_needs_projection）。
+      dim: 80
+      fps: 50
+      loader: 'mel_librosa'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  # ── 早停/选点判据：'loss'（越小越好）──
+  # 验证损失是连续值，不会像准确率那样卡在台阶上（47 条验证集 → 准确率只有
+  # ~48 个取值），更能反映"模型还在不在进步"。这份配置就是为公平对比而设。
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean' # 'mean', 'cls'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  # 文本/音频编码器：名字要和上面 encoders 段里登记的键一致。
+  # （COGNIALIGN_SPLIT=test 时，文本侧会被环境变量覆盖成 chinese）
+  textual_model: 'distil'
+  audio_model: 'wav2vec2'
+  # 老实验：test 是中文语料，文本侧换成 bert-base-chinese。
+  # （这层逻辑以前是硬写在 paths.py 里的，现在显式写进配置 —— 看得见、也能改。）
+  split_textual_model:
+    test: 'chinese'
+
+  # fusion 只用来拼结果目录名（model_name = <文本>_<音频>_[P_]<fusion>）；
+  # 真正决定用哪个网络类的是下面的 architecture。
+  fusion: 'cross'
+  # 用哪个网络结构，键对应 networks/model.py 末尾的 ARCHITECTURES：
+  #   cross_attention / bidirectional_cross_attention / elementwise / plain_transformer
+  architecture: 'cross_attention'
+  # 交叉注意力是否带门控（对应 GatedCrossAttentionFusion）
+  gated: false
+  # 实验标签：把"按 loss 选点"这一版和 accuracy 版分开（结果目录带 _loss）。
+  run_tag: 'loss'
+
+  # ⚠️ pauses 已移到 dataset 段（以前这里还有一份，同一个语义写两遍，改一处忘一处）。
+
+model_name: ''
