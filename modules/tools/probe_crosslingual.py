@@ -107,11 +107,16 @@ def pool_audio(a):
 
 
 def valid_text_rows(t):
-    """文本的有效行数 = 去掉末尾连续重复行（`<pad>`）之后剩多少。
+    """文本的有效行数 = 去掉末尾连续重复行之后剩多少（**只对 RoBERTa 系成立**）。
 
-    `<pad>` 的 embedding 在同一段里是完全相同的行、且填充在末尾连续出现，
-    所以从最后一行往前数"和最后一行完全相同的连续行数"，就是填充长度。
-    整段没有填充时最后一行不重复，数为 0，等于全保留。
+    ⚠️ 为什么只对 RoBERTa 系成立：文本特征存的是 HuggingFace 原样的
+    `last_hidden_state`（`extract_features.py:227`），而**填充行的长相取决于
+    位置编码怎么写**：
+      · XLM-R / RoBERTa：填充位置的位置编码被固定住 → 每个填充行完全相同，
+        可以用"末尾连续重复行"认出来；
+      · BERT / DistilBERT / bert-base-chinese：每个位置一个位置编码 →
+        填充行彼此不同，**根本认不出来**（会误判成"512 行全是真内容"）。
+    所以 BERT 系必须走 `tokenizer_valid_rows()` 从源头算，别用这个兜底。
     """
     last = t[-1]
     same = bool(((t[-1] == last).all()).item())
@@ -126,19 +131,65 @@ def valid_text_rows(t):
     return keep if keep > 0 else len(t)
 
 
-def pool_text(t):
-    """文本按**去掉末尾重复的填充行**做平均池化。"""
-    return t[:valid_text_rows(t)].mean(dim=0)
+def tokenizer_valid_rows(split, spec, text_model):
+    """用 tokenizer 精确算每条样本的文本有效行数，返回 {uid: 行数}；拿不到就返回 None。
+
+    依据（就是取特征时那一步）：`extract_features.py:214` 对转写做
+        tokenizer(transcription, padding='max_length', truncation=True, max_length=N)
+    再直接存 `last_hidden_state`。所以**有效行数 = min(token 数, N)**，一个不多一个不少。
+    转写列跟着 `pauses` 走（`:137`：'transcription_pause' if pauses else 'transcription'），
+    且提取时做了一次 NFC 归一（`:139`），这里照做。
+
+    这是唯一对 BERT 系也成立的做法；能算就用它，算不出来再退回结构检测。
+    """
+    repo = str(spec.text_entry().get('repo', '') or '')
+    csv_path = paths.TEST_TRANSCRIPTIONS_CSV if split == 'test' else paths.TRANSCRIPTIONS_CSV
+    if not repo or not os.path.isfile(csv_path):
+        return None
+    try:
+        import unicodedata
+        import transformers
+        from core import model_download
+        local = model_download.resolve(repo, verbose=False)
+        tok_cls = str(spec.text_entry().get('tokenizer', 'AutoTokenizer') or 'AutoTokenizer')
+        tokenizer = getattr(transformers, tok_cls).from_pretrained(local, local_files_only=True)
+    except Exception as e:                                    # noqa: BLE001
+        print("[提示] 拿不到 %s 的 tokenizer（%s），文本有效行数退回结构检测" % (repo, e))
+        return None
+
+    col = 'transcription_pause' if spec.pauses else 'transcription'
+    df = pd.read_csv(csv_path, dtype={'uid': str, 'adressfname': str})
+    if col not in df.columns:
+        print("[提示] %s 里没有 %r 列，文本有效行数退回结构检测" % (csv_path, col))
+        return None
+    col_uid = 'uid' if 'uid' in df.columns else 'adressfname'
+    out = {}
+    for _, row in df.iterrows():
+        text = unicodedata.normalize("NFC", str(row[col]))
+        out[str(row[col_uid])] = len(tokenizer(text)['input_ids'])
+    return out
+
+
+def pool_text(t, valid=None):
+    """文本按有效行做平均池化。
+
+    `valid` 给了就直接用（tokenizer 精确算出来的），没给才退回结构检测。
+    这不是"两种做法任选" —— 结构检测对 BERT 系**是错的**（见 valid_text_rows），
+    所以只要算得出来就一定传 `valid`。
+    """
+    k = valid if valid is not None else valid_text_rows(t)
+    return t[:k].mean(dim=0)
 
 
 def load_split(split, spec, text_model=None, audio_model=None, seq=None):
     """读一个 split 的全部样本。
 
-    返回 (uids, labels, X, lens)：
+    返回 (uids, labels, X, lens, how)：
         X    = {'text': (n,d), 'audio': (n,d)}   掩码池化后的特征
         lens = {'text': [有效 token 数], 'audio': [有效帧数]}   规模（长度）指标，
-               给「长度混淆检查」用 —— 说话长短本身可能就带着病情信息，
+               给「长度混淆检查」用 —— 说话量本身可能就带着病情信息，
                不把这一项量出来，就没法说跨语言那点信号是真病理还是长度假象。
+        how  = 'tokenizer' / '结构检测'，文本有效行数是怎么来的（要如实标出来）
 
     后缀一律从 feature_spec 查（唯一出处）。`text_model` / `audio_model`
     用来覆盖配置里的取值 —— 老配置里 train 文本是 distil、test 是 chinese，
@@ -152,6 +203,10 @@ def load_split(split, spec, text_model=None, audio_model=None, seq=None):
     t_suf, a_suf = s.text_suffix(), s.audio_suffix()
     n = int(seq or s.train_seq_length())
     want_len = int(s.max_length)
+
+    # 文本有效行数：优先用 tokenizer 精确算（对 BERT 系也成立），算不出来才退回结构检测。
+    tcount = tokenizer_valid_rows(split, s, s.textual_model)
+    how = 'tokenizer' if tcount is not None else '结构检测'
 
     uids, labels = [], []
     texts, audios = [], []
@@ -171,11 +226,12 @@ def load_split(split, spec, text_model=None, audio_model=None, seq=None):
                 "特征长度和配置对不上：%s 是 %s，配置 dataset.max_length=%d。"
                 "多半是改了 max_length 还没重跑特征提取。" % (tp, tuple(t.shape), want_len))
         t, a = t[:n], a[:n]
+        vt = None if tcount is None else min(int(tcount.get(uid, t.shape[0])), t.shape[0])
         uids.append(uid)
         labels.append(y)
-        texts.append(pool_text(t))
+        texts.append(pool_text(t, vt))
         audios.append(pool_audio(a))
-        n_text.append(int(valid_text_rows(t)))
+        n_text.append(int(vt if vt is not None else valid_text_rows(t)))
         n_audio.append(int((a.abs().sum(dim=1) > 0).sum()))
 
     if missing:
@@ -184,7 +240,7 @@ def load_split(split, spec, text_model=None, audio_model=None, seq=None):
     X = {'text': np.stack([x.numpy() for x in texts]),
          'audio': np.stack([x.numpy() for x in audios])}
     lens = {'text': np.array(n_text), 'audio': np.array(n_audio)}
-    return uids, np.array(labels), X, lens
+    return uids, np.array(labels), X, lens, how
 
 
 # ----------------------------------------------------------------- 探针
@@ -336,10 +392,10 @@ def main():
     mods_sel = [m for m in args.modalities.split(',') if m]
 
     print("读特征（train=英文 / test=中文）...")
-    uids_en, y_en, F_en, L_en = load_split('train', spec, text_model=args.train_text_model,
-                                           audio_model=args.audio_model, seq=args.seq)
-    uids_zh, y_zh, F_zh, L_zh = load_split('test', spec, text_model=args.test_text_model,
-                                           audio_model=args.audio_model, seq=args.seq)
+    uids_en, y_en, F_en, L_en, how_en = load_split(
+        'train', spec, text_model=args.train_text_model, audio_model=args.audio_model, seq=args.seq)
+    uids_zh, y_zh, F_zh, L_zh, how_zh = load_split(
+        'test', spec, text_model=args.test_text_model, audio_model=args.audio_model, seq=args.seq)
 
     n_en_cn, n_zh_cn = int((y_en == 0).sum()), int((y_zh == 0).sum())
     print("=" * 78)
@@ -363,15 +419,30 @@ def main():
         print("  %-8s %.3f" % (m, cv_auc(X, y, args.seed)))
 
     # ---- 长度混淆检查：说话长短本身带多少标签信息
-    # 说话长短（录音时长）在 AD 语料里常常和诊断相关（病人说得少 / 停顿多）。
-    # 如果长度单独就能把标签排出来，那"跨语言 AUC 0.6"完全可能只是长度假象 ——
-    # 这条必须先量，再看上面那些数。AUC 用长度当分数算（越大说话越长）。
-    print("\n【长度混淆检查】只拿「说话长短」当分数去排标签，能排到多少（AUC）")
-    print("  %-6s %14s %14s" % ("语言", "音频有效帧数", "文本有效token数"))
+    # ⚠️ 这里的"长度"指**有效行数**，不是文件长度也不是秒数：
+    #    · 特征文件永远被补到 seq_length 行（512），短样本后面是空白，所以文件长度没有信息；
+    #    · 音频和文本都是**按字/词对齐**的（每说一个字一行，停顿也占一行），
+    #      所以"有效行数"≈ 说了多少个字 + 插了多少个停顿 —— 它才带信息。
+    #    · 只有说话量超过 seq_length 行才会被截断、之后都一样，所以下面同时看分布：
+    #      若大量样本顶到天花板，长度这条线的区分度就被削平了。
+    cap = int(spec.train_seq_length())
+    print("\n【长度混淆检查】只拿「说了多少字」当分数去排标签，能排到多少（AUC）")
+    print("  %-6s %14s %14s" % ("语言", "音频有效行数", "文本有效token数"))
     for tag, L, y in (("英文", L_en, y_en), ("中文", L_zh, y_zh)):
         print("  %-6s %14.3f %14.3f"
               % (tag, roc_auc_score(y, L['audio']), roc_auc_score(y, L['text'])))
-    print("  （判定：显著偏离 0.5 → 长度本身就带标签信息，后面的跨语言数要打折看）")
+    print("  （判定：显著偏离 0.5 → 说话量本身就带标签信息，后面的跨语言数要打折看）")
+    print("\n【有效行数分布】%d 行里有内容的占多少（顶到 %d = 被截断，之后都一样）" % (cap, cap))
+    print("  （文本有效行数算法：英文 %s / 中文 %s —— tokenizer=从转写精确数 token，"
+          "结构检测=找末尾重复的填充行，后者对 BERT 系不准）" % (how_en, how_zh))
+    for tag, L, y in (("英文", L_en, y_en), ("中文", L_zh, y_zh)):
+        for k, nm in (('audio', '音频有效行数'), ('text', '文本有效tok')):
+            v = L[k]
+            print("  %-4s %-12s min %3d / 中位 %3d / max %3d ｜ 顶到 %d 的 %d 条"
+                  % (tag, nm, int(v.min()), int(np.median(v)), int(v.max()),
+                     cap, int((v >= cap).sum())))
+        print("  %-4s 两条流有效行数逐条相同的比例：%.0f%%"
+              % (tag, 100.0 * float((L['audio'] == L['text']).mean())))
 
     # ---- 3. 零样本跨语言 + 各种无标签对齐
     base = max(n_zh_cn, len(y_zh) - n_zh_cn) / float(len(y_zh))
