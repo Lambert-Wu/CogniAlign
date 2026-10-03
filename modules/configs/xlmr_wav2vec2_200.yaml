@@ -1,0 +1,144 @@
+# ── 长度消融：XLM-RoBERTa + Wav2Vec2-base，max_length 200 ─────────────────
+#
+# 目的：**只把特征长度从 512 改成 200**，其余和 configs/xlmr_wav2vec2.yaml
+# （对照实验 logs/xlmr_wav2vec2_pause，512，val F1 0.7713）完全一致，看长度
+# 本身对指标的影响。
+#
+# 和 xlmr_wav2vec2.yaml 的**唯一区别**：
+#   · dataset.max_length : 512 -> 200   （特征文件形状变了，必须重提）
+#   · dataset.features_dir: 'xlmr_wav2vec2' -> 'xlmr_wav2vec2_200'
+#       —— 另开目录，**不覆盖**已有的 512 特征 feat_xlmr_wav2vec2/
+#   · train.seq_length : 200            （训练也不截取）
+#   · model.run_tag : 's200'            （结果目录 xlmr_wav2vec2_pause_s200，
+#                                        不和 512 的 xlmr_wav2vec2_pause 撞名）
+# 其余（pauses、xlmr+wav2vec2、cross_attention、gated=false、pooling=mean、
+# early_stopping_metric=loss、超参）全部照抄，保证是单变量对比。
+#
+# 跑法（提取和训练必须用同一份配置）：
+#     bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2_200.yaml
+#     bash run_train.sh              -f configs/xlmr_wav2vec2_200.yaml
+
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+dataset:
+  max_length: 200       # ← 唯一变量：从 512 改成 200
+  pauses: true
+  features_dir: 'xlmr_wav2vec2_200'   # 新目录，不动 512 那套
+  text_fallback: 'distil'
+
+# ── 编码器登记表 ────────────────────────────────────────────────────────
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+      word_start_prefix: 'Ġ'
+    stella:
+      suffix: 'stella'
+      repo: 'NovaSearch/stella_en_1.5B_v5'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      trust_remote_code: true
+    mistral:
+      suffix: 'mistral'
+      repo: 'mistralai/Mistral-7B-v0.1'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      pad_token_from_eos: true
+    qwen:
+      suffix: 'qwen'
+      repo: 'Qwen/Qwen2.5-7B'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+    egemaps:
+      suffix: 'egemaps'
+      dim: 88
+      fps: 10
+      loader: 'opensmile'
+      opensmile_feature_set: 'eGeMAPSv02'
+      opensmile_feature_level: 'Functionals'
+    mel:
+      suffix: 'mel'
+      dim: 80
+      fps: 50
+      loader: 'mel_librosa'
+
+train:
+  # 训练时取前多少个位置；写 200 = 和 max_length 一致，不截取。
+  seq_length: 200
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  # 和 512 对照实验同口径（loss 选点），才能只归因于长度。
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'wav2vec2'
+  # 不写 split_textual_model：train/test 都用 xlmr（和 512 对照一致）。
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  # 结果目录加 s200 后缀，和 512 的 xlmr_wav2vec2_pause 区分开。
+  run_tag: 's200'
+
+model_name: ''

@@ -177,3 +177,108 @@ PYTHON=/root/miniconda3/envs/adress/bin/python bash run_preprocess.sh -f configs
 #   configs/legacy_distil_wav2vec2_gated_bias.yaml    （门 bias 初值=logit(0.9)）
 #   configs/legacy_distil_wav2vec2_maskpool.yaml      （掩码池化，5 种子正向）
 ```
+
+---
+
+## 按论文复现：distil + wav2vec2 · pause · Gated · max_length=200（2026-10-03）
+
+**目标**：按论文 CogniAlign 原始设置跑一遍 —— frozen DistilBERT + Wav2Vec2、门控交叉注意力、带停顿、序列长度 200、accuracy 选点。
+
+- **配置**：`configs/paper_distil_wav2vec2_200.yaml`（= `legacy_distil_wav2vec2_gated.yaml`，但 `dataset.max_length: 200`）
+- **特征**：`data/{train,test}/feat_distil_paper/`（长度 200；train 235 + test 80，**0 条跳过**）
+- **结果**：`modules/logs/distil_wav2vec2_pause_gated_paper/`
+- **评估口径**：`evaluate.py` 的 `build_config/build_model/predict/report`；原始数据 `modules/logs/eval_paper200_{train,test}.json`
+
+> ⚠️ 单独开一份的原因：`max_length` 一变，磁盘上 `.pt` 形状从 512→200，**必须重提特征**；特征目录（`feat_distil_paper`）和结果目录（`run_tag: paper`）都换了名，**不覆盖**已有 `feat_distil/` 和 `..._gated/`。
+
+### 英文 train · 5 折 val（每折自己的 checkpoint 评自己那折的 val，各 47 条）
+
+| Fold | Acc | AUC | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| 0 | 0.809 | 0.853 | 0.800 | 0.833 | 0.816 |
+| 1 | 0.787 | 0.804 | 0.850 | 0.708 | 0.773 |
+| 2 | 0.894 | 0.928 | 0.852 | 0.958 | 0.902 |
+| 3 | 0.936 | 0.951 | 0.957 | 0.917 | 0.936 |
+| 4 | 0.894 | 0.916 | 0.885 | 0.920 | 0.902 |
+| **mean ± std** | **0.8638 ± 0.0565** | **0.8905 ± 0.0539** | 0.8686 ± 0.0516 | 0.8673 ± 0.0894 | **0.8658 ± 0.0611** |
+
+> 论文 5-fold accuracy = **90.36%**；本复现 **86.38%**（低约 4 个点）。各折 95% bootstrap CI 很宽（如 fold0 acc 68.1~91.5%），单折数字别过度解读。
+> 顺带：本行（200 + 门控）的英文 F1 0.866 高于 `distil_wav2vec2_pause`（512、不门控，accuracy 选点 0.837），但两者特征长度不同，不能归因于门控。
+
+### 中文 test（80 条，跨语言，**结果退化、不可作数**）
+
+| 评估方式 | Acc | AUC | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| fold 0 | 0.438 | 0.380 | 0.438 | 1.000 | 0.609 |
+| fold 1 | 0.438 | 0.454 | 0.438 | 1.000 | 0.609 |
+| fold 2 | 0.438 | 0.455 | 0.438 | 1.000 | 0.609 |
+| fold 3 | 0.438 | 0.454 | 0.438 | 1.000 | 0.609 |
+| fold 4 | 0.438 | 0.546 | 0.438 | 1.000 | 0.609 |
+| **mean ± std** | 0.4375 ± 0.0000 | **0.4578 ± 0.0526** | 0.4375 | 1.000 | 0.609 |
+| 5 折概率平均 | 0.438 | 0.470 | 0.438 | 1.000 | 0.609 |
+
+> **无意义**：5 折模型在 0.5 阈值下**把所有 80 人都判患病**（Recall=1.0、Precision=0.438），AUC≈0.46 ≈ 随机；全判患病 Acc 43.8% 还**低于多数类基线 56.2%**。
+> 原因是已知的**跨语言塌缩**：权重用英文 `distil` 训，test 特征用中文 `chinese`/SenseVoice，两边不是一个语义空间。要同分布比较，必须换成英文测试集。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# 提特征（长度 200，train+test）→ 训练（distil+wav2vec2+pause+gated，5 折）
+bash run_preprocess.sh -s all -f configs/paper_distil_wav2vec2_200.yaml
+bash run_train.sh              -f configs/paper_distil_wav2vec2_200.yaml
+# 评估：见 modules/logs/eval_paper200_{train,test}.json
+```
+
+---
+
+## 长度消融：xlmr + wav2vec2 · 512 vs 200（2026-10-03）
+
+**目标**：单独看**特征长度**（`dataset.max_length`）对指标的影响，其余变量全部固定。
+
+- **512 基线**：`configs/xlmr_wav2vec2.yaml` → `logs/xlmr_wav2vec2_pause`，特征 `data/<split>/feat_xlmr_wav2vec2/`
+- **200**：`configs/xlmr_wav2vec2_200.yaml` → `logs/xlmr_wav2vec2_pause_s200`，特征 `data/<split>/feat_xlmr_wav2vec2_200/`
+- 其余全同：pauses=true、xlmr+wav2vec2、cross_attention、`gated=false`、pooling=mean、**`early_stopping_metric: loss`**、seed 42
+
+> 只有长度变 → 干净的单变量对照；两个特征目录并存、互不覆盖（新目录是空的，0 条跳过，形状 `(200, 768)`）。
+
+### 英文 train · 5 折 val（每折自己的 checkpoint 评自己那折 val；`evaluate.py`，阈值 0.5）
+
+| 指标 | 512 | 200 | Δ(200−512) |
+|---|---|---|---|
+| Acc | 0.7745 ± 0.0346 | 0.7745 ± 0.0640 | **0.0000** |
+| AUC | 0.8669 ± 0.0448 | 0.8677 ± 0.0423 | **+0.0008** |
+| F1 | 0.7535 ± 0.0581 | 0.7731 ± 0.0675 | +0.0196 |
+| Precision | 0.8571 ± 0.0593 | 0.7980 ± 0.0676 | −0.059 |
+| Recall | 0.6860 ± 0.1071 | 0.7510 ± 0.0762 | +0.065 |
+
+逐折 F1：512 `[0.649, 0.816, 0.791, 0.739, 0.773]` ｜ 200 `[0.696, 0.844, 0.739, 0.723, 0.863]`
+
+### 中文 test（80 条，跨语言，仅供参考）
+
+| 指标 | 512 | 200 |
+|---|---|---|
+| Acc | 0.565 ± 0.033 | 0.520 ± 0.038 |
+| AUC | 0.662 ± 0.071 | 0.697 ± 0.027 |
+| F1 | 0.645 ± 0.041 | 0.640 ± 0.019 |
+| AUC（5 折概率平均） | 0.715 | 0.714 |
+
+### 结论：**长度不是影响因素**
+
+- 英文 val：**Acc 完全相同、AUC 几乎相同（+0.0008）**；F1 名义 +2 分但远在 std（±0.06）内，且 Precision/Recall 只是阈值两侧互换 → **512 vs 200 无可辨识影响**，200 只是折间方差更大。
+- 中文 test 两套一致（5 折平均 AUC 都是 ~0.715）。
+- **反推**：前文 distil+wav2vec2 从 512（0.837、不门控）到 200（0.866、门控）的 +2.6 分**不能归因于长度** —— 那个对比同时动了长度、门控和选点口径，是混淆的。
+- ⚠️ 局限：均为 **seed 42 单跑**，折间 std 0.03~0.07。要把"无影响"说死，需对 512/200 各跑多随机种子看配对差。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# 512 基线（已有）：configs/xlmr_wav2vec2.yaml
+# 200 本次：
+bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2_200.yaml
+bash run_train.sh              -f configs/xlmr_wav2vec2_200.yaml
+# 评估：modules/logs/eval_xlmrw2v_{512,200}_{train,test}.json
+```
