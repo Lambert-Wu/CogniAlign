@@ -233,7 +233,7 @@ def result_names(cfg):
 
     规则（唯一出处，别再在别处拼一遍）：
         model_name = {文本}_{音频}_{pause|nopause}
-        path_name  = model_name[_{融合}][_{池化}][_{门控}][_{实验标签}]
+        path_name  = model_name[_{融合}][_{池化}][_{门控}][_{掩码}][_{实验标签}]
         · 融合 / 池化**只在非默认时**才写进目录名（默认 cross / mean 省略），
           名字更精简、可读；一旦改成别的值会自动带上，避免撞名。
         · 门控（`model.gated: true`）同理：开启时才追加 `_gated`。它和融合/池化
@@ -287,6 +287,10 @@ def result_names(cfg):
     # 开关，不写就会和"不门控"的同一实验撞名、互相覆盖（见上面的 docstring）。
     if m.get('gated', False):
         path_name += '_gated'
+
+    # 掩码池化（model.masked_pooling）同理：开启时才追加 _maskpool，避免撞名。
+    if m.get('masked_pooling', False):
+        path_name += '_maskpool'
 
     tag = str(m.get('run_tag', '') or '').strip()
     if tag:

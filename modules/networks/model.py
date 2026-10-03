@@ -143,6 +143,34 @@ def audio_projection_kind(config):
     return 'linear' if audio_dim > hidden else 'resnet'
 
 
+# ---------------------------------------------------------------------------
+# 掩码池化（model.masked_pooling: true）
+# ---------------------------------------------------------------------------
+# 特征统一补到 512 行，短样本后面是空行。原来的 `src.mean(dim=1)` 把空行也平均
+# 进去；实测（tools/probe_padding_dilution.py）稀释很严重：与"只喂真帧"相比
+# 余弦只有 ~0.64，logit 平均差 ~0.10。中英 padding 比例不同 → 天然语言偏差。
+#
+# 空行的识别：**音频特征**的填充是**连续零前缀**，可以用 `|x|.sum(-1)==0` 认出。
+# ⚠️ 必须在投影层**之前**算 —— nn.Linear / ResNet 都带 bias，零行投影后不再是零。
+# ⚠️ 文本特征的填充是 pad token 的 embedding（非零），认不出来；但池化作用在
+#    **音频 query 侧**（src），所以够用。`pca.fill_padding: mean` 那套（填充填自身
+#    均值）也认不出，此时掩码退化为"全有效"= 与不改一样。
+def padding_mask_from_zero_rows(x):
+    """从特征自身的零行识别 padding。x:(B,T,D) → (B,T) bool，True=有效。"""
+    return x.abs().sum(dim=-1) > 0
+
+
+def masked_mean(x, mask):
+    """按 mask（B,T，True=有效）对 x（B,T,D）做 masked mean。
+
+    mask=None 时退化为普通 mean。全无有效行时 clamp 防止除 0。
+    """
+    if mask is None:
+        return x.mean(dim=1)
+    m = mask.unsqueeze(-1).to(x.dtype)
+    return (x * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+
+
 class CrossAttentionEncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation=nn.ReLU()):
         """Cross-Attention Transformer Encoder Layer."""
@@ -302,6 +330,8 @@ class CrossAttentionTransformerEncoder(nn.Module):
 
         self.dropout = nn.Dropout(config.dropout)
         self.pooling = config.pooling
+        # 掩码池化开关（默认关；见文件上方 masked_mean 的说明）
+        self.masked_pooling = bool(config.get('masked_pooling', False))
 
         if config.pooling == 'attn':
             self.attn_pooling = AttnPooling(config.hidden_size)
@@ -321,6 +351,10 @@ class CrossAttentionTransformerEncoder(nn.Module):
         
         src, memory = features
 
+        # padding 掩码：必须在**投影前**从原始音频的零行识别（填充=连续零前缀）；
+        # 投影层 Linear/ResNet 带 bias，零行投影后会变非零，就认不出来了。
+        src_pad = padding_mask_from_zero_rows(src) if self.masked_pooling else None
+
         if self.audio_proj_kind:
             # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降
             src = self.audio_proj_layer(src)
@@ -334,11 +368,11 @@ class CrossAttentionTransformerEncoder(nn.Module):
 
         # Pooling strategy
         if self.pooling == 'mean':
-            src = src.mean(dim=1)
+            src = masked_mean(src, src_pad)          # 关掩码=普通 mean，开=masked mean
         elif self.pooling == 'cls':
             src = src[:, 0, :]
         elif 'attn' in self.pooling:
-            src = self.attn_pooling(src, mask=mask)
+            src = self.attn_pooling(src, mask=src_pad if src_pad is not None else mask)
 
         return self.classifier(src)
     
@@ -413,6 +447,8 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
 
         self.dropout = nn.Dropout(config.dropout)
         self.pooling = config.pooling
+        # 掩码池化开关（默认关；见上方 masked_mean 的说明）
+        self.masked_pooling = bool(config.get('masked_pooling', False))
 
         init_mlp_size = config.hidden_size * 2 if 'concat' in self.fusion else config.hidden_size
 
@@ -428,6 +464,10 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
         """Forward pass for multi-layer cross-attention transformer encoder."""
         
         src, memory = features
+
+        # padding 掩码：投影前从原始音频零行算（见 masked_mean 说明）。双向融合后
+        # 位置仍对应音频 query 的位置，用音频掩码池化。
+        src_pad = padding_mask_from_zero_rows(src) if self.masked_pooling else None
 
         if self.audio_proj_kind:
             # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降
@@ -469,7 +509,7 @@ class BidirectionalCrossAttentionTransformerEncoder(nn.Module):
             
         # Pooling strategy
         if self.pooling == 'mean':
-            src = src.mean(dim=1)
+            src = masked_mean(src, src_pad)
         elif self.pooling == 'cls':
             src = src[:, 0, :]
 
