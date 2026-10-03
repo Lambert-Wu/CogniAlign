@@ -1,5 +1,5 @@
 from dataset.dataset import get_dataloaders
-from core.utils import set_seed, get_config, train, save_config
+from core.utils import set_seed, get_config, train, save_config, load_init_weights
 from core import feature_spec
 from networks import model as model_module
 import torch
@@ -23,15 +23,31 @@ def set_up(config, train_dataloader, device, fold=0):
     # `if 'cross' in fusion` 的字符串判断，改一处忘一处就会训评不一致。
     model = model_module.build(config.model).to(device)
 
+    # 可选：从已有权重继续微调（配置 train.init_checkpoint，见 core.utils.load_init_weights）。
+    # 不写这一项时行为完全不变（随机初始化）—— 所有已有实验不受影响。
+    model = load_init_weights(model, config, fold, device)
+
 
     optimizer = AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
     lossfn = nn.BCEWithLogitsLoss()
     
     num_training_steps = config.train.num_epochs * len(train_dataloader)
 
+    # ── warmup 步数做成配置项（train.warmup_steps，默认 20 = 旧行为）──────────
+    # ⚠️ 为什么必须可配：样本极少、batch 很大时，每 epoch 只有 1 个 step。
+    #    warmup=20 会让"第 1 个 step 的学习率为 0、前 20 个 step 都几乎不学"，
+    #    若验证 loss 恰好没低于初始值，早停就会把**等于初始权重**的 epoch 1
+    #    当成 best 存下来（实测：8 条样本 + batch=8 时，5 个 seed 里 3 个中招）。
+    #    few-shot 配置把它设成 0（第一个 step 就用满学习率）。
+    #    ⚠️ 注意 HF 的 warmup 语义：step 0 的 lr = base * 0/warmup，
+    #    所以 warmup_steps=1 时第 1 个 step 的学习率**仍然是 0**，只有 0 才真正跳过。
+    num_warmup_steps = int(config.train.get('warmup_steps', 20) or 0)
+
     lr_scheduler = get_scheduler(
-        name="cosine", optimizer=optimizer, num_warmup_steps=20, num_training_steps=num_training_steps
+        name="cosine", optimizer=optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps
     )
+    if num_warmup_steps != 20:
+        print('[warmup] num_warmup_steps=%d（配置 train.warmup_steps）' % num_warmup_steps)
 
     
     wandb.init(

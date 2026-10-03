@@ -333,6 +333,12 @@ class CrossAttentionTransformerEncoder(nn.Module):
         # 掩码池化开关（默认关；见文件上方 masked_mean 的说明）
         self.masked_pooling = bool(config.get('masked_pooling', False))
 
+        # 交叉注意力的方向：谁做 query。
+        #   'audio'（默认，论文在英文上选出的最佳方向）= 音频 Q、文本 K/V，记作 A→T
+        #   'text'                                     = 文本 Q、音频 K/V，记作 T→A
+        # 只影响 forward 里 src/memory 的角色分配；音频投影层仍只作用于音频流。
+        self.query_modality = str(config.get('query_modality', 'audio') or 'audio').lower()
+
         if config.pooling == 'attn':
             self.attn_pooling = AttnPooling(config.hidden_size)
         elif config.pooling == 'gatedattn':
@@ -351,13 +357,29 @@ class CrossAttentionTransformerEncoder(nn.Module):
         
         src, memory = features
 
+        # 方向：query 默认是音频（A→T）。query_modality='text' 时交换，
+        # 变成文本 Q、音频 K/V（T→A）。
+        audio_is_query = self.query_modality != 'text'
+        if not audio_is_query:
+            src, memory = memory, src
+
+        # 音频流始终是「不是 query 的那一个」（T→A 时音频在 memory 里）。
+        audio = src if audio_is_query else memory
+
         # padding 掩码：必须在**投影前**从原始音频的零行识别（填充=连续零前缀）；
         # 投影层 Linear/ResNet 带 bias，零行投影后会变非零，就认不出来了。
-        src_pad = padding_mask_from_zero_rows(src) if self.masked_pooling else None
+        # 只在音频做 query 时用它（pooling 作用在 src=音频上）；T→A 时 src 是文本，
+        # 文本 padding 认不出来，退化为普通 mean。
+        src_pad = padding_mask_from_zero_rows(audio) \
+            if (self.masked_pooling and audio_is_query) else None
 
         if self.audio_proj_kind:
-            # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降
-            src = self.audio_proj_layer(src)
+            # 音频侧维度与 hidden_size 不一致：低维 ResNet 升、高维 Linear 降。
+            # 投影只作用于音频流 —— 它在 A→T 时是 src，在 T→A 时是 memory。
+            if audio_is_query:
+                src = self.audio_proj_layer(src)
+            else:
+                memory = self.audio_proj_layer(memory)
 
         # Iterate over layers with normalization in between
         for i, layer in enumerate(self.layers):
@@ -590,6 +612,56 @@ class ElementWiseFusionEncoder(nn.Module):
 
 
 
+class GlobalConcatFusionEncoder(nn.Module):
+    """全局（整句级）拼接融合：两路各自 mean pooling → concat → MLP。
+
+    这是 token-level 对齐的**对照组**：不使用逐词音频-文本对齐，只把
+    音频序列和文本序列各自的全局均值向量拼起来送分类头。
+        audio (B,T,Da) --proj--> (B,768) --mean--> a
+        text  (B,T,768) -------mean-----------> t
+        [a; t] (B,1536) -> LayerNorm -> Dropout -> Linear(256) -> ReLU -> Linear(1)
+
+    和 token-level GCA 用同一套特征与训练口径，唯一区别是**有没有对齐**。
+    """
+
+    def __init__(self, config):
+        super(GlobalConcatFusionEncoder, self).__init__()
+        self.model_name = config.model_name
+        self.config = config
+
+        # 音频侧维度与 hidden_size 不一致时先投影（和跨模态结构同一套判断）
+        self.audio_proj_kind = audio_projection_kind(config)
+        if self.audio_proj_kind == 'resnet':
+            self.audio_proj_layer = ResNetAudio(in_channels=1, out_channels=config.hidden_size,
+                                                dropout=config.dropout)
+        elif self.audio_proj_kind == 'linear':
+            self.audio_proj_layer = nn.Linear(int(config.audio_dim), int(config.hidden_size))
+
+        # 可选：音频按零行掩码池化（默认关，纯 mean，和"Global Concat"定义一致）
+        self.masked_pooling = bool(config.get('masked_pooling', False))
+
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(config.hidden_size * 2),
+            nn.Dropout(config.dropout),
+            nn.Linear(config.hidden_size * 2, config.hidden_mlp_size),
+            nn.ReLU(),
+            nn.Linear(config.hidden_mlp_size, config.num_classes),
+        )
+
+    def forward(self, features, mask=None, key_padding_mask=None):
+        audio, text = features
+
+        audio = audio if self.audio_proj_kind is None else self.audio_proj_layer(audio)
+
+        if self.masked_pooling:
+            a = masked_mean(audio, padding_mask_from_zero_rows(audio))
+        else:
+            a = audio.mean(dim=1)
+        t = text.mean(dim=1)
+
+        return self.classifier(torch.cat((a, t), dim=1))
+
+
 class MyTransformerEncoder(nn.Module):
     def __init__(self, config):
         """Transformer Encoder."""
@@ -656,8 +728,8 @@ ARCHITECTURES = {
     'bidirectional_cross_attention': BidirectionalCrossAttentionTransformerEncoder,
     'elementwise': ElementWiseFusionEncoder,
     'plain_transformer': MyTransformerEncoder,
+    'global_concat': GlobalConcatFusionEncoder,
 }
-
 
 def build(config):
     """按 config.architecture 建模型。

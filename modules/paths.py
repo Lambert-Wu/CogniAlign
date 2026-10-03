@@ -155,3 +155,24 @@ def feature_dir(name="distil"):
     哪些是原始素材、哪些是跑出来的特征。
     """
     return feature_dir_for(SPLIT, name)
+
+
+def splits_dir_for(split):
+    """指定 split 的折划分目录：`<split>/splits/`。
+
+    和 feature_dir_for 同理：`SPLITS_DIR` 是 import 时按当前 split 定死的，
+    但「中文少样本微调时并入英文 rehearsal」这类实验要**在一个进程里同时读
+    英文和中文的折划分**（英文 val 当额外训练数据、中文 val 当验证集），
+    不能靠环境变量切 split，所以需要这个显式指定版本。
+    """
+    root = TEST_ROOT if str(split).strip().lower() == "test" else TRAIN_ROOT
+    return os.path.join(root, "splits")
+
+
+def labels_csv_for(split):
+    """指定 split 的标签表路径。
+
+    train → `<train>/adresso-train-mmse-scores.csv`，
+    test  → `<test>/test_labels.csv`。
+    """
+    return TEST_LABELS_CSV if str(split).strip().lower() == "test" else LABELS_CSV

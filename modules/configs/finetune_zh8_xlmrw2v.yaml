@@ -1,0 +1,84 @@
+# ── 对照：纯 8 条中文微调（无英文 rehearsal，xlmr + wav2vec2）────────────
+#
+# 唯一变量：**不并入英文**。
+# 和 finetune_zh8_en8_xlmrw2v.yaml 逐项相同（同一编码器、同一英文起点、同一
+# 中文 8/72 划分、同一超参），差别只有：
+#   · 删掉 dataset.mix_extra         → 训练集只有 8 条中文
+#   · run_tag 改成 ft8               → 结果目录 logs/xlmr_wav2vec2_pause_ft8/
+# 这样"混合 vs 纯中文"的差异就只能归因于那 8 条英文 rehearsal，而不是编码器/起点。
+#
+# 中文 8/72 划分来自：
+#   COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4
+#
+# 跑法
+# ----
+#     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh8_xlmrw2v.yaml
+#     # 中文 72 条：
+#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#         --config configs/finetune_zh8_xlmrw2v.yaml --textual-model xlmr \
+#         --checkpoint logs/xlmr_wav2vec2_pause_ft8 --fold 0
+#     # 英文 39 条遗忘测试（和混合版比同一个集合）：
+#     COGNIALIGN_SPLIT=train python modules/evaluate.py \
+#         --config configs/xlmr_wav2vec2.yaml --textual-model xlmr \
+#         --checkpoint logs/xlmr_wav2vec2_pause_ft8/model_fold_0.pth \
+#         --uids-file en_rehearsal_forget_uids.npy
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'xlmr_wav2vec2'
+  text_fallback: 'xlmr'
+
+encoders:
+  text:
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  init_checkpoint: 'logs/xlmr_wav2vec2_pause'
+  batch_size: 8
+  num_epochs: 50
+  learning_rate: 0.00002
+  # warmup 步数（默认 20）。few-shot 每 epoch 只有 1 个 step，必须设 0：
+  # warmup>=1 时第 1 个 step 的学习率仍为 0，早停可能把"等于初始权重"的
+  # epoch 1 当成 best 存下来（见 train.py set_up 里的说明）。
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 10
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 1
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  # 结果目录 = logs/xlmr_wav2vec2_pause_ft8/
+  run_tag: 'ft8'
+
+model_name: ''

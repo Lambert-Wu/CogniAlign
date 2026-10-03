@@ -1,0 +1,119 @@
+# ── 中文少样本微调：每类 4 条（8 条）→ 其余 72 条验证 ─────────────────────
+#
+# 目标
+# ----
+# 英文（train 235 条）训好的 distil + wav2vec2 权重，**再拿 8 条带标签的中文
+# 样本继续微调**，看能不能比"直接零样本跑中文"更好。这是跨语言适配里最朴素
+# 的一种问法：不用无标签对齐、不做分布对齐，只给极少量目标语言标签。
+#
+# 和 chinese_internal_cv.yaml（中文内部 5 折全量训练）不同：那份是把 80 条
+# 全用来训/验，量级完全不一样；这份只动 8 条。
+#
+# 起点从哪来
+# ----------
+# train.init_checkpoint = 'logs/distil_wav2vec2_pause'（目录）
+#   → 每折取该目录下的 model_fold_<折>.pth（见 core.utils.load_init_weights）。
+#   · 这是英文 5 折基线（accuracy 选点，RESULTS.md 里的 `distil_wav2vec2_pause`），
+#     权重结构和本配置**逐参数块一致**（cross_attention / gated=false / 768）。
+#   · 想换起点：把它改成别的目录或某个具体 .pth 文件即可。
+#   · ⚠️ 微调会**加载英文权重**，不会随机初始化 —— 这一项删掉就退回"从零训 8 条"。
+#
+# 训练/验证怎么切
+# --------------
+# 划分文件由 tools/make_fewshot_split.py 生成：
+#     COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py \
+#         --apply --fold 0 --seed 42 --per-class 4
+# 生成 <test>/splits/val_uids0.npy（72 条）。dataset.get_dataloaders() 的规则是
+# "不在验证集里的就是训练集"，所以训练集自动 = 另外 8 条，不用额外写 train 文件。
+#
+# 跑法
+# ----
+#     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh_8shot.yaml
+#     # 评估（在 72 条验证集上；同时建议跑一遍"不微调"的零样本对照）：
+#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#         --config configs/finetune_zh_8shot.yaml \
+#         --checkpoint logs/chinese_wav2vec2_pause_ft8 --fold 0
+#
+# ⚠️ 特征必须和本配置配套：中文文本侧是 bert-base-chinese（suffix `chinese`），
+#    所以文本特征是 <uid>chinese_pauses.pt、音频是 <uid>chinese_pauses_audio.pt，
+#    都在 <test>/feat_distil/ 下（老命名规则：audio 文件名带文本前缀）。
+#    和英文 distil 不是同一编码器 —— 这正是"跨语言塌缩"的来源，微调要解决的问题。
+
+dataset:
+  max_length: 512       # 特征文件长度，和 feat_distil/ 里的一致
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    # 中文侧必须用 bert-base-chinese：按字切分，和逐词时间戳表对得上。
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  # ── 微调起点 ──────────────────────────────────────────────────────────
+  # 目录 → 每折取 model_fold_<折>.pth；也接受具体 .pth 文件（所有折共用）。
+  # 相对路径按 modules/ 解析（train.py 所在目录）。
+  init_checkpoint: 'logs/distil_wav2vec2_pause'
+
+  # 8 条样本 → batch 只能很小（写 32 的话一个 epoch 连一个 batch 都凑不满）。
+  batch_size: 8
+  # 微调轮数：早停看验证 loss，patience 10。样本极少，训练很快。
+  num_epochs: 50
+  learning_rate: 0.00002
+  # warmup 步数（默认 20）。few-shot 每 epoch 只有 1 个 step，必须设 0：
+  # warmup>=1 时第 1 个 step 的学习率仍为 0，早停可能把"等于初始权重"的
+  # epoch 1 当成 best 存下来（见 train.py set_up 里的说明）。
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 10
+  # 验证集 72 条是二分类连续 loss，不会像 accuracy 那样卡台阶（见 default.yaml）。
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  # ⚠️ 这里只跑 1 折（一份 8/72 划分）。想重复多种子抽样：
+  #   用 make_fewshot_split.py 生成 fold 0..K-1（不同 seed），再把 folds 改成 K。
+  #   注意此时 init_checkpoint 是目录，第 k 折会配第 k 个英文 model_fold_k.pth。
+  cross_validation: True
+  cross_validation_folds: 1
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  # 文本侧是中文（bert-base-chinese），直接写 'chinese'。
+  # （model.split_textual_model 只有 run_preprocess.sh 读，train/evaluate 不读。）
+  textual_model: 'chinese'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  # 结果目录标签：避免和别的 chinese_wav2vec2_pause 实验撞名、互相覆盖。
+  # 结果目录 = logs/chinese_wav2vec2_pause_ft8/
+  run_tag: 'ft8'
+
+model_name: ''

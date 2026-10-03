@@ -1,0 +1,69 @@
+# ── 方向消融：T→A（文本 Q，音频 K/V），distil+wav2vec2 + 门控 ────────────
+#
+# 和 ablation_gca.yaml（A→T，论文方向）**只差 query_modality**：
+#   A→T: 音频作 query，文本作 key/value（query_modality: 'audio'，默认）
+#   T→A: 文本作 query，音频作 key/value（本配置 query_modality: 'text'）
+# 用于判断论文在英文上选出的最佳方向是否仍适合跨语言。
+# 其余全同：gated=true、loss 选点、5 折、seed 42。
+#
+# 结果目录 = logs/distil_wav2vec2_pause_gated_ta/（run_tag=ta）
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'distil'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: true
+  query_modality: 'text'
+  run_tag: 'ta'
+
+model_name: ''

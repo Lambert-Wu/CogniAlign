@@ -1,6 +1,6 @@
 # CogniAlign 实验结果汇总
 
-> 生成：2026-10-02 19:50 ｜ 更新：2026-10-03（补门控 GCA 消融 + 掩码池化）
+> 生成：2026-10-02 19:50 ｜ 更新：2026-10-03（补门控 GCA 消融 + 掩码池化 + 模态消融矩阵/阈值迁移 + 注意力方向消融 + XLM-R+XLS-R 多语言复跑 + token-level 对齐消融 + 跨语言分布/阈值对齐 + 中文少样本微调 8-shot/中英混合/遗忘/编码器对比）
 > 命名 `{文本}_{音频}_{pause|nopause}[_{fusion}][_{pooling}][_{gated}][_{run_tag}][_seed<N>]`
 > （`core/feature_spec.result_names` 是唯一实现；fusion/pooling/gated 仅在非默认时出现，非默认种子加 `_seed<N>`）
 
@@ -317,3 +317,348 @@ bash run_train.sh              -f configs/xlmr_wav2vec2_200.yaml
   每个位置一个位置编码，填充行各不相同 → 会被误报成"512 行全是内容"。
   已改成**用 tokenizer 从转写精确数 token**。受影响的只有 legacy 配置的文本列（0.349→0.253），
   `default` / `xlmr_wav2vec2` 的数字基本不变。
+## 模态消融矩阵 + 阈值迁移（2026-10-03）
+
+**目标**：在同一套特征/训练口径下，比较 **音频单模态 / 文本单模态 / 多模态 GCA**，并看在英文上选出的决策阈值能否迁移到中文。
+
+- **编码器**：`distil`（文本）+ `wav2vec2`（音频），特征 `data/{train,test}/feat_distil/`
+- **口径**：`pauses=true`、`max_length=512`、**`early_stopping_metric: 'loss'`**、`seed=42`、`StratifiedKFold` 5 折
+- **配置**：`configs/ablation_audio.yaml`（+ `_zh` 仅评估）、`configs/ablation_text.yaml`、`configs/ablation_gca.yaml`
+- **结果目录**：`logs/wav2vec2_pause/`、`logs/distil_pause/`、`logs/distil_wav2vec2_pause_gated_abl/`（`run_tag=abl`，**未覆盖** accuracy 选点的 `distil_wav2vec2_pause_gated`）
+- **单模态结构**：`model.architecture: plain_transformer`（单流输入），`text/audio_model` 置空关掉另一路
+
+### ① 英文域内（EN→EN，每折自己的 checkpoint 评自己那折 val，n=47）
+
+| 模型 | Acc（mean±std） | AUC | F1 | 逐折 F1 |
+|---|---|---|---|---|
+| Audio-only | 0.753 ± 0.017 | 0.857 ± 0.033 | 0.746 ± 0.030 | 0.727, 0.766, 0.698, 0.776, 0.766 |
+| Text-only | **0.800 ± 0.072** | 0.869 ± 0.056 | **0.801 ± 0.068** | 0.694, 0.766, 0.800, 0.870, 0.875 |
+| Multimodal GCA（A→T） | 0.783 ± 0.090 | **0.874 ± 0.056** | 0.780 ± 0.086 | 0.625, 0.783, 0.773, 0.870, 0.851 |
+
+跨折概率平均（OOF 集成，235 条）：Audio `acc .830 / AUC .887 / F1 .833`；Text `acc .872 / AUC .953 / F1 .880`；GCA `acc .872 / **AUC .964** / F1 .880`。
+→ 英文上**文本单模态 ≈ 多模态 > 音频单模态**；多模态的优势主要体现在 AUC（排序），0.5 阈值下 acc/F1 并未超过纯文本。
+
+### ② 中文 test（EN→ZH 零样本，80 条，多数组基线 = 56.25%）
+
+| 模型 | Acc（mean±std） | AUC | F1 | 概率平均 Acc/AUC/F1 |
+|---|---|---|---|---|
+| Audio-only | 0.490 ± 0.017 | 0.424 ± 0.034 | 0.601 ± 0.013 | .487 / .436 / .602 |
+| Text-only | 0.512 ± 0.047 | 0.594 ± 0.021 | 0.597 ± 0.024 | .500 / .593 / .600 |
+| Multimodal GCA（A→T） | 0.438 ± 0.000 | **0.657 ± 0.019** | 0.609 ± 0.000 | .438 / **.667** / .609 |
+
+> GCA 的 5 折在 0.5 阈值下**全部判患病**（recall=1），acc 43.8% **低于多数类基线**且 Balanced Acc=0.5。
+> Audio-only 的 AUC < 0.5（英文微调 wav2vec2 + 域漂移）；Text-only 略高于随机但仍低于多数类。
+
+### ③ 阈值迁移（阈值在英文 OOF 上选 → 套到中文集成概率）
+
+英文上「最大 Accuracy」与「最大 Balanced Accuracy」的阈值**重合**（英文类别均衡）：
+Audio **0.47**、Text **0.49**、GCA **0.54**（网格 0.05–0.95，步长 0.01）。
+
+| 模型 | ZH AUC | ZH Acc @0.5 | ZH Acc @EN-thr | ZH BalAcc @EN-thr | ZH BalAcc @0.5 |
+|---|---|---|---|---|---|
+| Audio-only | .436 | .487 | .487 | .535 | .532 |
+| Text-only | .593 | .500 | **.512** | **.560** | .540 |
+| Multimodal GCA | **.667** | .438 | .438 | .500 | .500 |
+
+> **排序能力 GCA > Text > Audio，但阈值校准 Text 最好、GCA 最差。** GCA 的中文概率整体被推高到阈值以上（阳性率 100%），换英文阈值也救不回来；Text 是三者里唯一把 AUC 和阈值敏感指标都做到「可用」的。
+> ⚠️ 跨语言下 AUC 高 ≠ 可用，必须**分开报告阈值敏感指标**。这些中文格的文本侧是 `distil`(英) → `chinese`(bert-base-chinese)，跨语料跨编码器，语言与域不可分离。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# 训练（3 个模态，各 5 折，约 5 分钟）
+$PYTHON modules/train.py --config configs/ablation_audio.yaml   # cwd=modules + WANDB_MODE=disabled
+$PYTHON modules/train.py --config configs/ablation_text.yaml
+$PYTHON modules/train.py --config configs/ablation_gca.yaml
+# 评估（EN 5 折各自 val / ZH 零样本）：见 modules/logs/matrix_eval_{train,test}.json
+# 阈值迁移：见 modules/logs/matrix_threshold_test.json
+```
+
+> **评估器修复**：`evaluate.py` 的 `--textual-model ''` 现在会被原样保留（原 `or paths.TEXT_MODEL` 会把 audio-only 误当多模态、去读不存在的文本特征）。这是评估单模态的必要修复。
+
+---
+
+## 注意力方向消融：A→T vs T→A vs BCA（2026-10-03）
+
+**问题**：论文在**英文**上选出的最佳方向是 **A→T**（音频 Q、文本 K/V）。这个方向在多语言/跨语言下是否仍然最优？
+
+- **实现**：`networks/model.py` 的 `CrossAttentionTransformerEncoder` 新增 `model.query_modality`（`'audio'` 默认 = A→T；`'text'` = T→A）；BCA 复用已有的 `BidirectionalCrossAttentionTransformerEncoder`（两向各跑一次再相加）。
+- **配置**：`configs/ablation_gca.yaml`（A→T，`run_tag=abl`）、`ablation_gca_ta.yaml`（T→A）、`ablation_gca_bca.yaml`（BCA）
+- **结果目录**：`logs/distil_wav2vec2_pause_gated_{abl,ta,bca}/`
+- 其余全同：`distil`+`wav2vec2`、`gated=true`、`loss` 选点、5 折、seed 42
+
+| Fusion | EN AUC | EN BalAcc@.5 | EN 阈值 | EN Acc@thr | ZH AUC | ZH BalAcc@.5 | ZH BalAcc@EN-thr | ZH Acc@.5 |
+|---|---|---|---|---|---|---|---|---|
+| **A→T**（论文方向） | .879 | .784 | 0.54 | .804 | .667 | .500 | .500 | .438 |
+| **T→A** | .881 | .784 | 0.42 | .809 | .620 | .500 | .500 | .438 |
+| **BCA** | .879 | **.822** | 0.50 | **.821** | **.703** | .500 | .500 | .438 |
+
+> EN 为英文 OOF 概率（235 条，每折 checkpoint 评自己那折 val）；ZH 为中文 test 5 折集成概率（80 条）；阈值在英文 OOF 上按最大 Acc 选（最大 BalAcc 阈值重合）。
+
+**结论**
+
+1. **英文上方向几乎无差别**：三者 AUC 都是 ~.88，BalAcc 差异很小（BCA 略高）。论文声称的「A→T 最佳」在这个口径下**证据其实很弱**。
+2. **跨语言上方向有意义，但结论与英文不同**：ZH AUC **BCA(.703) > A→T(.667) > T→A(.620)**。即论文在英文选出的 A→T **并非跨语言最优**，双向注意力迁移更好。
+3. **方向救不了更根本的问题**：三个方向在中文的 5 折集成概率**全部高到任意合理阈值之上（阳性率 100%）**，ZH Acc 都是 .438、Balanced Acc 都是 .500。换方向只改善**排序（AUC）**，不改善**校准塌缩**。
+4. 因此跨语言的主矛盾是**阈值/分布偏移**（见上节阈值迁移），而不是注意力方向；若要在方向上做文章，BCA 是更值得保留的选项。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# A→T 已在上节训练；本次补 T→A / BCA（各 5 折，约 4 分钟）
+$PYTHON modules/train.py --config configs/ablation_gca_ta.yaml    # cwd=modules + WANDB_MODE=disabled
+$PYTHON modules/train.py --config configs/ablation_gca_bca.yaml
+# 评估：modules/logs/direction_eval_test.json
+```
+
+---
+
+## XLM-R + XLS-R：模态消融 + 方向消融（2026-10-03）
+
+**动机**：上一节用 `distil`(英) → `chinese`(bert-base-chinese) 做跨语言，文本侧两侧是**不同编码器**，语言与域无法分离。换成多语言 **XLM-R + XLS-R** 后，train(英)/test(中) 的文本特征都是 `xlmr`（同一编码器），才是真正的零样本跨语言对照。
+
+- **特征**：`data/{train,test}/feat_xlmr_xlsr/`（文本 `<uid>xlmr_pauses.pt`，音频 `<uid>xlmr_pauses_xlsr.pt`）
+- **配置**：`configs/xlmr_xlsr_audio.yaml`、`xlmr_xlsr_text.yaml`、`xlmr_xlsr_gca_at.yaml`、`xlmr_xlsr_gca_ta.yaml`、`xlmr_xlsr_gca_bca.yaml`
+- **结果目录**：`logs/xlsr_pause/`、`logs/xlmr_pause/`、`logs/xlmr_xlsr_pause_gated_{abl,ta,bca}/`
+- 其余全同：`pauses=true`、`max_length=512`、`loss` 选点、5 折、seed 42、`gated=true`（多模态）
+
+### 模态消融
+
+| Model | EN Acc | EN AUC | EN Bal | ZH AUC | ZH Acc@.5 | ZH Bal@.5 | ZH Acc@ENthr | ZH Bal@ENthr |
+|---|---|---|---|---|---|---|---|---|
+| Audio-only | .570 | .657 | .578 | **.305** | .537 | .478 | .525 | .467 |
+| Text-only | **.766** | **.853** | .765 | **.648** | .475 | .533 | .475 | .533 |
+| **GCA A→T** | .757 | .849 | .763 | .623 | **.600** | **.597** | **.600** | **.597** |
+
+### 方向消融
+
+| Fusion | EN AUC | EN Bal | EN thr | ZH AUC | ZH Bal@.5 | ZH Bal@ENthr | ZH 阳性率@thr |
+|---|---|---|---|---|---|---|---|
+| **A→T**（论文方向） | .849 | .763 | 0.50 | **.623** | **.597** | **.597** | .46 |
+| T→A | .773 | .681 | 0.48 | .475 | .416 | .416 | .24 |
+| BCA | **.853** | **.785** | 0.50 | .514 | .459 | .459 | .28 |
+
+> EN 为英文 OOF 概率（235 条）；ZH 为中文 test 5 折集成（80 条）；阈值在英文 OOF 上按最大 Acc 选。
+
+### 结论（与 distil+wav2vec2 对比）
+
+1. **论文的 A→T 方向在多语言设定下英文与跨语言都最优**：EN 上 A→T ≈ BCA > T→A；ZH 上 A→T（AUC .623 / Bal .597）明显优于 BCA（.514 / .459）和 T→A（.475 / .416）。**上一节「BCA 跨语言更好」是英文文本编码器塌缩造成的假象**，多语言编码器下不成立。
+2. **跨语言塌缩大幅缓解**：GCA A→T 中文 Acc/Bal **.600/.597，高于多数类 56.25%**，阳性率 .46 校准正常；对比 distil 版 GCA（阳性率 100%、Acc .438、Bal .500）——**多语言编码器比换注意力方向重要得多**。
+3. **Audio-only（XLS-R）跨语言最差**：ZH AUC **.305**（远低于随机）、阳性率 .04（几乎全判阴性）。XLS-R 虽多语言预训练，但缺乏英文任务微调时声学迁移很差。
+4. **Text-only 排序最高（AUC .648）但校准差**：EN 阈值迁移后阳性率 .96，Acc 反降到 .475。**多模态 GCA(A→T) 是唯一跨语言上排序与校准同时在线的配置**。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# 5 个实验各 5 折（约 18 分钟）
+$PYTHON modules/train.py --config configs/xlmr_xlsr_audio.yaml   # cwd=modules + WANDB_MODE=disabled
+$PYTHON modules/train.py --config configs/xlmr_xlsr_text.yaml
+$PYTHON modules/train.py --config configs/xlmr_xlsr_gca_at.yaml
+$PYTHON modules/train.py --config configs/xlmr_xlsr_gca_ta.yaml
+$PYTHON modules/train.py --config configs/xlmr_xlsr_gca_bca.yaml
+# 评估：modules/logs/xlmr_eval_test.json
+```
+
+---
+
+## Token-level 对齐消融：Global Concat vs Token-level GCA（2026-10-03）
+
+**问题**：跨语言时到底是 **global 多语言表示** 更稳，还是 **word-level audio-text 对齐** 真能提供额外信息？
+
+- **Global Concat**：`XLS-R → mean ┐`、`XLM-R → mean ┘ → concat → MLP`。新增架构 `global_concat`
+  （`networks/model.py: GlobalConcatFusionEncoder`），音频先投影到 768，两路各自 mean pooling 后拼接送 MLP。
+- **Token-level GCA**：当前 CogniAlign（A→T 门控交叉注意力），复用 `logs/xlmr_xlsr_pause_gated_abl/`。
+- **配置**：`configs/xlmr_xlsr_global.yaml`；结果目录 `logs/xlmr_xlsr_pause_global/`
+- 其余全同：XLM-R+XLS-R、`feat_xlmr_xlsr/`、`loss` 选点、5 折、seed 42。
+
+| Fusion | EN Acc | EN AUC | EN Bal | EN thr | ZH AUC | ZH Acc@.5 | ZH Bal@.5 | ZH Acc@ENthr | ZH Bal@ENthr | ZH 阳性率 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **Global Concat** | .583 | .674 | .587 | 0.44 | **.401** | .537 | .487 | .500 | .470 | .26 |
+| **Token-level GCA** | **.757** | **.849** | **.763** | 0.50 | **.623** | **.600** | **.597** | **.600** | **.597** | .46 |
+| **Δ(Token − Global)** | **+.174** | **+.175** | **+.176** | | **+.223** | +.062 | **+.110** | +.100 | **+.127** | |
+
+> EN 为英文 OOF 概率（235）；ZH 为中文 test 5 折集成（80）；阈值在英文 OOF 上选。
+
+**结论**
+
+1. **word-level 对齐是必要的，且是主导因素**：英文 +17.4pp Acc / +.175 AUC；跨语言 **+.223 AUC / +.127 Balanced Acc**。
+2. **「global 多语言表示更稳」不成立**：Global Concat 在中文上 AUC **.401（低于随机）**、Balanced Acc .487（<.5），几乎没有跨语言迁移；整句均值拼接丢掉了词级时序与跨模态对应。
+3. Token-level GCA 是唯一在英文和跨语言上都大幅领先、且中文 Acc/Bal 高于多数类（56.25%）的配置。
+4. ⚠️ **混淆项**：两者差异同时包含「有无对齐」与「融合网络容量/结构」（Global 只有 mean+MLP，Token 是注意力编码器）。要严格把「对齐」单独归因，需要补一个**同结构、但打乱对齐（shuffled）**的对照；当前结论只能确定「global mean+concat 这套简单方案不行」。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# Global Concat（Token-level GCA 已在上一节训练）
+$PYTHON modules/train.py --config configs/xlmr_xlsr_global.yaml   # cwd=modules + WANDB_MODE=disabled
+# 评估：modules/logs/align_eval_test.json
+```
+
+---
+
+## 跨语言分布 / 阈值对齐（post-hoc，2026-10-03）
+
+**问题**：跨语言最大缺口是**校准**（Text-only 中文阳性率 .96，Acc 反低于多数类；Audio-only 阳性率 .04）。这里做**不重训模型**的事后对齐，在 XLM-R+XLS-R 的 GCA A→T 与 Text-only 上对比：
+
+- **阈值迁移**：在英文 OOF 上选阈值再套中文（`ENthr`）。
+- **温度缩放**：在英文 OOF 上拟合温度 T，套到中文。
+- **先验平移（prior-shift）**：把中文预测阳性率对齐到英文患病率（121/235=51.5%），无标签（只用中文概率分布）。
+- **分布对齐（featalign）**：目标→源逐维仿射 `x' = (x−μ_zh)/σ_zh·σ_en+μ_en`（音频零行 padding 还原），把中文特征统计映射到英文。
+
+> 均为**转导式**（用到无标签中文特征/概率分布），未用任何中文标签；`σ` 为逐维（对角），N=80 不足以估计 768/1024 维全协方差（CORAL 会病态）。
+
+| 条件（ZH test 80，5 折集成） | GCA A→T AUC | GCA Acc | GCA Bal | Text AUC | Text Acc | Text Bal |
+|---|---|---|---|---|---|---|
+| raw @0.5 | .623 | .600 | .597 | .648 | .475 | .533 |
+| raw @ENthr | .623 | .600 | .597 | .648 | .475 | .533 |
+| temp(EN) @0.5 | .623 | .600 | .597 | .648 | .475 | .533 |
+| prior-shift @0.5 | .623 | .613 | .611 | .648 | .600 | .638 |
+| featalign @0.5 | .639 | .450 | .511 | .663 | .613 | .637 |
+| **featalign + prior-shift** | **.639** | **.637** | **.668** | **.663** | **.675** | **.686** |
+
+> 阳性率：GCA raw .46 → featalign .99 → +prior .72；Text raw .96 → featalign .68 → +prior .56。
+
+**结论**
+
+1. **温度缩放无效**（T≈1）；**阈值迁移也无效**（英文阈值≈0.5）。模型的问题不是置信度温度，而是**类别先验/分布整体偏移**。
+2. **先验平移**是单个最有效的校准手段：Text-only Balanced Acc .533→.638（+10.5pp），GCA .597→.611。
+3. **分布对齐**主要改善**排序（AUC）**（GCA +.016、Text +.015），但单独用会把校准推坏（GCA 阳性率 .46→.99，Acc 反降）。
+4. **分布对齐 + 先验平移**在所有指标上一致最好：GCA A→T 中文 **AUC .639 / Acc .637 / Bal .668**；Text-only **.663 / .675 / .686**。Text-only 从「校准崩溃」变成三组里中文 Balanced Acc 最高。
+5. 因此跨语言缺口**可以用纯事后、无标签的转导对齐显著缩小**；其中「对齐特征分布」管排序、「对齐先验」管阈值，缺一不可。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign/modules
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+COGNIALIGN_SPLIT=test $PYTHON /tmp/opencode/calib_eval.py   # 依赖先跑过 xlmr_eval.py 的英文 OOF
+# 结果：modules/logs/calib_eval_test.json
+```
+
+---
+
+## 中文少样本微调：8-shot / 中英混合 / 遗忘 / 编码器对比（2026-10-03）
+
+**问题**：英文（train 235）训好的模型，能不能只靠**极少量带标签中文**微调把中文做起来？加英文 rehearsal 能不能防遗忘？中文文本编码器用 `chinese`(bert-base-chinese) 还是共享的 `xlmr` 更好？
+
+- **中文数据**：`data/test/` 80 条（健康 45 / 患病 35）。
+- **8-shot 划分**（`tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4`）：
+  训练 8 条（健康 `0042,0008,0065,0085`；患病 `0079,0015,0011,0067`）；
+  **验证 72 条**（健康 41 / 患病 31）—— 下面所有中文指标都在同一批 72 条上。
+- **英文 rehearsal / 遗忘划分**（`tools/make_rehearsal_split.py --apply --pool-fold 0 --per-class 4 --seed 42`）：
+  从英文 fold0 验证集 47 条里抽 8 条（健康 `adrso173,006,260,264`；患病 `adrso199,047,043,132`）进训练，
+  **其余 39 条只用于测遗忘**。
+- **起点**（`train.init_checkpoint`，实际加载 `model_fold_0.pth`）：
+  `logs/distil_wav2vec2_pause`（英文 distil+wav2vec2，accuracy 选点）/
+  `logs/xlmr_wav2vec2_pause`（英文 xlmr+wav2vec2，loss 选点）。
+- **微调**：编码器是冻结的预计算特征，只训融合头；lr 2e-5、batch 8、≤50 epoch、loss 早停。
+
+### ① 单次结果（seed 42）：8 条中文把 distil 起点从 AUC .63 拉到 .81
+
+| 中文特征 | 起点 | 训练集 | ZH72 Acc | ZH72 AUC | ZH72 F1 |
+|---|---|---|---|---|---|
+| chinese | distil | 零样本 | .431 | .633 | .602（全判阳性） |
+| **chinese** | **distil** | **8 中** | **.750** | **.810** | **.719** |
+| chinese | distil | 8 中 + 47 英 | .736 | .790 | .708 |
+| xlmr | xlmr | 8 中 | .528 | .548 | .585 |
+| xlmr | xlmr | 8 中 + 8 英 | .514 | .561 | .578 |
+
+### ② 英文遗忘：主要是**阈值/校准漂移**，不是排序退化
+
+distil 臂在**英文 fold0 训练集 188 条**（起点背过）上：
+
+| | Acc | BalAcc | AUC | F1 | 阳性率 |
+|---|---|---|---|---|---|
+| 微调前 | .915 | .917 | .968 | .911 | .441 |
+| 8 中（纯中文） | .856 | .860 | .966 | .840 | .383 |
+| 8 中 + 47 英 | .862 | .860 | .945 | .871 | .559 |
+
+xlmr 臂在**英文 39 条遗忘集**上：
+
+| | Acc | BalAcc | AUC | F1 | 阳性率 |
+|---|---|---|---|---|---|
+| 微调前 | .744 | .749 | .818 | .688 | .308 |
+| 8 中（纯中文） | .487 | .500 | .851 | **.000** | **.000** |
+| 8 中 + 8 英 | .615 | .624 | .843 | .444 | .179 |
+
+> 纯中文微调后英文 **AUC 反而更高**（.851/.966），但 0.5 阈值下阳性率塌到 0（全判健康）、F1 归零。
+> 加英文 rehearsal 能把阳性率从 0 拉回 .18、F1 从 0 拉到 .44，**方向对但幅度有限**。
+> ⇒ 跨语言/微调的"遗忘"几乎全是校准问题；**报指标必须同时报阳性率/平衡准确率**，只看 AUC 会被误导。
+
+### ③ 编码器对比：xlmr 共享反而更差（5 seed）
+
+**先修一个训练缺陷**：`train.py` 原先硬编码 `num_warmup_steps=20`。8 样本 batch=8 时每 epoch 只有 1 个 step，第一个 step 落在 warmup 的 step 0，**学习率恰好为 0 → epoch 1 等于没训**；验证 loss 不降时早停会把"等于初始权重"的 epoch 1 当 best 存下（实测 5 seed 里 3 个中招）。已改成配置项 `train.warmup_steps`（默认 20 = 旧行为），few-shot 设 **0**（step 0 直接满学习率；注意 `warmup=1` 时 step 0 仍为 0）。
+
+修复后，**同一 8/72 划分、同一超参，只换中文特征与对应起点**，各 5 seed（`COGNIALIGN_SEED=0..4`）：
+
+| 中文特征 + 起点 | AUC | Acc | BalAcc | F1 |
+|---|---|---|---|---|
+| **chinese + distil 起点** | **.813 ± .001** | .764 ± .009 | .771 ± .007 | .751 ± .005 |
+| **xlmr + xlmr 自己的起点** | **.590 ± .055** | .544 ± .056 | .572 ± .045 | .593 ± .025 |
+
+AUC 逐 seed：chinese = `.813/.815/.813/.813/.814`；xlmr = `.655/.539/.573/.656/.529`。
+
+> **即使换成 xlmr 自己的预训练权重，xlmr 仍稳定低 ~0.22 AUC**；xlmr 里训练成功的 seed 也仅 ~.63–.66，仍低于 chinese **最差**的 .813。
+> xlmr 的大 std 大半来自"2/5 个 seed 几乎没训动"（`Best epoch=1`、验证 loss 从第 1 步后不再下降）——这已不是 warmup 问题，是这套特征下融合头降不下去。
+
+### ④ 为什么：特征可分性一样，是"几何"不匹配
+
+冻结特征 + 线性探针（中文 80 条，5 折 AUC）：
+
+| 特征 | AUC |
+|---|---|
+| chinese 文本 / xlmr 文本 | .902 / .884 |
+| 音频 w2v2（feat_distil）/（feat_xlmr_wav2vec2） | .888 / .905 |
+| 双模态 chinese / xlmr | .944 / .915 |
+
+两者都可分 —— **不是 xlmr 表示差**。差异在几何：
+
+| | 音频有效行中位 | 音频每行范数 | 文本每行范数 |
+|---|---|---|---|
+| 英文起点训练时（distil+w2v2） | ~138 | ~1.5 | ~9 |
+| 中文 chinese 特征 | ~132 | 1.45 | 20.7 |
+| 中文 xlmr 特征 | ~240 | 2.53 | 19.2 |
+
+xlmr 把中文切成 ~2 倍子词，音频段数/长度随之翻倍（132→240）、幅值大 1.7×；起点那套头是在 ~130 长度上学的，8 条样本修不回来。2×2 零样本（起点 × 特征，seed 42）也都落在 .50–.63（CI 互相重叠）：distil+chinese `.633`、distil+xlmr `.511`、xlmr+chinese `.497`、xlmr+xlmr `.530`。
+
+> **结论**：`chinese`（按字、序列短、和起点同构）在这条 8-shot 流程里稳定把中文 AUC 拉到 .81；`xlmr` 无论配哪个起点、无论 warmup 怎么设，只有 ~.53–.66。**"共享 XLM-R"在这个微调设置下没有收益，反而是负作用** —— "共享编码器"的收益属于**零样本迁移**层面（见 `CROSSLINGUAL_DIAGNOSIS.md` 的 0.615 vs 0.253），一旦给少量标签微调，瓶颈变成"预训练头与新特征几何是否合拍"。
+
+### ⑤ 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# 划分
+cd modules
+COGNIALIGN_SPLIT=test  $PYTHON tools/make_fewshot_split.py  --apply --fold 0 --seed 42 --per-class 4
+COGNIALIGN_SPLIT=train $PYTHON tools/make_rehearsal_split.py --apply --pool-fold 0 --per-class 4 --seed 42
+# 单跑（chinese 特征 + distil 起点）；5 seed 把 COGNIALIGN_SEED 扫 0..4
+COGNIALIGN_SPLIT=test $PYTHON train.py --config configs/finetune_zh_8shot.yaml
+# xlmr 臂（xlmr 自己的起点）
+COGNIALIGN_SPLIT=test $PYTHON train.py --config configs/finetune_zh8_xlmrw2v.yaml
+# 中文 72 条评估
+COGNIALIGN_SPLIT=test $PYTHON evaluate.py --config configs/finetune_zh_8shot.yaml \
+    --textual-model chinese --checkpoint logs/chinese_wav2vec2_pause_ft8 --fold 0
+# 英文遗忘（39 条，微调前/后各跑一次）
+COGNIALIGN_SPLIT=train $PYTHON evaluate.py --config configs/xlmr_wav2vec2.yaml \
+    --textual-model xlmr --checkpoint logs/xlmr_wav2vec2_pause/model_fold_0.pth \
+    --uids-file en_rehearsal_forget_uids.npy
+```
+
+### 本次新增 / 改动
+
+- `train.py`：`num_warmup_steps` → `train.warmup_steps`（默认 20）；调用 `load_init_weights()`。
+- `core/utils.py`：新增 `load_init_weights()`（`train.init_checkpoint` 支持文件或目录，目录取 `model_fold_<折>.pth`）。
+- `dataset/dataset.py`：`dataset.mix_extra` 支持从别的 split 并入数据；新增 `InterleavedBatchSampler`（每 batch 按来源均衡取样）。
+- `evaluate.py`：新增 `--uids-file`（按自定义 uid 列表评估，不动已有折文件）。
+- `paths.py`：新增 `splits_dir_for()` / `labels_csv_for()`。
+- `tools/make_fewshot_split.py`、`tools/make_rehearsal_split.py`：新增。
+- `configs/finetune_zh_8shot.yaml`、`finetune_zh8_enrehearse.yaml`、`finetune_zh8_xlmrw2v.yaml`、`finetune_zh8_en8_xlmrw2v.yaml`：新增（均 `warmup_steps: 0`）。

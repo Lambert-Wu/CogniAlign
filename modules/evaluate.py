@@ -225,6 +225,10 @@ def main():
                          '这才是模型的真实水平；测全集会把背过的样本也算进去，分数虚高')
     ap.add_argument('--on-train', action='store_true',
                     help='配合 --fold：改测这一折的训练集部分（背过的样本，只做 sanity check）')
+    ap.add_argument('--uids-file', default=None,
+                    help='只测这个 .npy 里的 uid（相对 <当前split>/splits/ 或绝对路径）。'
+                         '用于"从某折里抽一部分当训练、剩下的专门测遗忘"这类自定义评估集 —— '
+                         '不必也不该去覆盖已有的 val_uids<n>.npy。与 --fold 二选一')
     ap.add_argument('--save-preds', default=None,
                     help='每条录音的预测存哪，默认 logs/eval_preds_<时间戳>.csv')
     args = ap.parse_args()
@@ -233,7 +237,10 @@ def main():
     split = paths.SPLIT
     # split → 用哪个文本模型的映射已经在 paths.py 算好了（paths.TEXT_MODEL），
     # 这里不再重写一遍 —— 以前两处各写一份，改一处忘一处就会不一致
-    textual = args.textual_model or paths.TEXT_MODEL
+    # ⚠️ 用 is not None 而不是 or：`--textual-model ''` 是合法输入，表示
+    #    **单模态（只用音频）**，要原样保留空串。用 `or` 会被 paths.TEXT_MODEL
+    #    盖掉，把 audio-only 模型错当成多模态、去读根本不存在的文本特征。
+    textual = args.textual_model if args.textual_model is not None else paths.TEXT_MODEL
 
     print('当前 split : %s（%s）' % (split, paths.SPLIT_ROOT))
     print('权重       : %s' % args.checkpoint)
@@ -241,7 +248,7 @@ def main():
     print('设备       : %s' % device)
 
     trained_textual = ckpt_textual_model(args.checkpoint)
-    if trained_textual and trained_textual != textual:
+    if trained_textual and textual and trained_textual != textual:
         print('\n⚠️⚠️ 语种不一致，分数要打折看：')
         print('   这个权重是用【%s】（英文）训的，而要测的特征是用【%s】（中文）提的。'
               % (trained_textual, textual))
@@ -256,35 +263,51 @@ def main():
     uids, features, labels = read_CSV(cfg)
     print('读到 %d 条：%s ...' % (len(uids), ', '.join(uids[:5])))
 
-    # 只保留某一折的验证集 / 训练集
-    if args.fold is not None:
-        part = 'train' if args.on_train else 'val'
-        # ⚠️ 这里以前写死「--fold 只能配 train 用」，理由是"折划分只有 train 有"。
-        #    那个前提已经变了：现在 test（中文）也能有自己的折划分
-        #    （paths.SPLITS_DIR 跟着 split 走，见 tools/make_splits.py），
-        #    「用中文 80 条自己切 5 折训练」这个实验就要在 test 下用 --fold。
-        #    所以改成**看文件在不在**：划分文件存在就允许，不存在才报错。
-        split_path = os.path.join(paths.SPLITS_DIR, '%s_uids%d.npy' % (part, args.fold))
-        if not os.path.exists(split_path):
-            raise SystemExit(
-                '找不到这一折的划分文件：%s\n'
-                '  · 当前 split=%s，划分目录 = %s\n'
-                '  · 该 split 还没做过 5 折划分？跑一下：\n'
-                '      COGNIALIGN_SPLIT=%s python modules/tools/make_splits.py --apply'
-                % (split_path, split, paths.SPLITS_DIR, split))
+    # 只保留指定的样本子集：--fold（某一折的 val/train）或 --uids-file（自定义 uid 列表）
+    if args.fold is not None and args.uids_file:
+        raise SystemExit('--fold 和 --uids-file 只能给一个')
+    if args.fold is not None or args.uids_file:
+        if args.fold is not None:
+            part = 'train' if args.on_train else 'val'
+            # ⚠️ 这里以前写死「--fold 只能配 train 用」，理由是"折划分只有 train 有"。
+            #    那个前提已经变了：现在 test（中文）也能有自己的折划分
+            #    （paths.SPLITS_DIR 跟着 split 走，见 tools/make_splits.py），
+            #    「用中文 80 条自己切 5 折训练」这个实验就要在 test 下用 --fold。
+            #    所以改成**看文件在不在**：划分文件存在就允许，不存在才报错。
+            split_path = os.path.join(paths.SPLITS_DIR, '%s_uids%d.npy' % (part, args.fold))
+            if not os.path.exists(split_path):
+                raise SystemExit(
+                    '找不到这一折的划分文件：%s\n'
+                    '  · 当前 split=%s，划分目录 = %s\n'
+                    '  · 该 split 还没做过 5 折划分？跑一下：\n'
+                    '      COGNIALIGN_SPLIT=%s python modules/tools/make_splits.py --apply'
+                    % (split_path, split, paths.SPLITS_DIR, split))
+            range_tag = '第 %d 折的%s集' % (args.fold, '训练' if args.on_train else '验证')
+            context = ('训练时见过，分数会偏高' if args.on_train
+                       else '训练时没见过 ← 真实水平')
+        else:
+            # 自定义 uid 列表：相对路径按**当前 split 的划分目录**解析，和 --fold 一致。
+            # 用途：从某折里抽一部分当训练、剩下的专门测遗忘（见 make_rehearsal_split.py）。
+            split_path = args.uids_file
+            if not os.path.isabs(split_path):
+                split_path = os.path.join(paths.SPLITS_DIR, split_path)
+            if not os.path.exists(split_path):
+                raise SystemExit(
+                    '找不到 uid 列表文件：%s\n  （相对路径按 %s 解析）'
+                    % (split_path, paths.SPLITS_DIR))
+            range_tag = '自定义 uid 列表（%s）' % os.path.basename(split_path)
+            context = '按给定 uid 过滤'
         # 不加 allow_pickle：划分文件是定长字符串数组（<U8），和英文那份格式一致。
         # 加了反而会掩盖"格式写错"这类问题。
         sel = np.load(split_path)
         sel_set = {str(u) for u in sel}
         keep = [i for i, u in enumerate(uids) if str(u) in sel_set]
         if not keep:
-            raise SystemExit('这一折里没有能匹配上的样本（%s_uids%d.npy）' % (part, args.fold))
+            raise SystemExit('列表里没有能匹配上的样本：%s' % split_path)
         uids = [uids[i] for i in keep]
         features = [features[i] for i in keep]
         labels = [labels[i] for i in keep]
-        print('限定范围   : 第 %d 折的%s集，%d 条（%s）'
-              % (args.fold, '训练' if args.on_train else '验证', len(uids),
-                 '训练时见过，分数会偏高' if args.on_train else '训练时没见过 ← 真实水平'))
+        print('限定范围   : %s，%d 条（%s）' % (range_tag, len(uids), context))
         n_ad = sum(1 for l in labels if float(l) > 0.5)
         print('           健康 %d 人 / 患病 %d 人' % (len(labels) - n_ad, n_ad))
 

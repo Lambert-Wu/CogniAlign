@@ -60,6 +60,48 @@ def apply_encoder_meta(config):
     return config
 
 
+def load_init_weights(model, config, fold, device):
+    """可选：从已有权重继续训练（微调），而不是随机初始化。
+
+    为什么需要：train.py 原来只会 `model_module.build()` 随机初始化再训。
+    做少样本微调时，我们要的是「**拿英文训好的权重当起点，再用几条中文继续训**」，
+    而不是从零学 —— 8 条样本从零训没有意义。
+
+    配置项 `train.init_checkpoint`：
+      · 空 / 不写        —— 不加载，保持随机初始化（原行为，不影响任何已有实验）
+      · 指向 .pth 文件   —— 直接加载这个文件，所有折都用同一份起点
+      · 指向目录         —— 取目录里的 `model_fold_<fold>.pth`；没有才退回 `model.pt`
+                            （和 train.py 存权重的命名一致，方便"第 k 折起点配第 k 折"）
+
+    相对路径按 `modules/` 解析（train.py 就在那里，也和各处 `--config` 的口径一致）。
+    权重结构和当前配置不符时会当场报错（strict=True），不静默半加载。
+    """
+    t = config.get('train', {}) or {}
+    raw = str(t.get('init_checkpoint', '') or '').strip()
+    if not raw:
+        return model
+
+    modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = raw if os.path.isabs(raw) else os.path.join(modules_dir, raw)
+    if os.path.isdir(path):
+        cand = os.path.join(path, 'model_fold_%d.pth' % fold)
+        if not os.path.exists(cand):
+            cand = os.path.join(path, 'model.pt')
+        path = cand
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            'train.init_checkpoint 指向的权重不存在：\n    %s\n'
+            '（相对路径按 modules/ 解析；目录里应有 model_fold_<折>.pth 或 model.pt）'
+            % path)
+
+    sd = torch.load(path, map_location=device)
+    missing, unexpected = model.load_state_dict(sd, strict=True)
+    print('[微调] 初始权重：%s' % path)
+    print('[微调] 已加载 %d 个参数块（缺失 %d / 多余 %d）'
+          % (len(sd), len(missing), len(unexpected)))
+    return model
+
+
 def save_config(config):
     """Save the configuration to a YAML file, ensuring log directories exist."""
 

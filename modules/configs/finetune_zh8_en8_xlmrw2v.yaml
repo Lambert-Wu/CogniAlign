@@ -1,0 +1,108 @@
+# ── 中文少样本微调（共享 XLM-R 文本 + wav2vec2 音频）+ 英文 rehearsal ────
+#
+# 和 finetune_zh8_enrehearse.yaml 的区别
+# --------------------------------------
+# ① 编码器换成 **xlmr（文本）+ wav2vec2（音频）**：中英**共用同一个文本编码器**
+#    （原来是 distil vs bert-base-chinese 两个不同模型）。诊断文档实测：
+#    跨语言 AUC，共享编码器 0.615 vs 两个不同编码器 0.253 —— 文本共享是硬前提。
+#    音频本来就是中英共用一个 wav2vec2，不动。
+# ② rehearsal 从"整折 47 条英文"改成"只抽 8 条"，**留 39 条专门测遗忘**。
+#
+# 微调训练集 = 8 中文 + 8 英文 = 16 条；每个 batch 4 中 + 4 英。
+# 中文验证 = 72 条（test/splits/val_uids0.npy）。
+# 英文遗忘测试 = 39 条（train/splits/en_rehearsal_forget_uids.npy，只评估不训练）。
+#
+# 划分怎么来
+# ----------
+#   # 中文 8/72：
+#   COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4
+#   # 英文：从 fold 0 验证集 47 条里抽 8 条 rehearsal，其余 39 条当遗忘测试：
+#   COGNIALIGN_SPLIT=train python modules/tools/make_rehearsal_split.py --apply --pool-fold 0 --per-class 4 --seed 42
+#
+# 跑法
+# ----
+#     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh8_en8_xlmrw2v.yaml
+#     # 中文 72 条：
+#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#         --config configs/finetune_zh8_en8_xlmrw2v.yaml --textual-model xlmr \
+#         --checkpoint logs/xlmr_wav2vec2_pause_ft8en8 --fold 0
+#     # 英文遗忘（39 条，“之前/之后”各跑一次，--checkpoint 换初始权重或微调权重）：
+#     COGNIALIGN_SPLIT=train python modules/evaluate.py \
+#         --config configs/xlmr_wav2vec2.yaml --textual-model xlmr \
+#         --checkpoint logs/xlmr_wav2vec2_pause/model_fold_0.pth \
+#         --uids-file en_rehearsal_forget_uids.npy
+#
+# ⚠️ evaluate.py 的 --textual-model 必须显式写 xlmr：不写会按 split 默认
+#    （train→distil / test→chinese）去拼文件名，和本配置的 xlmr 对不上。
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'xlmr_wav2vec2'
+  text_fallback: 'xlmr'
+
+  # 并入英文 rehearsal：只取 en_rehearsal_rehearsal_uids.npy 那 8 条。
+  mix_extra:
+    - split: 'train'
+      textual_model: 'xlmr'
+      audio_model: 'wav2vec2'
+      features_dir: 'xlmr_wav2vec2'
+      pauses: true
+      uids_file: 'en_rehearsal_rehearsal_uids.npy'   # 相对 data/train/splits/
+
+encoders:
+  text:
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  # 英文起点（xlmr + wav2vec2，5 折，RESULTS.md 里的 xlmr_wav2vec2_pause）。
+  # 权重结构和本配置逐参数块一致。
+  init_checkpoint: 'logs/xlmr_wav2vec2_pause'
+  # batch = 4 中 + 4 英（InterleavedBatchSampler）。
+  batch_size: 8
+  num_epochs: 50
+  learning_rate: 0.00002
+  # warmup 步数（默认 20）。few-shot 每 epoch 只有 1 个 step，必须设 0：
+  # warmup>=1 时第 1 个 step 的学习率仍为 0，早停可能把"等于初始权重"的
+  # epoch 1 当成 best 存下来（见 train.py set_up 里的说明）。
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 10
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 1
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  # 结果目录 = logs/xlmr_wav2vec2_pause_ft8en8/
+  run_tag: 'ft8en8'
+
+model_name: ''

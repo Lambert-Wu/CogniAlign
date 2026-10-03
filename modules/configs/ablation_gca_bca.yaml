@@ -1,0 +1,70 @@
+# ── 方向消融：BCA（双向 Cross-Attention），distil+wav2vec2 + 门控 ────────
+#
+# 和 ablation_gca.yaml（单向 A→T）配对，用 networks/model.py 的
+# BidirectionalCrossAttentionTransformerEncoder：
+#   · 第一路：音频 Q、文本 K/V（= A→T）
+#   · 第二路：文本 Q、音频 K/V（= T→A）
+#   · 两路输出相加（fusion 非 concat/sum/mul/mean 时默认相加）
+# 用来判断「单向方向 vs 双向」对跨语言是否有差别。
+# 其余全同：gated=true、loss 选点、5 折、seed 42。
+#
+# 结果目录 = logs/distil_wav2vec2_pause_gated_bca/（run_tag=bca）
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'distil'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'bidirectional_cross_attention'
+  gated: true
+  run_tag: 'bca'
+
+model_name: ''
