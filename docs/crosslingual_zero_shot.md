@@ -20,6 +20,21 @@
 现状结论：**多语言文本（xlmr）是唯一明显有效的跨语言因素**；xlsr 系≈随机；
 distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 
+> ⚠️ 上表是**单跑、accuracy 选点**的旧口径。改为 **loss 选点 + 5 种子**后数量级会变；
+> 且 `xlmr_wav2vec2` 曾有对齐 bug（已修，提交 `45e6da5`/`ec66f69`）。当前口径见下。
+
+### 0.1 当前口径（loss 选点 + 5 种子；test 每种子取验证最优折）
+
+| 模型 | 英文 val F1 | 英文 val-loss | 中文 test AUC |
+|---|---|---|---|
+| distil+wav2vec2 (pause) 基准 | 0.7944 ± 0.0042 | 0.4543 ± 0.0078 | 0.519 ± 0.097 |
+| distil+wav2vec2 + **掩码池化** | **0.8021 ± 0.0069** | **0.4392 ± 0.0054** | **0.580 ± 0.051** |
+| xlmr+wav2vec2 (pause) | 0.7713（单折） | — | 0.715（单跑，待多种子） |
+
+> 选点规则本身会改数字：同一 `legacy_distil_wav2vec2`，accuracy 选点 val F1=0.837，
+> loss 选点=0.794；accuracy 选点选到更早的 checkpoint，中文 test 反而更好。**跨实验必须统一规则。**
+> 详见 `docs/RESULTS.md`。
+
 ---
 
 ## 1. 评估协议（先定死，防"隐性调 test"）
@@ -47,12 +62,14 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 
 ## 3. 分阶段实验
 
-### P0 · 基础设施（1–2 天，必做）
-- 固化第 1 节协议（选择准则、多种子、CI、阈值）。
-- 中文对齐 sanity check（skip 率、样例抽查）。
-- 给训练加 `--seed`（或环境变量），支持多种子复跑。
-- 给特征读取加"逐语言标准化"开关（默认关，便于消融）。
-- 输出目录沿用 `logs/<...>[_tag]` + `model.run_tag` 区分（已有机制）。
+### P0 · 基础设施（1–2 天，必做）—— **状态：✅ 基本完成**
+- 固化第 1 节协议（选择准则、多种子、CI、阈值）。✅ 训练/评估统一走 `feature_spec.result_names`；
+  早期止损/选点默认改 `loss`（`early_stopping_metric`）。
+- 中文对齐 sanity check（skip 率、样例抽查）。✅ `tools/check_alignment.py`（train 235/235、test 80/80 通过）。
+- 给训练加 `--seed`（或环境变量），支持多种子复跑。✅ `COGNIALIGN_SEED`（非默认种子进结果目录名 `_seed<N>`）。
+- 给特征读取加"逐语言标准化"开关（默认关，便于消融）。⬜ **未做（P2 做）**。
+- 输出目录沿用 `logs/<...>[_tag]` + `model.run_tag` 区分（已有机制）。✅ 另加 `_gated` / `_maskpool` / `_seed<N>`。
+- 评估加 bootstrap 95% CI。✅ `evaluate.py: bootstrap_ci()`。
 
 ### P1 · 表征扫描（改 `configs/*.yaml` + 重提特征；一次 ~1–2 分钟）
 - **文本**（注意：融合网络文本侧目前假定 768 维，非 768 必须先加"文本投影层"）：
@@ -70,11 +87,18 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 - 预期回答 H2。
 
 ### P3 · 模型级对齐（改 `networks/model.py` + 训练循环 `core/utils.py`）
-- **掩码池化**：`src.mean(dim=1)` → 用 attention_mask 做 masked mean。
-  现在 padding 行被平均进去，而中英 padding 比例不同 → 天然偏差。改动最小、最可能直接涨点。
-- **语言对抗 DANN**：在融合表征上加语言判别器（英文=0/中文=1，用无标签中文）。
-- **MMD/CORAL 正则**：训练时在融合空间对齐两个语言分布。
-- **目标域一致性正则**（dropout 两次前向一致）。
+- **掩码池化** ✅ **已完成，稳定正增益**：`src.mean(dim=1)` → masked mean。
+  实现：`model.masked_pooling: true`，从**投影前**的音频零行认 padding（填充=连续零前缀），
+  pooling 清零 + 除以有效行数（`networks/model.py: masked_mean`）。
+  体检（`tools/probe_padding_dilution.py`）：有效帧占比中位仅 25%，pooled 相对"只喂真帧"余弦 **0.639 → 1.000**。
+  5 种子配对：英文 val **Δloss=−0.0151（5/5 更低）**、ΔF1=+0.0077（4/5）；中文 test **ΔAUC=+0.061（5/5）**。
+  配置 `configs/legacy_distil_wav2vec2_maskpool.yaml`。**建议设为后续主配置默认。**
+- **门控融合（GCA）** ❌ **已证伪**（不在原计划内，试过）：`H=G⊙H_att+(1−G)⊙A`，
+  门控工作点**冻结在初值**（训练后 bias=初值）、被后续 FFN/分类头吸收 → 英文 val ΔF1≈0、中文 test n.s.。
+  见 `docs/RESULTS.md` "门控融合消融"。**不再投入。**
+- **语言对抗 DANN**：在融合表征上加语言判别器（英文=0/中文=1，用无标签中文）。⬜ 未做。
+- **MMD/CORAL 正则**：训练时在融合空间对齐两个语言分布。⬜ 未做。
+- **目标域一致性正则**（dropout 两次前向一致）。⬜ 未做。
 - 预期回答 H3。
 
 ### P4 · 自训练（零标签、转导）
@@ -89,8 +113,9 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 
 ---
 
-## 4. 推荐执行顺序（高 ROI 优先）
-`P0` → `P3 掩码池化` → `P1 表征扫描` → `P2 特征对齐` → `P3 DANN/MMD` → `P4 自训练` → `P5`。
+## 4. 推荐执行顺序（高 ROI 优先）—— **当前进度**
+`P0 ✅` → `P3 掩码池化 ✅` → **`P1 表征扫描`（下一步）** → `P2 特征对齐` → `P3 DANN/MMD` → `P4 自训练` → `P5`。
+（P3 门控 GCA 已试并证伪，不再计入。）
 
 ---
 
@@ -120,3 +145,14 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 ## 7. 待确认
 - 未标注中文的**规模与内容**（是否包含 test 的音频？若是 → 明确为转导；若有独立无标签集 → 可做"归纳式"适配）。
 - 论文是否需要与某篇已发表数字对齐（决定基线与语言对设定）。
+
+---
+
+## 8. 进度日志
+
+- **2026-10-02** P0 收尾：`COGNIALIGN_SEED` 多种子、`evaluate.py` bootstrap CI、`tools/check_alignment.py`；
+  修 `run_preprocess.sh -f` 未传 worker；修 `feat_xlmr_wav2vec2` 对齐 bug（重提+重训）；`StratifiedKFold`；`train.seq_length=512`。
+- **2026-10-02** 评估口径：`early_stopping_metric` 由 `accuracy` → `loss`；确认**选点规则显著影响数字**（尤其跨语言）。
+- **2026-10-03** P3 门控 GCA：实现插值式门控 + `gate_bias_init`，5 种子测 → **无效果、证伪**。
+- **2026-10-03** P3 掩码池化：实现 `model.masked_pooling`，5 种子 → **稳定正增益**（英文 val loss 5/5、中文 AUC 5/5）。
+- 结果存档：`docs/RESULTS.md`；本 plan 归档 `docs/crosslingual_zero_shot.md`。
