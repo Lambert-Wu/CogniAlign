@@ -1,6 +1,6 @@
 # CogniAlign 实验结果汇总
 
-> 生成：2026-10-02 19:50 ｜ 更新：2026-10-03（补门控 GCA 消融）
+> 生成：2026-10-02 19:50 ｜ 更新：2026-10-03（补门控 GCA 消融 + 掩码池化）
 > 命名 `{文本}_{音频}_{pause|nopause}[_{fusion}][_{pooling}][_{gated}][_{run_tag}][_seed<N>]`
 > （`core/feature_spec.result_names` 是唯一实现；fusion/pooling/gated 仅在非默认时出现，非默认种子加 `_seed<N>`）
 
@@ -119,6 +119,42 @@ nopause ΔF1 逐折 = `[-0.001, +0.107, +0.004, 0.000, -0.063]`，均值 **+0.00
 
 ---
 
+## 掩码池化（masked pooling，2026-10-03）
+
+**问题**：特征补到 512 行、短样本后面是空行，`src.mean(dim=1)` 把空行也平均进去。
+实测（`tools/probe_padding_dilution.py`，distil 配置 80 条）：**有效帧占比中位仅 25%**，
+pooled 向量相对"只喂真帧"余弦 **0.639**（logit 平均差 0.10）。中英 padding 比例不同 → 天然语言偏差。
+
+**改法**（`networks/model.py`，`model.masked_pooling: true`）：从**投影前**的音频零行识别
+padding（填充=连续零前缀；投影层带 bias，之后认不出），pooling 时清零 + 除以有效行数。
+改完 pooled 相对"只喂真帧"余弦 **1.000**。
+
+### pause · 5 种子（seed 0–4，loss 选点）
+
+| 模型 | F1（mean±std） | val-loss（mean±std） |
+|---|---|---|
+| 基准 `..._loss` | 0.7944 ± 0.0042 | 0.4543 ± 0.0078 |
+| 掩码 `..._maskpool_loss` | **0.8021 ± 0.0069** | **0.4392 ± 0.0054** |
+
+**配对差（掩码−基准）**：ΔF1 = **+0.0077 ± 0.0067**（**4/5** 种子更好）；
+Δval-loss = **−0.0151 ± 0.0089**（**5/5** 更低，t≈−3.8）。→ 方向一致、稳定。
+
+### 中文 test（每种子取验证最优折，5 种子）
+
+| 模型 | acc | AUC | F1 |
+|---|---|---|---|
+| 基准 | 48.8% ± 8.4 | 0.519 ± 0.097 | 0.535 ± 0.076 |
+| 掩码 | 44.3% ± 1.0 | **0.580 ± 0.051** | 0.606 ± 0.005 |
+
+**配对 ΔAUC = +0.061 ± 0.056（5/5 种子更好）**；ΔF1 = +0.071（3/5）；acc −4.5
+（掩码后模型更偏阳性，F1≈0.606 基本是"全阳性"退化解）。
+
+> **结论：掩码池化是第一个在多随机种子下方向一致的正增益**（英文 val loss 5/5、中文 test AUC 5/5
+> 都更好）。幅度小（F1 +0.8 分、AUC +0.06）但稳定，与门控"被吸收、无效果"形成对比。
+> **建议保留**（可设为默认，或作为稳定的消融项）。
+
+---
+
 ## ⚠️ 验证选点规则会改变数字（2026-10-03，重要）
 
 - 同一份 `legacy_distil_wav2vec2`（pause）：**accuracy 选点** val F1 = **0.8372**；**loss 选点**（5 种子）= **0.7944**。旧配置的 0.837 是"验证准确率最高那一轮"的 F1，而验证集每折只有 47 条、准确率只有 ~48 个离散取值，该轮近乎随机。
@@ -139,4 +175,5 @@ PYTHON=/root/miniconda3/envs/adress/bin/python bash run_preprocess.sh -f configs
 #   configs/legacy_distil_wav2vec2_nopause_loss.yaml  （nopause 基准）
 #   configs/legacy_distil_wav2vec2_nopause_gated_loss.yaml（nopause 门控）
 #   configs/legacy_distil_wav2vec2_gated_bias.yaml    （门 bias 初值=logit(0.9)）
+#   configs/legacy_distil_wav2vec2_maskpool.yaml      （掩码池化，5 种子正向）
 ```
