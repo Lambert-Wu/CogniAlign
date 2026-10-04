@@ -18,9 +18,9 @@
 
 用法
 ----
-    python modules/tools/apply_rare_char_map.py              # 试跑，只打印不写盘
-    python modules/tools/apply_rare_char_map.py --apply      # 真的改（会先备份 .bak）
-    python modules/tools/apply_rare_char_map.py --split train --apply
+    python cognialign/tools/apply_rare_char_map.py              # 试跑，只打印不写盘
+    python cognialign/tools/apply_rare_char_map.py --apply      # 真的改（会先备份 .bak）
+    python cognialign/tools/apply_rare_char_map.py --split train --apply
 
 ⚠️ 改完要重跑脚本② 才生成新特征：
        bash run_preprocess.sh -s test -r       # -r 只补缺的，不用全量
@@ -32,8 +32,8 @@ import glob
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 sys.path.insert(0, MODULES_DIR)
 
 import paths  # noqa: E402

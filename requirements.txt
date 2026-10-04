@@ -26,7 +26,7 @@
 
 
 # ---------------------------- 深度学习框架 ----------------------------
-# 全项目的张量与模型（modules/model.py / dataset.py / main.py）
+# 全项目的张量与模型（cognialign/model.py / dataset.py / main.py）
 torch==2.14.0+cu126
 # ⚠️ 这里**没有 torchaudio，是故意的**：
 #   torchaudio 2.9 起默认后端换成 TorchCodec，而 TorchCodec 必须依赖外部 FFmpeg 库。

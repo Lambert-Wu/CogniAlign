@@ -24,11 +24,11 @@
 # ----
 #     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh8_enrehearse.yaml
 #     # 中文 72 条评估：
-#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#     COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
 #         --config configs/finetune_zh8_enrehearse.yaml \
 #         --checkpoint logs/chinese_wav2vec2_pause_ft8mix --fold 0
 #     # 英文遗忘评估（英文 fold 0 训练集 188 条，微调前/后各跑一次）：
-#     #   COGNIALIGN_SPLIT=train python modules/evaluate.py \
+#     #   COGNIALIGN_SPLIT=train python cognialign/evaluate.py \
 #     #       --config configs/legacy_distil_wav2vec2.yaml \
 #     #       --checkpoint <权重> --fold 0 --on-train
 #

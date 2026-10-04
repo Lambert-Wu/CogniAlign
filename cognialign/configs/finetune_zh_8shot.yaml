@@ -21,7 +21,7 @@
 # 训练/验证怎么切
 # --------------
 # 划分文件由 tools/make_fewshot_split.py 生成：
-#     COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py \
+#     COGNIALIGN_SPLIT=test python cognialign/tools/make_fewshot_split.py \
 #         --apply --fold 0 --seed 42 --per-class 4
 # 生成 <test>/splits/val_uids0.npy（72 条）。dataset.get_dataloaders() 的规则是
 # "不在验证集里的就是训练集"，所以训练集自动 = 另外 8 条，不用额外写 train 文件。
@@ -30,7 +30,7 @@
 # ----
 #     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh_8shot.yaml
 #     # 评估（在 72 条验证集上；同时建议跑一遍"不微调"的零样本对照）：
-#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#     COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
 #         --config configs/finetune_zh_8shot.yaml \
 #         --checkpoint logs/chinese_wav2vec2_pause_ft8 --fold 0
 #
@@ -72,7 +72,7 @@ encoders:
 train:
   # ── 微调起点 ──────────────────────────────────────────────────────────
   # 目录 → 每折取 model_fold_<折>.pth；也接受具体 .pth 文件（所有折共用）。
-  # 相对路径按 modules/ 解析（train.py 所在目录）。
+  # 相对路径按 cognialign/ 解析（train.py 所在目录）。
   init_checkpoint: 'logs/distil_wav2vec2_pause'
 
   # 8 条样本 → batch 只能很小（写 32 的话一个 epoch 连一个 batch 都凑不满）。

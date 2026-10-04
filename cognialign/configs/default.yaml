@@ -40,7 +40,7 @@ dataset:
   # 换成同音字后**读音不变**（语音侧是按时间切音频的，完全不受影响），
   # 文本侧拿到一个正常字，比 unk 有用。
   # ⚠️ 换语料或换文本模型后要重新扫一遍，看有没有漏网的：
-  #      python modules/tools/scan_unknown_chars.py
+  #      python cognialign/tools/scan_unknown_chars.py
   rare_char_map:
     锨: 先      # xiān
     镊: 聂      # niè

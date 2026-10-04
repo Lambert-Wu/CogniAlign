@@ -38,9 +38,9 @@ r"""跨语言诊断：把"英文训的模型搬到中文就不行"拆开，看�
 
 用法
 ----
-    python modules/tools/probe_crosslingual.py -f configs/xlmr_wav2vec2.yaml
-    python modules/tools/probe_crosslingual.py -f configs/xlmr_xlsr.yaml --boot 2000
-    python modules/tools/probe_crosslingual.py -f configs/legacy_distil_wav2vec2.yaml \
+    python cognialign/tools/probe_crosslingual.py -f configs/xlmr_wav2vec2.yaml
+    python cognialign/tools/probe_crosslingual.py -f configs/xlmr_xlsr.yaml --boot 2000
+    python cognialign/tools/probe_crosslingual.py -f configs/legacy_distil_wav2vec2.yaml \
         --test-text-model chinese        # 老配置：test 的文本侧是 bert-base-chinese
 
 ⚠️ 这个工具**只读特征、不写任何东西**，跑坏了也不会动到你已有的产物。

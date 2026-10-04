@@ -20,9 +20,9 @@
 
 用法
 ----
-    python modules/tools/truncate_features.py --dir xlmr_xlsr            # 砍源特征
-    python modules/tools/truncate_features.py --dir xlmr_xlsr --dry-run  # 只看不动
-    python modules/tools/truncate_features.py --dir xlmr_xlsr --out xlmr_xlsr_320
+    python cognialign/tools/truncate_features.py --dir xlmr_xlsr            # 砍源特征
+    python cognialign/tools/truncate_features.py --dir xlmr_xlsr --dry-run  # 只看不动
+    python cognialign/tools/truncate_features.py --dir xlmr_xlsr --out xlmr_xlsr_320
 
     --dir / --out 写的是配置的 `dataset.features_dir` 那种**短名**，
     实际目录 = <split>/feat_<短名>/。

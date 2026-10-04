@@ -17,9 +17,9 @@
 
 用法
 ----
-    python modules/tools/probe_padding_dilution.py
-    python modules/tools/probe_padding_dilution.py -f configs/default.yaml
-    python modules/tools/probe_padding_dilution.py --limit 40   # 只看前 40 条（快）
+    python cognialign/tools/probe_padding_dilution.py
+    python cognialign/tools/probe_padding_dilution.py -f configs/default.yaml
+    python cognialign/tools/probe_padding_dilution.py --limit 40   # 只看前 40 条（快）
 """
 
 import argparse

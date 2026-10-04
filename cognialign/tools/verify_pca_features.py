@@ -17,9 +17,9 @@
 
 用法
 ----
-    python modules/tools/verify_pca_features.py                # 查当前 split
-    python modules/tools/verify_pca_features.py --split test
-    python modules/tools/verify_pca_features.py --with-readcsv # 额外跑真实读取
+    python cognialign/tools/verify_pca_features.py                # 查当前 split
+    python cognialign/tools/verify_pca_features.py --split test
+    python cognialign/tools/verify_pca_features.py --with-readcsv # 额外跑真实读取
 """
 
 import argparse

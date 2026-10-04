@@ -46,7 +46,7 @@ _MODULES = os.path.dirname(_THIS)
 if _MODULES not in sys.path:
     sys.path.insert(0, _MODULES)
 
-# 项目根：modules/tools -> modules -> 项目根
+# 项目根：cognialign/tools -> cognialign -> 项目根
 PROJECT_ROOT = os.path.dirname(_MODULES)
 
 # 旧根 / 新根（相对项目根）

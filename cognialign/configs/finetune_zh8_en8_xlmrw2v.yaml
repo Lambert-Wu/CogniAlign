@@ -15,19 +15,19 @@
 # 划分怎么来
 # ----------
 #   # 中文 8/72：
-#   COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4
+#   COGNIALIGN_SPLIT=test python cognialign/tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4
 #   # 英文：从 fold 0 验证集 47 条里抽 8 条 rehearsal，其余 39 条当遗忘测试：
-#   COGNIALIGN_SPLIT=train python modules/tools/make_rehearsal_split.py --apply --pool-fold 0 --per-class 4 --seed 42
+#   COGNIALIGN_SPLIT=train python cognialign/tools/make_rehearsal_split.py --apply --pool-fold 0 --per-class 4 --seed 42
 #
 # 跑法
 # ----
 #     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh8_en8_xlmrw2v.yaml
 #     # 中文 72 条：
-#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#     COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
 #         --config configs/finetune_zh8_en8_xlmrw2v.yaml --textual-model xlmr \
 #         --checkpoint logs/xlmr_wav2vec2_pause_ft8en8 --fold 0
 #     # 英文遗忘（39 条，“之前/之后”各跑一次，--checkpoint 换初始权重或微调权重）：
-#     COGNIALIGN_SPLIT=train python modules/evaluate.py \
+#     COGNIALIGN_SPLIT=train python cognialign/evaluate.py \
 #         --config configs/xlmr_wav2vec2.yaml --textual-model xlmr \
 #         --checkpoint logs/xlmr_wav2vec2_pause/model_fold_0.pth \
 #         --uids-file en_rehearsal_forget_uids.npy

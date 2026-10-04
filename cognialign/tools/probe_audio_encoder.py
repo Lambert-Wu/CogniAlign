@@ -40,9 +40,9 @@
 
 用法
 ----
-    python modules/tools/probe_audio_encoder.py            # 默认抽 8 条（含最长/最短）
-    python modules/tools/probe_audio_encoder.py --n 3      # 少抽几条，跑得快
-    python modules/tools/probe_audio_encoder.py --longest  # 只测最长那条（最费显存）
+    python cognialign/tools/probe_audio_encoder.py            # 默认抽 8 条（含最长/最短）
+    python cognialign/tools/probe_audio_encoder.py --n 3      # 少抽几条，跑得快
+    python cognialign/tools/probe_audio_encoder.py --longest  # 只测最长那条（最费显存）
 """
 
 import argparse
@@ -50,7 +50,7 @@ import csv
 import os
 import sys
 
-_MODULES = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # modules/
+_MODULES = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # cognialign/
 _ROOT = os.path.dirname(_MODULES)                                        # 项目根
 sys.path.insert(0, _MODULES)
 

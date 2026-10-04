@@ -11,8 +11,7 @@ Also in the repo: `madress2023/` — an independent port of the madress-2023 ICA
 cross-lingual method (eGeMAPS + tiny attention net; English pretrain → mixed-batch Chinese
 finetune → parameter averaging). It reads `data/` and writes only `madress2023/logs/`; it
 does not import or modify `cognialign/`. Run it with `bash run_madress2023.sh` or from
-inside `madress2023/`. Historical docs under `docs/` may still say `modules/`; that
-directory is now `cognialign/`.
+inside `madress2023/`.
 
 ## Running things
 

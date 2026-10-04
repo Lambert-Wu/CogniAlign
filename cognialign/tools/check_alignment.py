@@ -23,7 +23,7 @@
 
 用法
 ----
-    cd modules && python tools/check_alignment.py                 # 当前 split（默认 train）
+    cd cognialign && python tools/check_alignment.py                 # 当前 split（默认 train）
     COGNIALIGN_SPLIT=test python tools/check_alignment.py
     python tools/check_alignment.py --split test -f configs/xlmr_wav2vec2.yaml
 """
@@ -34,8 +34,8 @@ import statistics
 import sys
 import unicodedata
 
-HERE = os.path.dirname(os.path.abspath(__file__))     # modules/tools
-MODULES = os.path.dirname(HERE)                       # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))     # cognialign/tools
+MODULES = os.path.dirname(HERE)                       # cognialign/
 sys.path.insert(0, MODULES)
 
 
@@ -43,7 +43,7 @@ def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('-f', '--config', default='configs/default.yaml',
-                    help='配置文件，相对 modules/ 解析（默认 configs/default.yaml）')
+                    help='配置文件，相对 cognialign/ 解析（默认 configs/default.yaml）')
     ap.add_argument('--split', default=None, help='train / test；不给就看 COGNIALIGN_SPLIT')
     ap.add_argument('--show', type=int, default=5, help='最多打印多少条问题样例（默认 5）')
     args = ap.parse_args()

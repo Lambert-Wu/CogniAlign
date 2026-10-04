@@ -28,7 +28,7 @@
 # 折划分从哪来
 # ------------
 # 中文原来没有折划分（只有英文有）。本实验需要，已用下面这条命令生成：
-#     COGNIALIGN_SPLIT=test python modules/tools/make_splits.py --apply
+#     COGNIALIGN_SPLIT=test python cognialign/tools/make_splits.py --apply
 # 落盘在 data/test/splits/（已改成"划分跟着 split 走"，不会覆盖英文那份）。
 # 规则与英文那套完全一致：KFold(5, shuffle=True, random_state=42)。
 #
@@ -36,7 +36,7 @@
 # ----
 #     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/chinese_internal_cv.yaml
 #     # 评估（看真实水平必须加 --fold）
-#     cd modules && COGNIALIGN_SPLIT=test python evaluate.py \
+#     cd cognialign && COGNIALIGN_SPLIT=test python evaluate.py \
 #         --checkpoint <权重目录> --config configs/chinese_internal_cv.yaml \
 #         --textual-model chinese --audio-model wav2vec2 --fold 0
 

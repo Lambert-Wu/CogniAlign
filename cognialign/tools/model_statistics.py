@@ -6,13 +6,13 @@
 
 用法
 ----
-    cd modules && python tools/model_statistics.py <结果目录名>
+    cd cognialign && python tools/model_statistics.py <结果目录名>
 """
 
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # modules/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # cognialign/
 
 from core.utils import get_model_statistics  # noqa: E402
 

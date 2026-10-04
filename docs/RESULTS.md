@@ -166,7 +166,7 @@ padding（填充=连续零前缀；投影层带 bias，之后认不出），pool
 cd /root/autodl-tmp/CogniAlign
 PYTHON=/root/miniconda3/envs/adress/bin/python bash run_train.sh       -f configs/<cfg>.yaml
 PYTHON=/root/miniconda3/envs/adress/bin/python bash run_preprocess.sh -f configs/<cfg>.yaml -s all
-# 对齐自检：python modules/tools/check_alignment.py -f configs/<cfg>.yaml [--split test]
+# 对齐自检：python cognialign/tools/check_alignment.py -f configs/<cfg>.yaml [--split test]
 # 多种子：for s in 0 1 2 3 4; do COGNIALIGN_SEED=$s bash run_train.sh -f configs/<cfg>.yaml; done
 
 # 门控消融（loss 选点）：
@@ -186,8 +186,8 @@ PYTHON=/root/miniconda3/envs/adress/bin/python bash run_preprocess.sh -f configs
 
 - **配置**：`configs/paper_distil_wav2vec2_200.yaml`（= `legacy_distil_wav2vec2_gated.yaml`，但 `dataset.max_length: 200`）
 - **特征**：`data/{train,test}/feat_distil_paper/`（长度 200；train 235 + test 80，**0 条跳过**）
-- **结果**：`modules/logs/distil_wav2vec2_pause_gated_paper/`
-- **评估口径**：`evaluate.py` 的 `build_config/build_model/predict/report`；原始数据 `modules/logs/eval_paper200_{train,test}.json`
+- **结果**：`cognialign/logs/distil_wav2vec2_pause_gated_paper/`
+- **评估口径**：`evaluate.py` 的 `build_config/build_model/predict/report`；原始数据 `cognialign/logs/eval_paper200_{train,test}.json`
 
 > ⚠️ 单独开一份的原因：`max_length` 一变，磁盘上 `.pt` 形状从 512→200，**必须重提特征**；特征目录（`feat_distil_paper`）和结果目录（`run_tag: paper`）都换了名，**不覆盖**已有 `feat_distil/` 和 `..._gated/`。
 
@@ -228,7 +228,7 @@ export PYTHON=/root/miniconda3/envs/adress/bin/python
 # 提特征（长度 200，train+test）→ 训练（distil+wav2vec2+pause+gated，5 折）
 bash run_preprocess.sh -s all -f configs/paper_distil_wav2vec2_200.yaml
 bash run_train.sh              -f configs/paper_distil_wav2vec2_200.yaml
-# 评估：见 modules/logs/eval_paper200_{train,test}.json
+# 评估：见 cognialign/logs/eval_paper200_{train,test}.json
 ```
 
 ---
@@ -280,7 +280,7 @@ export PYTHON=/root/miniconda3/envs/adress/bin/python
 # 200 本次：
 bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2_200.yaml
 bash run_train.sh              -f configs/xlmr_wav2vec2_200.yaml
-# 评估：modules/logs/eval_xlmrw2v_{512,200}_{train,test}.json
+# 评估：cognialign/logs/eval_xlmrw2v_{512,200}_{train,test}.json
 ```
 
 ---
@@ -288,7 +288,7 @@ bash run_train.sh              -f configs/xlmr_wav2vec2_200.yaml
 ## 跨语言诊断：信号丢在哪一步（2026-10-03，本机）
 
 详细版见 **[`docs/CROSSLINGUAL_DIAGNOSIS.md`](CROSSLINGUAL_DIAGNOSIS.md)**（原始输出 `logs/probe_crosslingual_all.log`）。
-工具 `modules/tools/probe_crosslingual.py` **只读特征、不训练、不写产物**，用线性探针 + 置换对照 + 长度混淆检查来定位。
+工具 `cognialign/tools/probe_crosslingual.py` **只读特征、不训练、不写产物**，用线性探针 + 置换对照 + 长度混淆检查来定位。
 
 四条要点（都是实测）：
 
@@ -369,11 +369,11 @@ Audio **0.47**、Text **0.49**、GCA **0.54**（网格 0.05–0.95，步长 0.01
 cd /root/autodl-tmp/CogniAlign
 export PYTHON=/root/miniconda3/envs/adress/bin/python
 # 训练（3 个模态，各 5 折，约 5 分钟）
-$PYTHON modules/train.py --config configs/ablation_audio.yaml   # cwd=modules + WANDB_MODE=disabled
-$PYTHON modules/train.py --config configs/ablation_text.yaml
-$PYTHON modules/train.py --config configs/ablation_gca.yaml
-# 评估（EN 5 折各自 val / ZH 零样本）：见 modules/logs/matrix_eval_{train,test}.json
-# 阈值迁移：见 modules/logs/matrix_threshold_test.json
+$PYTHON cognialign/train.py --config configs/ablation_audio.yaml   # cwd=cognialign + WANDB_MODE=disabled
+$PYTHON cognialign/train.py --config configs/ablation_text.yaml
+$PYTHON cognialign/train.py --config configs/ablation_gca.yaml
+# 评估（EN 5 折各自 val / ZH 零样本）：见 cognialign/logs/matrix_eval_{train,test}.json
+# 阈值迁移：见 cognialign/logs/matrix_threshold_test.json
 ```
 
 > **评估器修复**：`evaluate.py` 的 `--textual-model ''` 现在会被原样保留（原 `or paths.TEXT_MODEL` 会把 audio-only 误当多模态、去读不存在的文本特征）。这是评估单模态的必要修复。
@@ -410,9 +410,9 @@ $PYTHON modules/train.py --config configs/ablation_gca.yaml
 cd /root/autodl-tmp/CogniAlign
 export PYTHON=/root/miniconda3/envs/adress/bin/python
 # A→T 已在上节训练；本次补 T→A / BCA（各 5 折，约 4 分钟）
-$PYTHON modules/train.py --config configs/ablation_gca_ta.yaml    # cwd=modules + WANDB_MODE=disabled
-$PYTHON modules/train.py --config configs/ablation_gca_bca.yaml
-# 评估：modules/logs/direction_eval_test.json
+$PYTHON cognialign/train.py --config configs/ablation_gca_ta.yaml    # cwd=cognialign + WANDB_MODE=disabled
+$PYTHON cognialign/train.py --config configs/ablation_gca_bca.yaml
+# 评估：cognialign/logs/direction_eval_test.json
 ```
 
 ---
@@ -457,12 +457,12 @@ $PYTHON modules/train.py --config configs/ablation_gca_bca.yaml
 cd /root/autodl-tmp/CogniAlign
 export PYTHON=/root/miniconda3/envs/adress/bin/python
 # 5 个实验各 5 折（约 18 分钟）
-$PYTHON modules/train.py --config configs/xlmr_xlsr_audio.yaml   # cwd=modules + WANDB_MODE=disabled
-$PYTHON modules/train.py --config configs/xlmr_xlsr_text.yaml
-$PYTHON modules/train.py --config configs/xlmr_xlsr_gca_at.yaml
-$PYTHON modules/train.py --config configs/xlmr_xlsr_gca_ta.yaml
-$PYTHON modules/train.py --config configs/xlmr_xlsr_gca_bca.yaml
-# 评估：modules/logs/xlmr_eval_test.json
+$PYTHON cognialign/train.py --config configs/xlmr_xlsr_audio.yaml   # cwd=cognialign + WANDB_MODE=disabled
+$PYTHON cognialign/train.py --config configs/xlmr_xlsr_text.yaml
+$PYTHON cognialign/train.py --config configs/xlmr_xlsr_gca_at.yaml
+$PYTHON cognialign/train.py --config configs/xlmr_xlsr_gca_ta.yaml
+$PYTHON cognialign/train.py --config configs/xlmr_xlsr_gca_bca.yaml
+# 评估：cognialign/logs/xlmr_eval_test.json
 ```
 
 ---
@@ -498,8 +498,8 @@ $PYTHON modules/train.py --config configs/xlmr_xlsr_gca_bca.yaml
 cd /root/autodl-tmp/CogniAlign
 export PYTHON=/root/miniconda3/envs/adress/bin/python
 # Global Concat（Token-level GCA 已在上一节训练）
-$PYTHON modules/train.py --config configs/xlmr_xlsr_global.yaml   # cwd=modules + WANDB_MODE=disabled
-# 评估：modules/logs/align_eval_test.json
+$PYTHON cognialign/train.py --config configs/xlmr_xlsr_global.yaml   # cwd=cognialign + WANDB_MODE=disabled
+# 评估：cognialign/logs/align_eval_test.json
 ```
 
 ---
@@ -537,10 +537,10 @@ $PYTHON modules/train.py --config configs/xlmr_xlsr_global.yaml   # cwd=modules 
 ### 复现
 
 ```bash
-cd /root/autodl-tmp/CogniAlign/modules
+cd /root/autodl-tmp/CogniAlign/cognialign
 export PYTHON=/root/miniconda3/envs/adress/bin/python
 COGNIALIGN_SPLIT=test $PYTHON /tmp/opencode/calib_eval.py   # 依赖先跑过 xlmr_eval.py 的英文 OOF
-# 结果：modules/logs/calib_eval_test.json
+# 结果：cognialign/logs/calib_eval_test.json
 ```
 
 ---
@@ -637,7 +637,7 @@ xlmr 把中文切成 ~2 倍子词，音频段数/长度随之翻倍（132→240�
 cd /root/autodl-tmp/CogniAlign
 export PYTHON=/root/miniconda3/envs/adress/bin/python
 # 划分
-cd modules
+cd cognialign
 COGNIALIGN_SPLIT=test  $PYTHON tools/make_fewshot_split.py  --apply --fold 0 --seed 42 --per-class 4
 COGNIALIGN_SPLIT=train $PYTHON tools/make_rehearsal_split.py --apply --pool-fold 0 --per-class 4 --seed 42
 # 单跑（chinese 特征 + distil 起点）；5 seed 把 COGNIALIGN_SEED 扫 0..4
@@ -688,7 +688,7 @@ COGNIALIGN_SPLIT=train $PYTHON evaluate.py --config configs/xlmr_wav2vec2.yaml \
 **复现**
 
 ```bash
-cd /root/autodl-tmp/CogniAlign/modules
+cd /root/autodl-tmp/CogniAlign/cognialign
 export PYTHON=/root/miniconda3/envs/adress/bin/python COGNIALIGN_SPLIT=test
 # 20 组 8 条划分
 for f in $(seq 0 19); do $PYTHON tools/make_fewshot_split.py --per-class 4 --seed $f --fold $f --apply --force; done

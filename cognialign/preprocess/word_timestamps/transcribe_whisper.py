@@ -11,7 +11,7 @@ import random
 import re
 from faster_whisper import WhisperModel
 
-# 路径集中在 modules/paths.py，本脚本在两级子目录里，先把 modules/ 加进 sys.path
+# 路径集中在 cognialign/paths.py，本脚本在两级子目录里，先把 cognialign/ 加进 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from paths import AUDIO_DIR, WORDS_DIR, SEGMENTATION_DIR, TRANSCRIPTIONS_CSV
 from core.model_download import resolve
@@ -27,7 +27,7 @@ from core.model_download import resolve
 #   openai-whisper : segment['words'][i]['word'/'start'/'end'/'probability']
 #   faster-whisper : segment.words[i].word/.start/.end/.probability
 # ---------------------------------------------------------------------------
-# 项目自带的语音模型放在 models/faster-whisper-small（见 modules/core/model_download.py）。
+# 项目自带的语音模型放在 models/faster-whisper-small（见 cognialign/core/model_download.py）。
 # 本地有就直接用、不发网络请求；只有本地彻底没有时才会下载。
 WHISPER_REPO = 'Systran/faster-whisper-small'
 LANGUAGE = 'en'          # 设成 None 就恢复成原来那种自动语种检测
@@ -37,7 +37,7 @@ COMPUTE_TYPE = 'float16' if DEVICE == 'cuda' else 'int8'
 
 
 def load_model():
-    """本地有就用本地，没有才下载 —— 统一逻辑见 modules/core/model_download.py。"""
+    """本地有就用本地，没有才下载 —— 统一逻辑见 cognialign/core/model_download.py。"""
     path = resolve(WHISPER_REPO)
     print(f"语音模型: {path}  (device={DEVICE}, {COMPUTE_TYPE})")
     return WhisperModel(path, device=DEVICE, compute_type=COMPUTE_TYPE)

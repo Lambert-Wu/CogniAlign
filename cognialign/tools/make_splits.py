@@ -19,13 +19,13 @@
 用法
 ----
     # 干跑：只看会切出什么，不写文件
-    COGNIALIGN_SPLIT=test python modules/tools/make_splits.py
+    COGNIALIGN_SPLIT=test python cognialign/tools/make_splits.py
 
     # 真正写入 <split>/splits/
-    COGNIALIGN_SPLIT=test python modules/tools/make_splits.py --apply
+    COGNIALIGN_SPLIT=test python cognialign/tools/make_splits.py --apply
 
     # 顺便打印每折的类别比例（样本少时各折波动大，最好看一眼）
-    COGNIALIGN_SPLIT=test python modules/tools/make_splits.py --apply --stats
+    COGNIALIGN_SPLIT=test python cognialign/tools/make_splits.py --apply --stats
 
 ⚠️ 覆盖已有划分前会提示，需要 --force 才真覆盖。
 """
@@ -34,8 +34,8 @@ import argparse
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 sys.path.insert(0, MODULES_DIR)
 
 import numpy as np  # noqa: E402

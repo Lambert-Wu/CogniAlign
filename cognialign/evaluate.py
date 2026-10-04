@@ -12,11 +12,11 @@
 用法
 ----
     # 用单折权重评估测试集
-    COGNIALIGN_SPLIT=test python modules/evaluate.py \
+    COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
         --checkpoint checkpoints/2026-09-27_distil_wav2vec2_pause/model_fold_0.pth
 
     # 目录里有 5 折就都跑，再给平均
-    COGNIALIGN_SPLIT=test python modules/evaluate.py \
+    COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
         --checkpoint checkpoints/2026-09-27_distil_wav2vec2_pause
 
 ⚠️ 语种要自己留意
@@ -35,7 +35,7 @@ import re
 import sys
 import time
 
-_MODULES = os.path.dirname(os.path.abspath(__file__))      # 本文件就在 modules/ 下
+_MODULES = os.path.dirname(os.path.abspath(__file__))      # 本文件就在 cognialign/ 下
 _PROJECT_ROOT = os.path.dirname(_MODULES)                   # 项目根
 sys.path.insert(0, _MODULES)
 
@@ -280,7 +280,7 @@ def main():
                     '找不到这一折的划分文件：%s\n'
                     '  · 当前 split=%s，划分目录 = %s\n'
                     '  · 该 split 还没做过 5 折划分？跑一下：\n'
-                    '      COGNIALIGN_SPLIT=%s python modules/tools/make_splits.py --apply'
+                    '      COGNIALIGN_SPLIT=%s python cognialign/tools/make_splits.py --apply'
                     % (split_path, split, paths.SPLITS_DIR, split))
             range_tag = '第 %d 折的%s集' % (args.fold, '训练' if args.on_train else '验证')
             context = ('训练时见过，分数会偏高' if args.on_train

@@ -18,10 +18,10 @@
 
 用法
 ----
-    python modules/tools/scan_unknown_chars.py                 # 扫当前 split
-    python modules/tools/scan_unknown_chars.py --split test    # 指定 split
-    python modules/tools/scan_unknown_chars.py --all           # 两个 split 都扫
-    COGNIALIGN_TEXT_MODEL=chinese python modules/tools/scan_unknown_chars.py
+    python cognialign/tools/scan_unknown_chars.py                 # 扫当前 split
+    python cognialign/tools/scan_unknown_chars.py --split test    # 指定 split
+    python cognialign/tools/scan_unknown_chars.py --all           # 两个 split 都扫
+    COGNIALIGN_TEXT_MODEL=chinese python cognialign/tools/scan_unknown_chars.py
 
 退出码：发现认不出的字 → 1（方便塞进 CI 或批处理脚本里做检查）；否则 0。
 """
@@ -34,8 +34,8 @@ import sys
 import collections
 import unicodedata
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 sys.path.insert(0, MODULES_DIR)
 
 import paths  # noqa: E402

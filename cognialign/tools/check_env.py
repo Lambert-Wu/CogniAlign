@@ -11,9 +11,9 @@
 
 用法
 ----
-    python modules/tools/check_env.py                # 检查特征提取（默认）
-    python modules/tools/check_env.py --mode asr     # 检查语音转写
-    python modules/tools/check_env.py --mode train   # 检查训练
+    python cognialign/tools/check_env.py                # 检查特征提取（默认）
+    python cognialign/tools/check_env.py --mode asr     # 检查语音转写
+    python cognialign/tools/check_env.py --mode train   # 检查训练
 
 退出码：0 = 通过（可能带提醒），1 = 有硬性缺失。
 
@@ -29,8 +29,8 @@
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 ROOT = os.path.dirname(MODULES_DIR)                     # 项目根
 sys.path.insert(0, MODULES_DIR)
 
@@ -266,8 +266,8 @@ if paths is not None and os.path.isdir(paths.DATA_ROOT):
             ok("逐词时间戳 %d 个 csv" % n_word)
         else:
             bad("没有逐词时间戳（text/<dx>/<uid>.csv）。先跑脚本①：\n"
-                "       cd modules && python preprocess/word_timestamps/transcribe_whisper.py\n"
-                "       或（秒级）python modules/preprocess/word_timestamps/from_whisperx.py")
+                "       cd cognialign && python preprocess/word_timestamps/transcribe_whisper.py\n"
+                "       或（秒级）python cognialign/preprocess/word_timestamps/from_whisperx.py")
 
         if os.path.exists(paths.SPLIT_TRANSCRIPTIONS_CSV):
             with open(paths.SPLIT_TRANSCRIPTIONS_CSV, encoding="utf-8-sig", newline="") as f:

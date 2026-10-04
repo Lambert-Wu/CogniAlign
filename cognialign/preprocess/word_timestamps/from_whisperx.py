@@ -26,8 +26,8 @@ c. 停顿标记按 new_ 时间轴的间隔算：>0.5s 插 ','、>1s 插 '.'、>2
 
 用法
 ----
-    python modules/preprocess/word_timestamps/from_whisperx.py            # 真跑
-    python modules/preprocess/word_timestamps/from_whisperx.py --check    # 只校验不写盘
+    python cognialign/preprocess/word_timestamps/from_whisperx.py            # 真跑
+    python cognialign/preprocess/word_timestamps/from_whisperx.py --check    # 只校验不写盘
 """
 
 import argparse
@@ -38,7 +38,7 @@ import sys
 
 import soundfile as sf
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # modules/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # cognialign/
 from paths import (WORDS_DIR, AUDIO_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV,
                    TEST_WORDS_DIR, TEST_AUDIO_DIR, TEST_LABELS_CSV,
                    TEST_TRANSCRIPTIONS_CSV)

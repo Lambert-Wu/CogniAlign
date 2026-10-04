@@ -8,17 +8,17 @@
 # 这样"混合 vs 纯中文"的差异就只能归因于那 8 条英文 rehearsal，而不是编码器/起点。
 #
 # 中文 8/72 划分来自：
-#   COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4
+#   COGNIALIGN_SPLIT=test python cognialign/tools/make_fewshot_split.py --apply --fold 0 --seed 42 --per-class 4
 #
 # 跑法
 # ----
 #     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh8_xlmrw2v.yaml
 #     # 中文 72 条：
-#     COGNIALIGN_SPLIT=test python modules/evaluate.py \
+#     COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
 #         --config configs/finetune_zh8_xlmrw2v.yaml --textual-model xlmr \
 #         --checkpoint logs/xlmr_wav2vec2_pause_ft8 --fold 0
 #     # 英文 39 条遗忘测试（和混合版比同一个集合）：
-#     COGNIALIGN_SPLIT=train python modules/evaluate.py \
+#     COGNIALIGN_SPLIT=train python cognialign/evaluate.py \
 #         --config configs/xlmr_wav2vec2.yaml --textual-model xlmr \
 #         --checkpoint logs/xlmr_wav2vec2_pause_ft8/model_fold_0.pth \
 #         --uids-file en_rehearsal_forget_uids.npy

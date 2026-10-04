@@ -1,7 +1,7 @@
 # 跨语言投影头迁移（proposal 试跑，2026-10-04）
 
-> 代码：`modules/projection_transfer/`（**独立流水线**，只读现成特征、不碰 `train.py`/`networks`）
-> ⚠️ **本报告归档后，实验代码与产物已删除**（`modules/projection_transfer/` 整个目录，
+> 代码：`cognialign/projection_transfer/`（**独立流水线**，只读现成特征、不碰 `train.py`/`networks`）
+> ⚠️ **本报告归档后，实验代码与产物已删除**（`cognialign/projection_transfer/` 整个目录，
 > 含 `outputs/`）。本文只保留方法、协议与结论；文中的复现命令仅作记录，需先重建代码。
 > 问题：源域(英语)上训练一个「线性层 → GELU」投影头做 AD/HC 判别，
 > 训练完丢分类层、**冻结投影头**把目标域(另一语言)向量投影过去，再在迁移表征上
@@ -136,7 +136,7 @@
 ## 6. 复现
 
 ```bash
-cd modules
+cd cognialign
 PY=/root/miniconda3/envs/adress/bin/python
 
 # 一键（阶段0→1→2→3，按模态并行）
@@ -155,13 +155,13 @@ for pair in "text 768" "audio 1024"; do set -- $pair; m=$1; h=$2
 done
 ```
 
-结果 JSON：`modules/projection_transfer/outputs/runs/{en2zh,en2zh_full}/classify_{text,audio}.json`
+结果 JSON：`cognialign/projection_transfer/outputs/runs/{en2zh,en2zh_full}/classify_{text,audio}.json`
 
 ---
 
 ## 7. 【真正的任务】纯零样本：英文训练 → 中文测试
 
-> 代码：`modules/projection_transfer/zeroshot.py`
+> 代码：`cognialign/projection_transfer/zeroshot.py`
 > 协议：**任何训练只用英文标签**；中文标签只用于算指标。为在不碰中文标签的前提下给
 > mean±std，对**源域(英文 235)** 做 `RepeatedStratifiedKFold(5 折 × 10 次)`：
 > 每次只在英文训练折上训分类器，在**全量中文 80** 上测。变异来自英文训练子集不同，
@@ -214,7 +214,7 @@ done
 ### 复现（零样本）
 
 ```bash
-cd modules
+cd cognialign
 PY=/root/miniconda3/envs/adress/bin/python
 E=projection_transfer/outputs/embeddings
 for m in text audio; do

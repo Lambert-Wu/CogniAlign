@@ -73,7 +73,7 @@ def load_init_weights(model, config, fold, device):
       · 指向目录         —— 取目录里的 `model_fold_<fold>.pth`；没有才退回 `model.pt`
                             （和 train.py 存权重的命名一致，方便"第 k 折起点配第 k 折"）
 
-    相对路径按 `modules/` 解析（train.py 就在那里，也和各处 `--config` 的口径一致）。
+    相对路径按 `cognialign/` 解析（train.py 就在那里，也和各处 `--config` 的口径一致）。
     权重结构和当前配置不符时会当场报错（strict=True），不静默半加载。
     """
     t = config.get('train', {}) or {}
@@ -91,7 +91,7 @@ def load_init_weights(model, config, fold, device):
     if not os.path.exists(path):
         raise FileNotFoundError(
             'train.init_checkpoint 指向的权重不存在：\n    %s\n'
-            '（相对路径按 modules/ 解析；目录里应有 model_fold_<折>.pth 或 model.pt）'
+            '（相对路径按 cognialign/ 解析；目录里应有 model_fold_<折>.pth 或 model.pt）'
             % path)
 
     sd = torch.load(path, map_location=device)

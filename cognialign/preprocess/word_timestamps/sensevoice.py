@@ -14,7 +14,7 @@ WhisperX 底层是 Whisper（英文为主），念中文会掉字、认错字（
 2. <SPLIT_ROOT>/text_transcriptions.csv
    列 uid,diagno,transcription,transcription_pause,probablities
 
-和脚本①保持一致的几个细节（改之前先看 modules/preprocess/word_timestamps/from_whisperx.py 的说明）
+和脚本①保持一致的几个细节（改之前先看 cognialign/preprocess/word_timestamps/from_whisperx.py 的说明）
 ------------------------------------------------------------------------------
 a. 词（这里中文是单字）要按同一套规则清洗：去标点空格、转小写、再过滤非法字符
 b. transcription 由**同一批字**用空格拼出来，否则脚本②逐字匹配会对不上而跳过样本
@@ -32,10 +32,10 @@ SenseVoice 的时间戳是 CTC 强制对齐算出来的，每个字只给到一�
 
 用法
 ----
-    python modules/preprocess/word_timestamps/sensevoice.py                 # 跑 test 集（默认）
-    python modules/preprocess/word_timestamps/sensevoice.py --split train   # 跑 train 集
-    python modules/preprocess/word_timestamps/sensevoice.py --limit 3       # 先试 3 条
-    python modules/preprocess/word_timestamps/sensevoice.py --check         # 只算不写盘
+    python cognialign/preprocess/word_timestamps/sensevoice.py                 # 跑 test 集（默认）
+    python cognialign/preprocess/word_timestamps/sensevoice.py --split train   # 跑 train 集
+    python cognialign/preprocess/word_timestamps/sensevoice.py --limit 3       # 先试 3 条
+    python cognialign/preprocess/word_timestamps/sensevoice.py --check         # 只算不写盘
 
 模型从哪来
 ----------
@@ -46,7 +46,7 @@ SenseVoice 的时间戳是 CTC 强制对齐算出来的，每个字只给到一�
         snapshot_download('iic/SenseVoiceSmall', local_dir='models/SenseVoiceSmall'); \\
         snapshot_download('iic/speech_fsmn_vad_zh-cn-16k-common-pytorch', \\
             local_dir='models/speech_fsmn_vad_zh-cn-16k-common-pytorch')"
-模型目录位置可用环境变量 COGNIALIGN_MODELS_DIR 挪走（见 modules/paths.py）。
+模型目录位置可用环境变量 COGNIALIGN_MODELS_DIR 挪走（见 cognialign/paths.py）。
 """
 
 import argparse
@@ -60,7 +60,7 @@ import time
 
 import soundfile as sf
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # modules/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # cognialign/
 from paths import MODELS_DIR, TEST_AUDIO_DIR, TEST_WORDS_DIR, \
     TEST_LABELS_CSV, TEST_TRANSCRIPTIONS_CSV, \
     AUDIO_DIR, WORDS_DIR, LABELS_CSV, TRANSCRIPTIONS_CSV
@@ -95,7 +95,7 @@ TAG_RE = re.compile(r'<\|[^|]*\|>')     # SenseVoice 会输出 <|zh|><|NEUTRAL|>
 # ⚠️ 这张表**不写在这里**：它在 configs/default.yaml 的 dataset.rare_char_map。
 #    换语料 / 换模型只改配置，不动这个文件（详见 core/feature_spec.rare_char_map）。
 #    想知道当前语料还有没有模型认不出的字：
-#        python modules/tools/scan_unknown_chars.py
+#        python cognialign/tools/scan_unknown_chars.py
 # ---------------------------------------------------------------------------
 from core import feature_spec
 

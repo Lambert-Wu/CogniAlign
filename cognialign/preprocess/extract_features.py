@@ -19,7 +19,7 @@ import librosa
 import math
 import numpy as np
 
-# 路径集中在 modules/paths.py，本脚本在子目录里，先把上一层加进 sys.path
+# 路径集中在 cognialign/paths.py，本脚本在子目录里，先把上一层加进 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # SPLIT / TEXT_MODEL / SPLIT_* 都在 paths.py 里统一决定（读环境变量）
 from paths import (SPLIT, TEXT_MODEL, AUDIO_MODEL, SPLIT_ROOT, SPLIT_AUDIO_DIR,

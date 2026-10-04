@@ -20,22 +20,22 @@
 评估这些遗忘样本
 ----------------
     # --uids-file 接受相对 <当前 split>/splits/ 的文件名
-    COGNIALIGN_SPLIT=train python modules/evaluate.py \
+    COGNIALIGN_SPLIT=train python cognialign/evaluate.py \
         --config configs/xlmr_wav2vec2.yaml --textual-model xlmr \
         --checkpoint <权重> --uids-file <prefix>_forget_uids.npy
 
 用法
 ----
-    COGNIALIGN_SPLIT=train python modules/tools/make_rehearsal_split.py            # 干跑
-    COGNIALIGN_SPLIT=train python modules/tools/make_rehearsal_split.py --apply
+    COGNIALIGN_SPLIT=train python cognialign/tools/make_rehearsal_split.py            # 干跑
+    COGNIALIGN_SPLIT=train python cognialign/tools/make_rehearsal_split.py --apply
 """
 
 import argparse
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 sys.path.insert(0, MODULES_DIR)
 
 import numpy as np  # noqa: E402

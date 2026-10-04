@@ -137,7 +137,7 @@ class Spec(object):
         这一段时自动回落到默认值（legacy_*.yaml 就不用重复维护一份）。
 
         换语料 / 换文本模型后想知道还有没有漏网的生僻字：
-            python modules/tools/scan_unknown_chars.py
+            python cognialign/tools/scan_unknown_chars.py
         """
         m = self.cfg.get('dataset', {}).get('rare_char_map', None)
         if m is None:
@@ -243,7 +243,7 @@ def result_names(cfg):
         · 非默认随机种子（`COGNIALIGN_SEED` / `train.seed`）再追加 `_seed<N>`
           （见 `seed_of()`），便于多种子重复实验互不覆盖。
     训练结果落在 `logs/<path_name>/`（train.py 的 log_path 是相对路径，
-    而脚本要在 modules/ 下运行，所以实际是 modules/logs/<path_name>/）。
+    而脚本要在 cognialign/ 下运行，所以实际是 cognialign/logs/<path_name>/）。
 
     为什么要有「实验标签」（`model.run_tag`）：
         ⚠️ 光看文本模型+音频模型**不足以区分实验**。
@@ -313,9 +313,9 @@ def load_default(path=None, textual_model=None, audio_model=None):
     """没有配置入参的调用方用这个（extract_features / verify_features / 启动脚本）。
 
     换配置文件：设 `COGNIALIGN_CONFIG=/path/to/xxx.yaml`，也可以给相对路径。
-    ⚠️ **相对路径一律按 `modules/` 解析**，不按当前工作目录 ——
+    ⚠️ **相对路径一律按 `cognialign/` 解析**，不按当前工作目录 ——
     用 cwd 解析会时对时错：`run_preprocess.sh` 从项目根跑、`extract_features.py`
-    从 modules/ 跑，同一句 `configs/x.yaml` 两边意思就不同了（实测 check_env
+    从 cognialign/ 跑，同一句 `configs/x.yaml` 两边意思就不同了（实测 check_env
     就因此读不到配置）。
     """
     p = path or os.environ.get('COGNIALIGN_CONFIG', '').strip() or DEFAULT_CONFIG

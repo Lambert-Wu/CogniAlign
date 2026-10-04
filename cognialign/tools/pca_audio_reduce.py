@@ -25,11 +25,11 @@ import 就会真的开跑并静默覆盖已有特征）。需要的参数一律�
 
 用法
 ----
-    python modules/tools/pca_audio_reduce.py                 # 拟合 + 应用（train & test）
-    python modules/tools/pca_audio_reduce.py --dry-run       # 只数文件、不写盘
-    python modules/tools/pca_audio_reduce.py --fit-only      # 只拟合、存参数
-    python modules/tools/pca_audio_reduce.py --refit         # 忽略已存的 PCA 参数，重算
-    python modules/tools/pca_audio_reduce.py -f configs/xxx.yaml
+    python cognialign/tools/pca_audio_reduce.py                 # 拟合 + 应用（train & test）
+    python cognialign/tools/pca_audio_reduce.py --dry-run       # 只数文件、不写盘
+    python cognialign/tools/pca_audio_reduce.py --fit-only      # 只拟合、存参数
+    python cognialign/tools/pca_audio_reduce.py --refit         # 忽略已存的 PCA 参数，重算
+    python cognialign/tools/pca_audio_reduce.py -f configs/xxx.yaml
 
 改任何参数（降到几维、在哪份上拟合、输入输出目录）都去改配置文件的 `pca:` 段，
 不要改本文件。
@@ -45,8 +45,8 @@ import os
 import shutil
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 ROOT = os.path.dirname(MODULES_DIR)                     # 项目根
 sys.path.insert(0, MODULES_DIR)
 
@@ -62,7 +62,7 @@ DX_DIRS = ('cn', 'ad')
 def parse_args():
     p = argparse.ArgumentParser(description="用 PCA 把音频特征降维（默认 1024 -> 768）")
     p.add_argument('-f', '--config', default='configs/xlmr_xlsr_pca.yaml',
-                   help="配置文件，相对 modules/ 解析（默认 configs/xlmr_xlsr_pca.yaml）")
+                   help="配置文件，相对 cognialign/ 解析（默认 configs/xlmr_xlsr_pca.yaml）")
     p.add_argument('--dry-run', action='store_true', help="只统计、不写盘")
     p.add_argument('--fit-only', action='store_true', help="只拟合并存 PCA 参数，不做降维")
     p.add_argument('--refit', action='store_true',
@@ -127,7 +127,7 @@ FILL_CHOICES = ('zero', 'mean')
 
 
 def resolve_out(path):
-    """`pca.model_out` 相对**项目根**解析（它不在 modules/ 下）。"""
+    """`pca.model_out` 相对**项目根**解析（它不在 cognialign/ 下）。"""
     return path if os.path.isabs(path) else os.path.join(ROOT, path)
 
 

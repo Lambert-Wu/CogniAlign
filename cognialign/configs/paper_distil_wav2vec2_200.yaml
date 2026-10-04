@@ -21,7 +21,7 @@
 #
 # 产出：
 #     特征  <split>/feat_distil_paper/<dx>/<uid>distil_pauses[_audio].pt   (长度 200)
-#     权重  modules/logs/distil_wav2vec2_pause_gated_paper/model_fold_<n>.pth
+#     权重  cognialign/logs/distil_wav2vec2_pause_gated_paper/model_fold_<n>.pth
 
 # ── 数据集参数 ──────────────────────────────────────────────────────────
 dataset:

@@ -25,7 +25,7 @@
 `--seed` 决定抽哪 8 条。想做多种子/多次抽样，用不同 seed 生成不同 `--fold`：
 
     for f in 0 1 2 3 4; do
-        COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py \
+        COGNIALIGN_SPLIT=test python cognialign/tools/make_fewshot_split.py \
             --apply --fold $f --seed $f
     done
 
@@ -36,10 +36,10 @@
 用法
 ----
     # 干跑：只看会抽到哪 8 条，不写文件
-    COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py
+    COGNIALIGN_SPLIT=test python cognialign/tools/make_fewshot_split.py
 
     # 真正写入 <split>/splits/（fold 0，seed 42）
-    COGNIALIGN_SPLIT=test python modules/tools/make_fewshot_split.py --apply
+    COGNIALIGN_SPLIT=test python cognialign/tools/make_fewshot_split.py --apply
 
 ⚠️ 覆盖已有同名划分前需要 --force。
 """
@@ -48,8 +48,8 @@ import argparse
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 sys.path.insert(0, MODULES_DIR)
 
 import numpy as np  # noqa: E402

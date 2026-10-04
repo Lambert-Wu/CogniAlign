@@ -12,7 +12,7 @@
 
 ⚠️ 全程 **CPU**、且**只加载需要的样本**（避免把整 split 塞进显存/内存）。
 
-用法（在 modules/ 下）
+用法（在 cognialign/ 下）
 ----------------------
     python tools/probe_length_confound.py -f configs/legacy_distil_wav2vec2_loss.yaml --split train
     # 带权重；--fold N 只看第 N 折的验证集（避免训练样本自评）

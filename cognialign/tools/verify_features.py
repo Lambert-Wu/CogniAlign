@@ -15,8 +15,8 @@
 
 用法
 ----
-    python modules/tools/verify_features.py            # 完整核对（含 read_CSV）
-    python modules/tools/verify_features.py --quick    # 只数文件，不加载张量
+    python cognialign/tools/verify_features.py            # 完整核对（含 read_CSV）
+    python cognialign/tools/verify_features.py --quick    # 只数文件，不加载张量
 """
 
 import csv
@@ -24,8 +24,8 @@ import os
 import sys
 import types
 
-HERE = os.path.dirname(os.path.abspath(__file__))       # modules/tools
-MODULES_DIR = os.path.dirname(HERE)                     # modules/
+HERE = os.path.dirname(os.path.abspath(__file__))       # cognialign/tools
+MODULES_DIR = os.path.dirname(HERE)                     # cognialign/
 ROOT = os.path.dirname(MODULES_DIR)                     # 项目根
 sys.path.insert(0, MODULES_DIR)
 
