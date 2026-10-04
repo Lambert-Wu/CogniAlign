@@ -4,7 +4,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$HERE/modules"
+cd "$HERE/madress2023"
 
 # 本机 OMP_NUM_THREADS=0 会让 libgomp 报错，这里强制成 1。
 export OMP_NUM_THREADS=1
@@ -21,8 +21,8 @@ done
 
 if [[ "$SKIP_FEATURES" -eq 0 ]]; then
   echo "== ① 提取 eGeMAPS 特征 =="
-  "$PYTHON" madress2023/extract_features.py --workers "${WORKERS:-8}"
+  "$PYTHON" extract_features.py --workers "${WORKERS:-8}"
 fi
 
 echo "== ② 英文预训练 → 混合批次微调 → 参数平均 → 中文测试 =="
-"$PYTHON" madress2023/train.py "${EXTRA[@]}"
+"$PYTHON" train.py "${EXTRA[@]}"

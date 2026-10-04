@@ -4,7 +4,7 @@
 Detection From Spontaneous Speech"**（[代码](https://github.com/lcn-kul/madress-2023)）
 的方法，忠实移植到本项目的 **英文 train → 中文 test** 数据上。
 
-本目录是**独立流水线**：只读 `data/`，产物只写 `modules/logs/madress2023/`，
+本目录是**独立流水线**：只读仓库根的 `data/`，产物只写 `madress2023/logs/`，
 不修改、也不依赖现有 `train.py` / `networks/` / `core/`。
 
 ---
@@ -74,16 +74,17 @@ Detection From Spontaneous Speech"**（[代码](https://github.com/lcn-kul/madre
 ## 4. 目录结构
 
 ```
-modules/madress2023/
+madress2023/
 ├── common.py           路径、划分、超参
 ├── extract_features.py eGeMAPS (10,25) 特征提取
 ├── data.py             数据集 + 混合批次注入
 ├── model.py            论文网络
 ├── metrics.py          AUC/acc/F1/平衡准确率 + bootstrap CI
 ├── train.py            预训练 → 微调 → 参数平均 → 预测
+├── report.py           把 results_*.json 渲染成 markdown 表
 └── README.md
 
-modules/logs/madress2023/
+madress2023/logs/
 ├── features/{mean,lldfirst}/{en_train,en_val,zh_sample,zh_test}/<uid>.pt
 ├── predictions/model<k>.csv        每次流程的中文 test 预测
 └── results_main.json               汇总
@@ -94,17 +95,17 @@ modules/logs/madress2023/
 ## 5. 怎么跑
 
 ```bash
-cd modules
+cd madress2023
 export OMP_NUM_THREADS=1
 
 # ① 提特征（可断点续跑；--force 覆盖）
-python madress2023/extract_features.py --workers 8
+python extract_features.py --workers 8
 
 # ② 训练 + 评测（完整 = 5 次流程 × 5 预训练种子，几分钟）
-python madress2023/train.py
+python train.py
 
 # 快速自检
-python madress2023/train.py --models 1 --pretrain 1 --epochs 3
+python train.py --models 1 --pretrain 1 --epochs 3
 ```
 
 或直接：
@@ -113,7 +114,7 @@ python madress2023/train.py --models 1 --pretrain 1 --epochs 3
 bash run_madress2023.sh          # = 先提特征，再完整训练
 ```
 
-结果在 `modules/logs/madress2023/results_main.json`，标准输出会打印：
+结果在 `madress2023/logs/results_main.json`，标准输出会打印：
 **多数类基线**、**零样本（预训练模型直接测中文）**、**少样本（参数平均后测中文）**
 的 acc / AUC / F1 / 平衡准确率（均值±标准差，跨 5 次流程）。
 

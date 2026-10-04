@@ -5,10 +5,10 @@ r"""madress-2023 方法移植：公共路径、数据划分与超参。
 "Cross-Lingual Transfer Learning for Alzheimer's Detection From Spontaneous Speech"，
 参考实现 https://github.com/lcn-kul/madress-2023。
 
-本目录是**独立流水线**：
-  - 只读项目 ``data/``（英文 train / 中文 test）；
-  - 产物（eGeMAPS 特征、模型、结果）只写 ``modules/logs/madress2023/``；
-  - 不依赖、也不修改现有 ``train.py`` / ``networks/`` / ``core/``。
+本目录是**完全独立的并列项目**（与 CogniAlign 平级）：
+  - 只读仓库根的 ``data/``（英文 train / 中文 test）；
+  - 产物（eGeMAPS 特征、模型、结果）只写 ``madress2023/logs/``；
+  - 不 import、也不修改 CogniAlign 的任何代码。
 
 协议（论文 §2.4–2.5 的忠实改编，目标语言 Greek → Chinese）：
   1. 英文预训练：英文 train 训练、中文 8 样本验证；跑 5 个随机种子，
@@ -26,7 +26,6 @@ r"""madress-2023 方法移植：公共路径、数据划分与超参。
 """
 
 import os
-import sys
 
 # 本机 OMP_NUM_THREADS=0 会让 libgomp 报 "Invalid value"；在导入 numpy 之前修正。
 if os.environ.get("OMP_NUM_THREADS", "").strip() in ("", "0"):
@@ -35,20 +34,39 @@ if os.environ.get("OMP_NUM_THREADS", "").strip() in ("", "0"):
 import numpy as np
 import pandas as pd
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_MODULES = os.path.dirname(_HERE)  # modules/
-if _MODULES not in sys.path:
-    sys.path.insert(0, _MODULES)
-
-import paths  # noqa: E402  （复用仓库统一的数据根目录解析）
-
 # =============================== #
 #              路径               #
 # =============================== #
 
-# 所有产物都落在 modules/logs/madress2023/ 下，不碰现有实验。
-OUT_ROOT = os.path.join(_MODULES, "logs", "madress2023")
+# 本目录（madress2023/）就是代码根；仓库根是它的上一级。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_HERE)
+
+# 数据根：与 CogniAlign 共用同一约定（COGNIALIGN_DATA_ROOT 优先，否则 <仓库根>/data）。
+DATA_ROOT = os.environ.get(
+    "COGNIALIGN_DATA_ROOT", os.path.join(_PROJECT_ROOT, "data")
+)
+TRAIN_ROOT = os.path.join(DATA_ROOT, "train")
+TEST_ROOT = os.path.join(DATA_ROOT, "test")
+
+# 产物完全属于本目录，不写进 cognialign/。
+OUT_ROOT = os.path.join(_HERE, "logs")
 FEATURES_ROOT = os.path.join(OUT_ROOT, "features")
+
+
+def split_root(split):
+    return TEST_ROOT if str(split).strip().lower() == "test" else TRAIN_ROOT
+
+
+def labels_csv_for(split):
+    """train → adresso-train-mmse-scores.csv；test → test_labels.csv。"""
+    if str(split).strip().lower() == "test":
+        return os.path.join(TEST_ROOT, "test_labels.csv")
+    return os.path.join(TRAIN_ROOT, "adresso-train-mmse-scores.csv")
+
+
+def splits_dir_for(split):
+    return os.path.join(split_root(split), "splits")
 
 # LLD 聚合方式：参考实现写的是 ``y[0, :]``，即每个片段只取 LLD 的**第 0 帧**
 # （一个 10ms 快照）。实测这样严重损失信息（英文内部 AUC 0.571），而论文说的是
@@ -101,19 +119,15 @@ ALL_SETS = {
 }
 
 
-def split_root(split):
-    return paths.TEST_ROOT if str(split).strip().lower() == "test" else paths.TRAIN_ROOT
-
-
 def load_labels(split):
     """返回 {uid(str): dx_label(int)}，全程保持 uid 为字符串。"""
-    csv_path = paths.labels_csv_for(split)
+    csv_path = labels_csv_for(split)
     df = pd.read_csv(csv_path, dtype=str)
     return {str(u): int(l) for u, l in zip(df["adressfname"], df["dx_label"])}
 
 
 def load_uids(split, name):
-    path = os.path.join(paths.splits_dir_for(split), name + ".npy")
+    path = os.path.join(splits_dir_for(split), name + ".npy")
     return [str(u) for u in np.load(path, allow_pickle=True)]
 
 

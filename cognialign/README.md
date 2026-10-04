@@ -1,6 +1,6 @@
-# modules/ —— 代码都在这里
+# cognialign/ —— 代码都在这里
 
-> 跑任何脚本前都要先 `cd modules`（根目录的两个一键脚本会替你 cd 好）。
+> 跑任何脚本前都要先 `cd cognialign`（根目录的两个一键脚本会替你 cd 好）。
 > 每个子目录里还有一份说明，写清那个目录里的文件分别是干什么的。
 
 ## 目录怎么分
@@ -50,7 +50,7 @@ text/<dx>/<uid>distil.pt（文本特征）+ <uid>distil_audio.pt（音频特征�
    │
    │ train.py → networks/model.py
    ▼
-modules/logs/<配置名>/model_fold_<N>.pth  ──► 手动复制到 checkpoints/ 长期保存
+cognialign/logs/<配置名>/model_fold_<N>.pth  ──► 手动复制到 checkpoints/ 长期保存
    │
    │ evaluate.py
    ▼
@@ -73,5 +73,5 @@ modules/logs/<配置名>/model_fold_<N>.pth  ──► 手动复制到 checkpoin
 5. 中文生僻字（锨镊鳊笤）在 bert-base-chinese 里是 `[UNK]`，会让对齐整条错位。
    已有两道处理（同音字替换 + `[UNK]` 兜底），换词表后必须重跑脚本②。
 6. 5 折用的是普通 `KFold`，**不是分层抽样**，各折的患病/健康比例波动较大，看单折要小心。
-7. 训练产物落在 `modules/logs/<配置名>/`（同配置重跑会覆盖），
+7. 训练产物落在 `cognialign/logs/<配置名>/`（同配置重跑会覆盖），
    想长期保存要整个目录复制到 `checkpoints/` 并带上 `config.yaml`。

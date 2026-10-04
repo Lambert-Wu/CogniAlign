@@ -5,11 +5,11 @@ r"""eGeMAPS 特征提取（论文 §2.2）。
 25 维向量，得到形状 ``(10, 25)`` 的张量。与参考实现
 ``madress_2023/train/extract_features.py`` 完全一致。
 
-用法（在 modules/ 目录下）：
-    python madress2023/extract_features.py                 # 提取全部 4 个集合
-    python madress2023/extract_features.py --set zh_test    # 只提一个集合
-    python madress2023/extract_features.py --force          # 覆盖已有特征
-    python madress2023/extract_features.py --workers 8      # 并行
+用法（在 madress2023/ 目录下）：
+    python extract_features.py                 # 提取全部 4 个集合
+    python extract_features.py --set zh_test    # 只提一个集合
+    python extract_features.py --force          # 覆盖已有特征
+    python extract_features.py --workers 8      # 并行
 
 已存在的特征默认跳过（可断点续跑）。
 """

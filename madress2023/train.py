@@ -9,10 +9,10 @@ r"""论文训练流程（§2.4 English pre-training + §2.5 mixed-batch transfer
   4. 平均模型在中文 test(72) 上预测；
   5. 整套流程重复 5 次（不同随机种子）。
 
-用法（在 modules/ 目录下，先跑 extract_features.py）：
-    python madress2023/train.py                 # 完整 5×5 次预训练 + 5×2 折微调
-    python madress2023/train.py --models 1      # 只跑 1 个模型（快速自检）
-    python madress2023/train.py --pretrain 2 --epochs 5 --models 1
+用法（在 madress2023/ 目录下，先跑 extract_features.py）：
+    python train.py                 # 完整 5×5 次预训练 + 5×2 折微调
+    python train.py --models 1      # 只跑 1 个模型（快速自检）
+    python train.py --pretrain 2 --epochs 5 --models 1
 """
 
 import argparse

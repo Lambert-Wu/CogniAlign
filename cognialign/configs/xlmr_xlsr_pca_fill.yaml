@@ -1,4 +1,17 @@
 # ── 对比实验：XLM-R（文本）+ XLS-R 经 **PCA 降到 768**（音频）─────────────
+#    **外加：把凑长度的空白行填成这条录音自己的平均值**
+#
+# 和 configs/xlmr_xlsr_pca.yaml 的区别只有一处：`pca.fill_padding: 'mean'`。
+#
+# 为什么还要这一处：特征统一凑到 512 行，短的样本后面是空白行。
+# 网络最后一步 `src.mean(dim=1)` 没有遮挡，空白行也一起平均；
+# 更要命的是空白行进交叉注意力后会"复活"成一个跟真帧一样大的外来向量
+# （query=0 -> 注意力均匀 -> 拿到整段文字的平均），等于往结果里掺了
+# 一大坨跟这条录音无关的东西。
+# 实测（tools/probe_padding_dilution.py，235 条）：
+#     空白行留零      池化结果 vs「只喂真帧」的余弦 0.700
+#     空白行填自身均值                            0.992
+# 这样改**不用动网络**，只重新处理一遍特征。
 #
 # 和 configs/default.yaml 的区别**只有音频侧怎么从 1024 变 768**：
 #
@@ -30,9 +43,10 @@ dataset:
   # ⚠️ 训练实际用多长看 train.seq_length（在下面 train 段），不是这里。
   max_length: 512
   pauses: true
-  # ⚠️ 输出目录：<split>/feat_xlmr_xlsr_pca/
+  # ⚠️ 输出目录：<split>/feat_xlmr_xlsr_pca_fill/
   #    （输入是 <split>/feat_xlmr_xlsr/，见下面 pca.source_features_dir）
-  features_dir: 'xlmr_xlsr_pca'
+  #    和 xlmr_xlsr_pca.yaml 那套（空白行留零）分开存，两边都能拿去训练对比。
+  features_dir: 'xlmr_xlsr_pca_fill'
   text_fallback: 'distil'
   rare_char_map:
     锨: 先      # xiān
@@ -44,6 +58,7 @@ dataset:
     荠: 记      # jì
 
 # ── PCA 降维参数（只有 tools/pca_audio_reduce.py 读这一段）────────────────
+# ⚠️ 这份配置和 xlmr_xlsr_pca.yaml 的唯一区别就是下面的 fill_padding。
 pca:
   # 目标编码器：降维后的特征在 encoders.audio 里登记成哪个名字。
   # 它的 dim 就是降维的目标维度（768），suffix 决定输出文件名。
@@ -62,12 +77,19 @@ pca:
   # true = 压完再除以标准差（各维方差拉成 1）。
   # 默认 false：PCA 只换基不缩放，各维仍是"方差从大到小"，后层网络更好接。
   whiten: false
+  # 凑够 512 行的那些空白行，压完填什么：
+  #   'zero'  全零（xlmr_xlsr_pca.yaml 那套的行为，会被 mean pooling 一起平均）
+  #   'mean'  填成**这条录音自己的真帧均值** —— 本实验选这个。
+  #           空白行贡献的就是自己的平均，不再掺进外来方向。
+  # ⚠️ 这个值不影响拟合（拟合只看有效帧），只影响写出去的特征，
+  #    所以它变了**不用重新拟合**，但会写进存档的配方里做一致性校验。
+  fill_padding: 'mean'
   # PCA 参数（均值 / 主成分 / 解释方差）存哪，相对项目根解析。
   # 存下来是为了**可复现**：换机器不用重跑 3.6 万行拟合，也便于核对。
-  # ⚠️ 2026-10-02：从 checkpoints/ 挪到 modules/logs/ —— checkpoints/ 这个目录名
-  #    在 JupyterLab 里打不开（被 Jupyter 的 /api/contents/<path>/checkpoints 路由劫持），
-  #    放这里既能浏览、又不会在每次跑 PCA 时重新造出那个目录。
-  model_out: 'modules/logs/pca_xlsr_768.pt'
+  # ⚠️ 两套配置共用同一个存档（PCA 参数本身一样），
+  #    存档里的"配方"记录了 fill_padding，切换时会提示重算。
+  # ⚠️ 2026-10-02：从 checkpoints/ 挪到 modules/logs/（checkpoints/ 在 JupyterLab 里打不开）。
+  model_out: 'cognialign/logs/pca_xlsr_768.pt'
 
 # ── 编码器登记表 ────────────────────────────────────────────────────────
 encoders:
@@ -163,9 +185,8 @@ encoders:
 
 train:
   # 训练时取前多少行（特征文件本身是 512 行）。改这个不用重提特征。
-  # 详见 configs/default.yaml 里同一项的说明（含 4.8% 差异的实测）。
-  # ⚠️ 2026-10-02：本次实验改成 512，喂满整个序列（含文本 <pad> / 音频 0 的
-  #    补位行）。原来的 320 版结果见 logs/xlmr_xlsr_pca_pause/。
+  # 详见 configs/default.yaml 里同一项的说明。
+  # 2026-10-02：改成 512，和 xlmr_xlsr_pca 的 s512 实验对齐（只变补位策略这一个变量）。
   seq_length: 512
 
   batch_size: 32
@@ -197,9 +218,12 @@ model:
   architecture: 'cross_attention'
   gated: false
 
-  # 结果目录标签：seq_length=512 这一版和原来 320 那版结果目录名本来相同
-  # （名字里不含 seq_length），不加标签会整个覆盖掉 320 那次的权重和日志。
-  # 加了标签 -> logs/xlmr_xlsr_pca_pause_s512/，两份并存可对比。
-  run_tag: 's512'
+  # 结果目录标签（只影响 `modules/logs/<结果目录>/` 的名字，不影响任何计算）。
+  # 🚨 这份配置和 configs/xlmr_xlsr_pca.yaml 的文本模型、音频模型、停顿都一样
+  #    （只有特征目录和填充策略不同），不加标签两者算出来的结果目录
+  #    是同一个 `xlmr_xlsr_pca_pause` —— 先跑一个再跑另一个，
+  #    后者会把前者的权重和日志**整个覆盖**，几小时白跑。
+  #    加了标签 -> `xlmr_xlsr_pca_pause_fill`，两份结果并存可对比。
+  run_tag: 'fill'
 
 model_name: ''
