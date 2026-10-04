@@ -142,7 +142,7 @@ def get_metrics_classification(true_labels, pred_labels):
     
     return accuracy, f1, recall, precision
 
-def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_scheduler, num_epochs, model_name, early_stopping, early_stopping_patience, cross_val=False, num_cross_val=0, early_stopping_metric='loss', early_stopping_min_delta=0.0):
+def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_scheduler, num_epochs, model_name, early_stopping, early_stopping_patience, cross_val=False, num_cross_val=0, early_stopping_metric='loss', early_stopping_min_delta=0.0, select_best=True):
     """Train the model with early stopping."""
     wandb.init(project="WordLevelFusion", config={"epochs": num_epochs})
     wandb.watch(model)
@@ -169,6 +169,8 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
     best_value, patience = (-float("inf") if higher_is_better else float("inf")), 0
     best_epoch, best_weights, rest_best_values = 0, None, []
     best_metric_extra = {}
+    # select_best=False 时用这两个记"最后一个 epoch"的结果（不做任何选点）
+    last_value, last_rest_values, last_metric_extra = None, [0, 0, 0], {}
     
     num_training_steps = num_epochs * len(train_dataloader)
     progress_bar = tqdm(range(num_training_steps))
@@ -222,6 +224,8 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
             # 按配置的判据取这一轮用来比较的数
             #   'loss'     —— 越小越好；'accuracy' —— 越大越好（旧行为）
             current = (val_extra['accuracy'] if higher_is_better else val_extra['loss'])
+            # 记录"最后一个 epoch"的结果，供 select_best=False 时使用
+            last_value, last_rest_values, last_metric_extra = current, rest_values, val_extra
             # 只有改进量 > min_delta 才算"刷新"。
             # 注意 loss 方向：current 比 best 小得够多才算改进
             # （min_delta=0 时退化和旧行为一致，仍是"严格更好"，不会因此少训）。
@@ -241,22 +245,37 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
                 print(f'Early stopping at epoch {epoch + 1}')
                 break
         
-        if not rest_best_values:
-            rest_best_values = [0, 0, 0]
-        
+        # ── 收尾：选点（默认）还是用最后一个 epoch ────────────────────────────
+        # select_best=False：**不做任何基于验证集的选点** —— 固定 epoch 数训练，
+        # 直接返回最后一个 epoch 的权重。用于"防止在评测集上选点造成泄漏"的
+        # 严谨评估（见 docs/RESULTS.md 的中文少样本微调章节）。
+        if select_best:
+            if best_weights is not None:
+                model.load_state_dict(best_weights)
+            final_value, final_rest = best_value, rest_best_values
+            final_extra, final_epoch = best_metric_extra, best_epoch
+        else:
+            final_value = last_value if last_value is not None else best_value
+            final_rest = last_rest_values
+            final_extra, final_epoch = last_metric_extra, num_epochs
+            log.write('[select_best=False] 不选点，返回最后一个 epoch 的权重\n')
+
+        if not final_rest:
+            final_rest = [0, 0, 0]
+
         # 汇总行按判据改名，避免出现 "Best validation accuracy: 0.43" 这种
         # 把 loss 当 accuracy 写的误导（旧版本写死了 accuracy 这个词）。
         best_metric_name = 'accuracy' if higher_is_better else 'loss'
-        log.write(f'Best validation {best_metric_name}: {best_value}\n')
-        log.write(f'Best validation accuracy: {best_metric_extra.get("accuracy", 0)}\n')
-        log.write(f'Best validation F1: {rest_best_values[0]}\nBest validation Recall: {rest_best_values[1]}\nBest validation Precision: {rest_best_values[2]}\n')
-        log.write(f'Best epoch: {best_epoch}\n')
-    
+        log.write(f'Best validation {best_metric_name}: {final_value}\n')
+        log.write(f'Best validation accuracy: {final_extra.get("accuracy", 0)}\n')
+        log.write(f'Best validation F1: {final_rest[0]}\nBest validation Recall: {final_rest[1]}\nBest validation Precision: {final_rest[2]}\n')
+        log.write(f'Best epoch: {final_epoch}\n')
+
     # 兜底：理论上 best_weights 不会是 None（best_value 从 ±inf 起，
     # 第一个 epoch 必定会保存一次），但白跑一整折再崩不值得，这里再加一道保护。
-    if best_weights is not None:
+    if select_best and best_weights is not None:
         model.load_state_dict(best_weights)
-    return model, best_value, rest_best_values
+    return model, final_value, final_rest
 
 def evaluation(model, dataloader, lossfn, log, test=False):
     """Evaluate the model on a given dataset."""

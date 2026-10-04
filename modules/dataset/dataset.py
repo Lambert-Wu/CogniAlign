@@ -303,6 +303,17 @@ def get_dataloaders(config, kfold_number = 0):
             train_labels.append(labels[i])
             train_groups.append(groups[i])
 
+    # ── 可选：验证集就用训练集本身（train.validate_on_train: true）─────────────
+    # 用途：微调时**不让留出的测试集参与任何选点/早停** —— 只在这几条训练样本上
+    # 做验证，val_uids<折> 那批只当最终测试集，训练全程不碰。
+    # 代价：验证集 = 训练集，指标只反映拟合程度，不能当泛化估计（这是刻意的）。
+    if bool(config.train.get('validate_on_train', False)):
+        print('[数据] train.validate_on_train=True：验证集 = 训练集（%d 条），'
+              'val_uids<折> 只当最终测试集' % len(train_uids))
+        validation_uids = list(train_uids)
+        validation_features = list(train_features)
+        validation_labels = list(train_labels)
+
 
     train_dataset = AdressoDataset(train_features, train_labels)
     validation_dataset = AdressoDataset(validation_features, validation_labels)

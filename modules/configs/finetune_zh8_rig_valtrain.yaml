@@ -1,0 +1,67 @@
+# ── 严谨验证（按你的要求）：微调时**验证集 = 那 8 条中文训练样本** ──────
+#
+# 和 finetune_zh8_rig_ep*.yaml 的唯一区别：train.validate_on_train = true。
+#   · 训练集 = 8 条中文（train_uids<折>）
+#   · 验证集 = **同样这 8 条**（不再用 val_uids<折> 那 72 条）
+#   · val_uids<折> 那 72 条在整个训练/早停过程中**完全不碰**，只用于最终评估
+# 这样"选点"只发生在训练样本上，留出测试集零泄漏。
+#
+# 20 折 = 20 组随机 8 条划分（fold 0..19）。早停看这 8 条的 loss（patience 10）。
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  init_checkpoint: 'logs/distil_wav2vec2_pause/model_fold_0.pth'
+  batch_size: 8
+  num_epochs: 50
+  learning_rate: 0.00002
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 10
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  # 关键：验证集 = 训练集（那 8 条），测试集 72 条不参与任何训练/选点
+  validate_on_train: True
+  select_best: True
+  cross_validation: True
+  cross_validation_folds: 20
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'chinese'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  run_tag: 'rigVT'
+
+model_name: ''

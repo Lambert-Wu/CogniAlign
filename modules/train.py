@@ -107,7 +107,8 @@ def main(config):
                     config.train.num_epochs, config.path_name, config.train.early_stopping, 
                     config.train.early_stopping_patience, config.train.cross_validation, fold,
                     early_stopping_metric=config.train.get('early_stopping_metric', 'loss'),
-                    early_stopping_min_delta=float(config.train.get('early_stopping_min_delta', 0.0))
+                    early_stopping_min_delta=float(config.train.get('early_stopping_min_delta', 0.0)),
+                    select_best=bool(config.train.get('select_best', True))
                 )
                 
                 log.write(f'Fold {fold}: Best Value = {best_value}\n')
@@ -139,7 +140,8 @@ def main(config):
             config.train.num_epochs, config.path_name, config.train.early_stopping, 
             config.train.early_stopping_patience,
             early_stopping_metric=config.train.get('early_stopping_metric', 'loss'),
-            early_stopping_min_delta=float(config.train.get('early_stopping_min_delta', 0.0))
+            early_stopping_min_delta=float(config.train.get('early_stopping_min_delta', 0.0)),
+            select_best=bool(config.train.get('select_best', True))
         )
         
         torch.save(model.state_dict(), model_save_path)

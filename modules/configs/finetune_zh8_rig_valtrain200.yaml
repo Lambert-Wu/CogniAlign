@@ -1,0 +1,65 @@
+# ── 微调：200 轮 + loss 早停，验证集 = 训练的那 8 条中文 ──────────────────
+#
+# 就是"之前的配方"（num_epochs=200 / early_stopping on loss），唯一区别：
+# train.validate_on_train=true → 早停看的 loss 来自**那 8 条训练样本**，
+# val_uids<折> 的 72 条只当最终测试集，训练/早停全程不碰。
+#
+# 20 折 = 20 组随机 8 条划分。
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  init_checkpoint: 'logs/distil_wav2vec2_pause/model_fold_0.pth'
+  batch_size: 8
+  num_epochs: 200
+  learning_rate: 0.00002
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  # 验证集 = 训练集（那 8 条）；72 条测试集不参与训练/选点
+  validate_on_train: True
+  select_best: True
+  cross_validation: True
+  cross_validation_folds: 20
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'chinese'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  run_tag: 'rigVT200'
+
+model_name: ''

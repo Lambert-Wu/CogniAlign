@@ -653,6 +653,53 @@ COGNIALIGN_SPLIT=train $PYTHON evaluate.py --config configs/xlmr_wav2vec2.yaml \
     --uids-file en_rehearsal_forget_uids.npy
 ```
 
+### ⑥ 严谨验证：微调到底有没有真实提高（20 组抽样，消除"选点泄漏"）
+
+**问题**：①里的 .810/.813 是**带选点泄漏**的 —— 微调用中文那 72 条（= 报告集）的验证 loss 早停 / 挑 best epoch，再在同一批 72 条上报 AUC。这是"在评测集上选模型"，数字偏乐观、且和零样本（无选点）不可比。
+
+**协议**（消除泄漏 + 覆盖抽样方差）：
+
+- 20 组独立随机 8 条（4 健康 + 4 患病）划分（`tools/make_fewshot_split.py` fold 0..19）；第 k 组在互补的 72 条上评测。
+- 微调**不在这 72 条上做任何选点**：固定 epoch、存最后一个（`train.select_best: false`）。
+- 零样本 = 同一起点（`distil_wav2vec2_pause/model_fold_0.pth`）、同一批 72 条、不训练。
+- 配对：每折算 ΔAUC = 微调 − 零样本，报 mean±std、bootstrap 95% CI、Wilcoxon 符号秩。
+
+**结果**（阈值 0.5；零样本全判阳性，Acc .431 **低于**多数类 56.9%）：
+
+| 预算(轮) | Acc | BalAcc | AUC | F1 | 阳性率 | ΔAUC | 95% CI | 更好 | Wilcoxon p |
+|---|---|---|---|---|---|---|---|---|---|
+| 零样本 | .431±.000 | .500 | .632±.021 | .602 | 1.00 | — | — | — | — |
+| 5 | .608±.028 | .602 | .680±.030 | .542 | .44 | +.048 | [+.039, +.058] | 20/20 | 1.9e-6 |
+| 20 | .626±.056 | .653 | .749±.062 | .660 | .67 | +.117 | [+.091, +.141] | 19/20 | 3.8e-6 |
+| 50 | .669±.064 | .686 | .767±.079 | .677 | .60 | +.135 | [+.098, +.168] | 18/20 | 1.4e-4 |
+| 200 | .685±.077 | .697 | .772±.094 | .679 | .56 | +.140 | [+.096, +.179] | 18/20 | 3.6e-5 |
+| 500 | .690±.080 | .701 | .773±.094 | .681 | .55 | +.141 | [+.097, +.180] | 18/20 | 4.8e-5 |
+
+**结论**
+
+1. **微调是真的有提高**：5→500 轮，ΔAUC 全部为正、95% CI 全部不含 0、18–20/20 组更好、Wilcoxon p ≤ 4.8e-5。
+2. **50 轮即到平台**：50→200→500 的 AUC 只有 .767 → .772 → .773；200/500 基本白加。
+3. **选点泄漏把数字抬高了约 0.05**：带泄漏的单次是 .810–.813，不泄漏后是 .767（50 轮）/.773（500 轮）。**①里的 .810 以本节为准。**
+4. 5 轮时 AUC 已提高但 F1 反降（阳性率 1.0→.44，校准还没到位）；20 轮起 Acc/BalAcc/F1 也一起变好。
+
+**附：`train.validate_on_train`（验证集 = 那 8 条训练样本）≡ 不选点**
+另按"验证只用那 8 条中文"跑了 50/200/500 轮：权重与"不选点"版本**逐字节相同**（fold 0/5/12/19 md5 一致）；`Best epoch` 落在最后一轮（训练 loss 一直在降，loss 早停永不触发）。所以"验证集=训练集"**数学上等价于固定 epoch / 不选点**，两者都保证那 72 条不参与任何选择。结果目录 `chinese_wav2vec2_pause_rigVT*`。
+
+**复现**
+
+```bash
+cd /root/autodl-tmp/CogniAlign/modules
+export PYTHON=/root/miniconda3/envs/adress/bin/python COGNIALIGN_SPLIT=test
+# 20 组 8 条划分
+for f in $(seq 0 19); do $PYTHON tools/make_fewshot_split.py --per-class 4 --seed $f --fold $f --apply --force; done
+# 不选点、固定预算（5/20/50）
+$PYTHON train.py --config configs/finetune_zh8_rig_ep50.yaml
+# 验证=8条、200/500 轮（等价于不选点）
+$PYTHON train.py --config configs/finetune_zh8_rig_valtrain200.yaml
+# 配对评估（20 折 × 各预算 + 零样本，含 bootstrap CI / Wilcoxon）
+$PYTHON /tmp/opencode/rigorous_eval.py
+```
+
 ### 本次新增 / 改动
 
 - `train.py`：`num_warmup_steps` → `train.warmup_steps`（默认 20）；调用 `load_init_weights()`。
@@ -662,3 +709,7 @@ COGNIALIGN_SPLIT=train $PYTHON evaluate.py --config configs/xlmr_wav2vec2.yaml \
 - `paths.py`：新增 `splits_dir_for()` / `labels_csv_for()`。
 - `tools/make_fewshot_split.py`、`tools/make_rehearsal_split.py`：新增。
 - `configs/finetune_zh_8shot.yaml`、`finetune_zh8_enrehearse.yaml`、`finetune_zh8_xlmrw2v.yaml`、`finetune_zh8_en8_xlmrw2v.yaml`：新增（均 `warmup_steps: 0`）。
+- `core/utils.py`：`train(..., select_best=True)`；`select_best: false` 时不做验证集选点，返回最后一个 epoch（用于消除选点泄漏）。
+- `dataset/dataset.py`：`train.validate_on_train`（验证集 = 训练集，让留出测试集不参与选点）。
+- `train.py`：把 `train.select_best` 传给 `train()`。
+- `configs/finetune_zh8_rig_ep{5,20,50}.yaml`（固定预算、不选点、20 折）、`finetune_zh8_rig_valtrain{,200,500}.yaml`（验证=那 8 条、20 折）：新增。
