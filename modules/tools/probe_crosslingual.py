@@ -345,17 +345,77 @@ def residualize_block(X, l):
     return X - A @ beta
 
 
-def assemble_lc(mods, Fe, Fz, Le, Lz, align):
-    """对齐 → 逐块剔除长度 → 拼起来。"""
+def delength_pair(Xs, Xt, ls, lt, mode='domain'):
+    """把「长度」从两侧特征里剔除，返回 (Xs', Xt')。
+
+    三种口径的区别只在**拟合那步用谁的样本**，但含义完全不同：
+
+        domain  各自用自己的长度拟合（英文用英文、中文用中文）
+                → 去的是"每边**内部**的长度效应"。
+        source  只用源域(英文)拟合，同一个方向套到两边
+                → 去的是"**英文模型学到的那个长度方向**"。这才是"英文训的模型搬到
+                  中文时"真正需要废掉的东西 —— 被污染的正是源域学出来的那条规则。
+        pooled  两边合起来拟合（不用任何标签，合法）
+                → 折中，假定两边共享同一个"长度 → 特征"映射。
+
+    ⚠️ 三种口径给的数字会不一样，报结论时**必须声明用的哪种**，最好三个都报（敏感性）。
+    """
+    ls = np.asarray(ls, dtype=float)
+    lt = np.asarray(lt, dtype=float)
+    if mode == 'domain':
+        return residualize_block(Xs, ls), residualize_block(Xt, lt)
+    if mode == 'source':
+        fit_X, fit_l = Xs, ls
+    elif mode == 'pooled':
+        fit_X, fit_l = np.vstack([Xs, Xt]), np.r_[ls, lt]
+    else:
+        raise ValueError('未知去长度口径 %r' % mode)
+    A = np.c_[np.ones(len(fit_l)), fit_l]
+    beta, *_ = np.linalg.lstsq(A, fit_X, rcond=None)
+    Bs = np.c_[np.ones(len(ls)), ls]
+    Bt = np.c_[np.ones(len(lt)), lt]
+    return Xs - Bs @ beta, Xt - Bt @ beta
+
+
+def assemble_dl(mods, Fe, Fz, Le, Lz, align, mode='domain'):
+    """对齐 → 逐块按指定口径剔除长度 → 拼起来。"""
     blocks = []
     for m in mods:
         blocks += MODALITY_EXPAND[m]
     Xs_parts, Xt_parts = [], []
     for m in blocks:
         a, b = apply_align(align, Fe[m], Fz[m])
-        Xs_parts.append(residualize_block(a, Le[m]))
-        Xt_parts.append(residualize_block(b, Lz[m]))
+        a, b = delength_pair(a, b, Le[m], Lz[m], mode)
+        Xs_parts.append(a)
+        Xt_parts.append(b)
     return np.hstack(Xs_parts), np.hstack(Xt_parts)
+
+
+def assemble_lc(mods, Fe, Fz, Le, Lz, align):
+    """（旧名保留）逐域各自剔除长度。"""
+    return assemble_dl(mods, Fe, Fz, Le, Lz, align, mode='domain')
+
+
+def strat_auc(y, l, p, bins=2):
+    """按长度分层算 AUC：样本按长度分 bins 层，层内各自算，再按样本数加权平均。
+
+    ⚠️ 分层的价值在于**不假设**"长度 → 特征"是线性的（残差化假设了），
+    代价是每层样本更少、区间更宽。两层差不多 → 分数不是只在某一段长度上有效。
+    返回 ([(层样本数, 层内 AUC)], 加权平均)。
+    """
+    edges = list(np.quantile(l, np.linspace(0, 1, bins + 1)[1:-1])) if bins > 1 else []
+    bounds = [-np.inf] + edges + [np.inf]
+    rows, wsum, n_ok = [], 0.0, 0
+    for i in range(len(bounds) - 1):
+        sel = (l > bounds[i]) & (l <= bounds[i + 1])
+        if int(sel.sum()) < 4 or len(np.unique(y[sel])) < 2:
+            rows.append((int(sel.sum()), float('nan')))
+            continue
+        a = roc_auc_score(y[sel], p[sel])
+        rows.append((int(sel.sum()), a))
+        wsum += a * int(sel.sum())
+        n_ok += int(sel.sum())
+    return rows, (wsum / n_ok if n_ok else float('nan'))
 
 
 def boot_auc_ci(y, p, n=1000, seed=0):
@@ -479,6 +539,33 @@ def main():
             auc_lc = roc_auc_score(y_zh, fit_probe(Xs2, y_en, args.seed)(Xt2))
             print("  %-8s %-8s %10.3f %10.3f %+10.3f" % (m, al, auc_raw, auc_lc, auc_lc - auc_raw))
     print("  （差 ≈ 0 → 可迁移信号与长度无关；差明显为负 → 之前的\"信号\"主要就是长度）")
+
+    # ---- 长度去法对照：换"用谁的样本拟合长度回归"，结果差多少
+    # 这一步专门回答"该按哪种口径去长度"。三种口径的含义完全不同（见 delength_pair），
+    # 报结论时必须声明用的哪种，最好三个都报（敏感性分析）。
+    print("\n【长度去法对照】换「用谁的样本拟合长度回归」，跨语言 AUC 差多少（none 对齐）")
+    print("  %-8s %10s %12s %14s %10s" % ("模态", "不去长度", "逐域各自", "只用英文方向", "两边合并"))
+    for m in mods_sel:
+        Xs, Xt = assemble([m], F_en, F_zh, 'none')
+        row = [roc_auc_score(y_zh, fit_probe(Xs, y_en, args.seed)(Xt))]
+        for mode in ('domain', 'source', 'pooled'):
+            a, b = assemble_dl([m], F_en, F_zh, L_en, L_zh, 'none', mode)
+            row.append(roc_auc_score(y_zh, fit_probe(a, y_en, args.seed)(b)))
+        print("  %-8s %10.3f %12.3f %14.3f %10.3f" % (m, row[0], row[1], row[2], row[3]))
+    print("  （逐域=各去各的；只用英文方向=把英文学到的那条长度规则整体废掉；两边合并=折中）")
+
+    # ---- 长度分层：不假设线性，把中文按自身长度分两层，看分数是否只在某一段长度上有效
+    print("\n【长度分层】把中文 80 条按自身长度分两半，层内算跨语言 AUC（不去长度）")
+    print("  %-8s %18s %18s %10s" % ("模态", "短半 (n, AUC)", "长半 (n, AUC)", "加权平均"))
+    for m in mods_sel:
+        Xs, Xt = assemble([m], F_en, F_zh, 'none')
+        p = fit_probe(Xs, y_en, args.seed)(Xt)
+        rows, avg = strat_auc(y_zh, L_zh['audio'], p, bins=2)
+        cells = ["%d, %.3f" % (n, a) for n, a in rows]
+        while len(cells) < 2:
+            cells.append("-")
+        print("  %-8s %18s %18s %10.3f" % (m, cells[0], cells[1], avg))
+    print("  （两层差不多 → 分数不是只在某一段长度上有效；差很多 → 结论被长度绑架）")
 
     # ---- 置换对照：把英文标签打乱后重训，中文测试 AUC 应回到 0.5 附近。
     #      这一行是"上面那些 0.6 不是泄漏/阈值假象"的凭据，不能省。
