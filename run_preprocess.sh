@@ -83,8 +83,8 @@ if command -v readlink >/dev/null 2>&1; then
 fi
 HERE="$(cd "$(dirname "$_SELF_PATH")" && pwd)"
 SELF="$HERE/$(basename "$_SELF_PATH")"
-MODULES_DIR="$HERE/modules"
-ENTRY="preprocess/extract_features.py"   # 相对 modules/ 的路径
+MODULES_DIR="$HERE/cognialign"
+ENTRY="preprocess/extract_features.py"   # 相对 cognialign/ 的路径
 # 模型线路、文件名后缀、停顿开关全部由 split_info() 从配置读
 # （configs/*.yaml 的 encoders / dataset 段 + paths.py 的路径）。
 # 以前这里要 sed 抓 extract_features.py 的源码文本，脚本一改写法就失效。
@@ -94,7 +94,7 @@ BG=0
 CHECK=0
 RESUME=0
 WORKER=0
-# 用哪份配置（路径相对 modules/）。
+# 用哪份配置（路径相对 cognialign/）。
 # 模型名、特征输出目录、文件名后缀、停顿开关**全部从这份配置读**，
 # 所以换实验只改这一个参数 —— 不用再手工 export
 # COGNIALIGN_CONFIG / COGNIALIGN_TEXT_MODEL / COGNIALIGN_AUDIO_MODEL 一串变量。
@@ -181,7 +181,7 @@ esac
 # 超参，提取和训练**必须用同一份**，否则特征文件名对不上、训练直接 FileNotFoundError。
 CFG_PATH="$MODULES_DIR/$CONFIG"
 if [ ! -f "$CFG_PATH" ]; then
-    echo "找不到配置文件: $CONFIG（路径相对 modules/）" >&2
+    echo "找不到配置文件: $CONFIG（路径相对 cognialign/）" >&2
     echo "现有配置：" >&2
     ls -1 "$MODULES_DIR/configs" 2>/dev/null | sed 's/^/    configs\//' >&2 || true
     exit 2
@@ -248,7 +248,7 @@ split_info() {
     _info="$("$PYTHON" -c "
 import os, sys
 root = os.environ['COGNIALIGN_PROJECT_ROOT']
-sys.path.insert(0, os.path.join(root, 'modules'))
+sys.path.insert(0, os.path.join(root, 'cognialign'))
 import paths
 from core import feature_spec
 
@@ -303,7 +303,7 @@ EOF
     fi
     if [ -z "$TEXT_SUF" ] && [ -z "$AUDIO_FULL_SUF" ]; then
         echo "  [!!] 读不到配置里的编码器参数（configs/*.yaml 的 encoders 段）" >&2
-        echo "       确认 $PYTHON 能 import modules/core/feature_spec.py" >&2
+        echo "       确认 $PYTHON 能 import cognialign/core/feature_spec.py" >&2
     fi
 
     # 样本数：从标签表数行数（awk 会数到最后一行没换行的），不写死
@@ -405,7 +405,7 @@ if [ "$WORKER" = 1 ]; then
 
         echo
         echo "--- [${IDX}/${TOTAL}] $SP 结果核对 ---"
-        "$PYTHON" "$HERE/modules/tools/verify_features.py" || true
+        "$PYTHON" "$HERE/cognialign/tools/verify_features.py" || true
         echo "(核对结束，不影响主流程)"
     done
 
@@ -471,7 +471,7 @@ for SP in "${SPLITS[@]}"; do
         echo
         echo "--- 自检 [${_IDX}/${#SPLITS[@]}] split=$SP ---"
     fi
-    if ! "$PYTHON" -u "$HERE/modules/tools/check_env.py" --mode preprocess; then
+    if ! "$PYTHON" -u "$HERE/cognialign/tools/check_env.py" --mode preprocess; then
         echo
         echo "自检没通过（split=$SP）—— 按上面标 [!!] 的项逐条解决，然后重跑。"
         echo "想单独再看一次自检（不跑）：bash run_preprocess.sh -c -s $SP"

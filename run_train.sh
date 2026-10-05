@@ -72,7 +72,7 @@ if command -v readlink >/dev/null 2>&1; then
 fi
 HERE="$(cd "$(dirname "$_SELF_PATH")" && pwd)"
 SELF="$HERE/$(basename "$_SELF_PATH")"
-MODULES_DIR="$HERE/modules"
+MODULES_DIR="$HERE/cognialign"
 ENTRY="train.py"
 
 BG=0
@@ -192,8 +192,8 @@ mkdir -p "$LOG_DIR"
 #   path_name  = model_name[_{fusion}][_{pooling}][_{gated}][_{run_tag}]
 #                （融合/池化/门控默认省略；门控开启时追加 _gated）
 # ⚠️ train.py 里的 log_path 是相对路径 logs/（相对**当前工作目录**），
-#    而脚本必须在 modules/ 下运行（模块间是平级 import），
-#    所以结果实际落在 modules/logs/ 而不是仓库根的 logs/。
+#    而脚本必须在 cognialign/ 下运行（模块间是平级 import），
+#    所以结果实际落在 cognialign/logs/ 而不是仓库根的 logs/。
 CFG_PATH="$MODULES_DIR/$CONFIG"
 # 也 export 出去：verify_features.py / check_env.py 这些工具没有 --config
 # 入参，靠这个环境变量找配置。不 export 的话它们会去读 default.yaml，
@@ -213,7 +213,7 @@ _fusion=""; _pooling=""; _path_name=""; _folds=""
 if [ -f "$CFG_PATH" ]; then
     _cfg="$("$PYTHON" -c "
 import os, sys
-sys.path.insert(0, os.environ['COGNIALIGN_PROJECT_ROOT'] + '/modules')
+sys.path.insert(0, os.environ['COGNIALIGN_PROJECT_ROOT'] + '/cognialign')
 from core import feature_spec
 cfg = feature_spec.load_default().cfg
 m = cfg.get('model', {}) or {}
@@ -368,7 +368,7 @@ if [ "$WORKER" = 1 ]; then
         echo "     自检会列出缺哪个。装："
         echo "     pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126"
         echo "  2) 特征文件不全 / 文件名对不上"
-        echo "     python modules/tools/verify_features.py        # 会逐条指出缺哪个 uid 的哪种特征"
+        echo "     python cognialign/tools/verify_features.py        # 会逐条指出缺哪个 uid 的哪种特征"
         echo "     这次训练要找的是 <split>/$_feat_dir/ 下的"
         echo "     <uid>$_text_suf.pt 与 <uid>$_audio_suf.pt —— 名字由配置的"
         echo "     encoders 段（suffix）和 dataset 段（pauses / features_dir）决定，"
@@ -389,7 +389,7 @@ fi
 echo "步骤 1/2  环境自检"
 echo "------------------------------------------------------"
 echo "（要 import torch / transformers / wandb 这些大包，约 40 秒不动是正常的）"
-if ! "$PYTHON" -u "$HERE/modules/tools/check_env.py" --mode train; then
+if ! "$PYTHON" -u "$HERE/cognialign/tools/check_env.py" --mode train; then
     echo
     echo "自检没通过 —— 按上面标 [!!] 的项逐条解决，然后重跑。"
     echo "想单独再看一次自检（不跑）：bash run_train.sh -c"
@@ -399,11 +399,11 @@ fi
 echo
 echo "特征文件核对（训练要按配置里的模型名去找 <uid>*.pt）"
 echo "------------------------------------------------------"
-if [ -f "$HERE/modules/tools/verify_features.py" ]; then
-    "$PYTHON" "$HERE/modules/tools/verify_features.py" --quick || {
+if [ -f "$HERE/cognialign/tools/verify_features.py" ]; then
+    "$PYTHON" "$HERE/cognialign/tools/verify_features.py" --quick || {
         echo
         echo "特征不全 —— 先用完整版看缺哪些："
-        echo "    $PYTHON $HERE/modules/tools/verify_features.py"
+        echo "    $PYTHON $HERE/cognialign/tools/verify_features.py"
         echo
         _cfg_hint=""
         if [ "$CONFIG" != "configs/default.yaml" ]; then

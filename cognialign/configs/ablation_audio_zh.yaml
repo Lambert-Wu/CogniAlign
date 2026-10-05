@@ -1,0 +1,66 @@
+# ── 仅用于评估：audio-only，在中文 test 上（text_fallback=chinese）──────
+#
+# 和 ablation_audio.yaml 完全一样，只有 dataset.text_fallback 从 distil
+# 改成 chinese —— 因为中文 test 的音频特征是历史命名 <uid>chinese_pauses_audio.pt。
+# 权重来自训练用的 ablation_audio.yaml（结果目录 logs/wav2vec2_pause/）。
+# ⚠️ 不要用这份去训练：它的 text_fallback 会让 train 侧去找 chinese_* 音频。
+#
+# 结果目录名（训练侧不会用到）= logs/wav2vec2_pause/
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'chinese'
+
+encoders:
+  text:
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: ''
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'plain_transformer'
+  gated: false
+
+model_name: ''

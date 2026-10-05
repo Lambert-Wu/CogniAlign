@@ -1,0 +1,112 @@
+# ── 中文少样本微调 + 英文 rehearsal（中英穿插，防遗忘）──────────────────
+#
+# 和 finetune_zh_8shot.yaml 的唯一区别
+# ------------------------------------
+# 训练集在 8 条中文之外，**再并入英文 fold 0 的验证集（47 条）**，
+# 且每个 batch 固定各取一半（4 中 + 4 英，中文重复采样）。
+# 目的是：只用 8 条中文微调会让模型把英文忘光（灾难性遗忘）；
+# 混入英文旧数据做 rehearsal，能在学中文的同时保住英文。
+#
+# 英文从哪来 / 怎么读
+# ------------------
+# dataset.mix_extra 里登记（见 dataset/dataset.py 的 mix_sources/_read_source）：
+#   · split: 'train'   → 英文数据在 data/train/feat_distil/
+#   · textual_model: 'distil'  → 英文文本特征是 <uid>distil_pauses.pt
+#     （中文侧是 <uid>chinese_pauses.pt，两边编码器不同名，所以按源分别指定）
+#   · val_fold: 0      → 只取 data/train/splits/val_uids0.npy 那 47 条
+#     即**微调起点（英文 fold 0 权重）训练时没见过**的一批 —— 干净的英文验证集。
+#
+# 训练集最终 = 8 中 + 47 英 = 55 条；验证集仍是中文那 72 条
+# （val_uids0.npy 里除 8 条中文训练样本外的其余）。
+# 来源分组：中文=组 0、英文=组 1 → InterleavedBatchSampler 每 batch 4+4。
+#
+# 跑法
+# ----
+#     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/finetune_zh8_enrehearse.yaml
+#     # 中文 72 条评估：
+#     COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
+#         --config configs/finetune_zh8_enrehearse.yaml \
+#         --checkpoint logs/chinese_wav2vec2_pause_ft8mix --fold 0
+#     # 英文遗忘评估（英文 fold 0 训练集 188 条，微调前/后各跑一次）：
+#     #   COGNIALIGN_SPLIT=train python cognialign/evaluate.py \
+#     #       --config configs/legacy_distil_wav2vec2.yaml \
+#     #       --checkpoint <权重> --fold 0 --on-train
+#
+# ⚠️ 中文文本侧是 bert-base-chinese、英文是 distil —— **两个不同编码器**。
+#    混合训练让同一套融合网络同时吃两种文本特征分布。能缓解遗忘，但不是
+#    "同一编码器的多语言表示"；要那一路得换 xlmr + xlsr（见 docs/RESULTS.md）。
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+  # ── 混合微调：并入英文 rehearsal 数据 ──────────────────────────────────
+  mix_extra:
+    - split: 'train'
+      textual_model: 'distil'      # 英文文本特征后缀 distil_pauses
+      audio_model: 'wav2vec2'
+      features_dir: 'distil'
+      pauses: true
+      val_fold: 0                  # 取 data/train/splits/val_uids0.npy（47 条）
+
+encoders:
+  text:
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  init_checkpoint: 'logs/distil_wav2vec2_pause'
+  # batch = 4 中 + 4 英（InterleavedBatchSampler 按来源数均分）。
+  batch_size: 8
+  num_epochs: 50
+  learning_rate: 0.00002
+  # warmup 步数（默认 20）。few-shot 每 epoch 只有 1 个 step，必须设 0：
+  # warmup>=1 时第 1 个 step 的学习率仍为 0，早停可能把"等于初始权重"的
+  # epoch 1 当成 best 存下来（见 train.py set_up 里的说明）。
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 10
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 1
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'chinese'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  # 结果目录 = logs/chinese_wav2vec2_pause_ft8mix/
+  run_tag: 'ft8mix'
+
+model_name: ''

@@ -1,0 +1,73 @@
+# ── 消融：只用音频（audio-only），distil+wav2vec2 特征集 ──────────────────
+#
+# 目的：和 text-only / multimodal GCA 凑成一个模态消融矩阵，训练用英文 train，
+# 分别在英文 val（5 折）和中文 test 上评估。
+#
+# 关键点：
+#   · model.textual_model = ''  →  dataset.read_CSV 只读音频流；
+#   · model.architecture = 'plain_transformer'（单模态必须用它，跨模态的
+#     cross_attention 会把输入当 (src, memory) 解包，单流会报错）；
+#   · dataset.text_fallback = 'distil'：音频文件名历史遗留带文本后缀，
+#     英文特征是 <uid>distil_pauses_audio.pt，所以这里必须写 distil。
+#   · 中文 test 的音频特征叫 <uid>chinese_pauses_audio.pt，评估时用
+#     ablation_audio_zh.yaml（那份只改 text_fallback=chinese，仅用于评估）。
+#
+# 结果目录 = logs/wav2vec2_pause/
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: ''
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'plain_transformer'
+  gated: false
+
+model_name: ''

@@ -1,6 +1,6 @@
 # 跨语言诊断：信号到底丢在哪一步（2026-10-03，本机）
 
-> 工具：`modules/tools/probe_crosslingual.py`（**只读特征，不训练、不写任何产物**）
+> 工具：`cognialign/tools/probe_crosslingual.py`（**只读特征，不训练、不写任何产物**）
 > 原始输出：`logs/probe_crosslingual_all.log`（已按修正后的掩码重跑）
 > 问题：英文训（235 条）→ 中文测（80 条）一直塌到跟瞎猜差不多，不知道该往哪使劲。
 
@@ -196,14 +196,14 @@ text 0.491 ± 0.190 ｜ audio 0.525 ± 0.091 ｜ both 0.471 ± 0.149 —— 在 
 `check_alignment.py` 复核 train 235/235、test 80/80 通过。但**本机这份数据不是这样**：
 
 ```
-python modules/tools/check_alignment.py --split train -f configs/default.yaml
+python cognialign/tools/check_alignment.py --split train -f configs/default.yaml
     -> ✅ 通过（235 条可判定）
-python modules/tools/check_alignment.py --split test  -f configs/default.yaml
+python cognialign/tools/check_alignment.py --split test  -f configs/default.yaml
     -> ✅ 通过（80 条可判定）
 
-python modules/tools/check_alignment.py --split train -f configs/xlmr_wav2vec2.yaml
+python cognialign/tools/check_alignment.py --split train -f configs/xlmr_wav2vec2.yaml
     -> ❌ 有问题（229 条）  cn/adrso002  token=255 -> 期望非零行 254，实际 221
-python modules/tools/check_alignment.py --split test  -f configs/xlmr_wav2vec2.yaml
+python cognialign/tools/check_alignment.py --split test  -f configs/xlmr_wav2vec2.yaml
     -> ❌ 有问题（80 条）   ad/0002      token=258 -> 期望非零行 257，实际 149
 ```
 
@@ -252,16 +252,16 @@ cd <项目根>
 PY="D:/anaconda3/envs/alzheimer/python.exe"          # 本机；服务器换成对应解释器
 
 # 三套编码器对照（本文件所有数字的来源）
-$PY modules/tools/probe_crosslingual.py -f configs/default.yaml              --boot 1000
-$PY modules/tools/probe_crosslingual.py -f configs/xlmr_wav2vec2.yaml        --boot 1000
-$PY modules/tools/probe_crosslingual.py -f configs/legacy_distil_wav2vec2.yaml \
+$PY cognialign/tools/probe_crosslingual.py -f configs/default.yaml              --boot 1000
+$PY cognialign/tools/probe_crosslingual.py -f configs/xlmr_wav2vec2.yaml        --boot 1000
+$PY cognialign/tools/probe_crosslingual.py -f configs/legacy_distil_wav2vec2.yaml \
         --test-text-model chinese --boot 1000      # 老配置 test 文本是 bert-base-chinese
 
 # 对齐自检（判定 feat_xlmr_wav2vec2 到底有没有错位）
-$PY modules/tools/check_alignment.py --split train -f configs/default.yaml
-$PY modules/tools/check_alignment.py --split test  -f configs/default.yaml
-$PY modules/tools/check_alignment.py --split train -f configs/xlmr_wav2vec2.yaml
-$PY modules/tools/check_alignment.py --split test  -f configs/xlmr_wav2vec2.yaml
+$PY cognialign/tools/check_alignment.py --split train -f configs/default.yaml
+$PY cognialign/tools/check_alignment.py --split test  -f configs/default.yaml
+$PY cognialign/tools/check_alignment.py --split train -f configs/xlmr_wav2vec2.yaml
+$PY cognialign/tools/check_alignment.py --split test  -f configs/xlmr_wav2vec2.yaml
 ```
 
 ⚠️ `legacy_distil_wav2vec2` 必须显式加 `--test-text-model chinese`：

@@ -1,0 +1,69 @@
+# ── 严谨验证：中文 8-shot 微调（chinese 特征 + distil 起点），固定 epoch、不选点 ──
+#
+# 目的：验证"8 条中文微调是否真的比零样本好"，且**不在评测集上选点**。
+#   · 20 组随机 8 条划分（data/test/splits/ 的 fold 0..19，make_fewshot_split 生成）
+#   · 每组：训练 8 条、评测互补的 72 条；20 折 = 20 次独立抽样
+#   · train.select_best: false + early_stopping: false
+#       → 不做任何基于验证集的选点，固定 epoch 数训练，保存**最后一个 epoch** 的权重
+#   · 三种预算（num_epochs = 5 / 20 / 50）各跑一遍，看结论对预算是否稳健
+#   · 起点是**具体文件**（model_fold_0.pth），20 折共用同一起点（原生目录只有 5 折）
+#
+# 结果目录 = logs/chinese_wav2vec2_pause_rigE5/，每折存 model_fold_<k>.pth（k=0..19）
+# 评估：对第 k 折用 `evaluate.py --fold k`（val_uids<k> = 该折没训过的 72 条）
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'distil'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+
+train:
+  # 具体文件（不是目录）→ 所有折都用同一个英文起点
+  init_checkpoint: 'logs/distil_wav2vec2_pause/model_fold_0.pth'
+  batch_size: 8
+  num_epochs: 5
+  learning_rate: 0.00002
+  warmup_steps: 0
+  weight_decay: 0.01
+  early_stopping: False
+  # 关键：不选点，固定 epoch 数，返回最后一个 epoch 的权重
+  select_best: False
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 20
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'chinese'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: false
+  run_tag: 'rigE5'
+
+model_name: ''

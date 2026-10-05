@@ -1,0 +1,148 @@
+# ── 实验配置：中文内部 5 折（bert-base-chinese + wav2vec2-base）──────────────
+#
+# 目的
+# ----
+# 项目原本的设定是「英文(train 235 条)训 → 中文(test 80 条)测」，属于**跨语种**，
+# 分数会被语种差异拖低。这份配置换一个问法：
+#
+#     只用中文那 80 条，自己切 5 折，在同一语种内部训 + 测，能到多少？
+#
+# 这样得到的是**同语种**的天花板参考 —— 拿它跟跨语种的分数一比，
+# 就能看出"分数低"到底有多少是语种造成的、多少是模型能力不够。
+#
+# ⚠️ 样本量很小
+# ------------
+# 中文总共 80 条（健康 45 / 患病 35），5 折后**每折只有 64 条训练、16 条验证**。
+# 16 条里判错 1 条 = 6.25 个百分点，所以每折分数会跳得很厉害，
+# 看**5 折平均**才有意义，别盯单折。类别比例各折也不均匀（见 make_splits.py --stats）。
+#
+# 特征从哪来
+# ----------
+# 用的是**老实验那套**（<split>/feat_distil/），但注意里面的文件名前缀是
+# **chinese** 而不是 distil —— 当年跑 test 时文本侧就是 bert-base-chinese：
+#     data/test/feat_distil/<dx>/<uid>chinese_pauses.pt        ← 文本
+#     data/test/feat_distil/<dx>/<uid>chinese_pauses_audio.pt  ← 音频
+# 所以本配置的 textual_model 必须写 'chinese'，写 'distil' 会去找
+# <uid>distil_pauses*.pt，文件不存在。
+#
+# 折划分从哪来
+# ------------
+# 中文原来没有折划分（只有英文有）。本实验需要，已用下面这条命令生成：
+#     COGNIALIGN_SPLIT=test python cognialign/tools/make_splits.py --apply
+# 落盘在 data/test/splits/（已改成"划分跟着 split 走"，不会覆盖英文那份）。
+# 规则与英文那套完全一致：KFold(5, shuffle=True, random_state=42)。
+#
+# 跑法
+# ----
+#     COGNIALIGN_SPLIT=test bash run_train.sh -f configs/chinese_internal_cv.yaml
+#     # 评估（看真实水平必须加 --fold）
+#     cd cognialign && COGNIALIGN_SPLIT=test python evaluate.py \
+#         --checkpoint <权重目录> --config configs/chinese_internal_cv.yaml \
+#         --textual-model chinese --audio-model wav2vec2 --fold 0
+
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+dataset:
+  max_length: 512       # 文本/音频统一对齐到这么长的序列
+  pauses: true          # true = 用带停顿标记的那版转写（文件名多一段 _pauses）
+  # 特征 .pt 放在 <split>/feat_<这个名字>/ 里。
+  # 实际目录名 = 'feat_' + 这里的值，所以 'distil' → data/test/feat_distil/。
+  features_dir: 'distil'
+  # 只用音频、不用文本时文件名里仍带一段文本后缀（老命名规则遗留），本项目用不到。
+  text_fallback: 'distil'
+
+# ── 编码器登记表 ────────────────────────────────────────────────────────
+# 与 legacy_distil_wav2vec2.yaml 里的这一段**完全一致**，别改这里、改那边没用 ——
+# 之所以重复一份，是因为配置文件是自包含的（yaml 不支持 include，
+# 硬拆成多文件反而更难读）。真要改编码器定义，两份一起改。
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    # bert-base-chinese 的 tokenizer 是**按字切分**的（一个汉字一个 token，
+    # 且不带 ## 前缀），正好和逐词时间戳表里的单字对得上 —— 中文语料用它。
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+      word_start_prefix: 'Ġ'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 16        # ⚠️ 比英文那边(32)小：每折训练集只有 64 条，
+                        #    batch=16 → 每轮 4 个 batch；用 32 就只有 2 个，
+                        #    一个 epoch 里参数只更新 2 次，太少。
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  # 中文这边**每个折都是新训的**，不存在"复现旧实验"的包袱，
+  # 所以用新的 'loss' 判据（理由见 default.yaml 的注释：
+  # 验证集只有 16 条 → 准确率只有 17 个取值，用 accuracy 判会在台阶上假早停）。
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean' # 'mean', 'cls'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  # 文本侧**直接写 'chinese'**，不再靠 model.split_textual_model.test:
+  # —— 那个机制只有 run_preprocess.sh 在特征提取时读，train.py / evaluate.py
+  #    **都不读它**（实测 grep 过），写在这里不会生效，反而容易误以为已经切好了。
+  textual_model: 'chinese'
+  # 音频 768 维 = hidden_size → 不挂投影层，直接用。
+  audio_model: 'wav2vec2'
+
+  # fusion 只用来拼结果目录名（model_name = <文本>_<音频>_[P_]<fusion>）。
+  fusion: 'cross'
+  # 真正决定用哪个网络类的是 architecture。
+  architecture: 'cross_attention'
+  gated: false
+
+model_name: ''

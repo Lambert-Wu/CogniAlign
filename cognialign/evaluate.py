@@ -1,0 +1,357 @@
+# -*- coding: utf-8 -*-
+"""用训练好的权重在数据上跑一遍，看它判得准不准。
+
+原来的代码只有训练、没有"拿训好的模型去测新数据"这一步，这个脚本补上。
+
+产出
+----
+打印 + 存盘：
+- 准确率 / AUC / F1 / 查准 / 查全 / 混淆矩阵 / 各类人数
+- 每条录音的预测概率（默认存 logs/eval_preds_<时间戳>.csv）
+
+用法
+----
+    # 用单折权重评估测试集
+    COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
+        --checkpoint checkpoints/2026-09-27_distil_wav2vec2_pause/model_fold_0.pth
+
+    # 目录里有 5 折就都跑，再给平均
+    COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
+        --checkpoint checkpoints/2026-09-27_distil_wav2vec2_pause
+
+⚠️ 语种要自己留意
+------------------
+训练集是**英文**（文本用 distil），测试集是**中文**（文本用 bert-base-chinese）。
+模型只认 768 维的向量，不认语种 —— 所以拿英文训的权重去测中文特征**能跑通**，
+但两边不是一个语义空间，分数通常好不到哪去。
+脚本检测到"训练时的文本模型"和"当前特征用的文本模型"不一致时会提醒你。
+想同语种比较，得先把测试集的文本特征按训练时的模型重提一遍。
+"""
+
+import argparse
+import csv
+import os
+import re
+import sys
+import time
+
+_MODULES = os.path.dirname(os.path.abspath(__file__))      # 本文件就在 cognialign/ 下
+_PROJECT_ROOT = os.path.dirname(_MODULES)                   # 项目根
+sys.path.insert(0, _MODULES)
+
+# train.py 顶层会 wandb.login()，评估用不到它，先把开关设死。
+os.environ.setdefault('WANDB_MODE', 'disabled')
+os.environ.setdefault('WANDB_SILENT', 'true')
+
+import numpy as np
+import torch
+import yaml
+from dotmap import DotMap
+from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
+                             precision_score, recall_score, roc_auc_score)
+from torch.utils.data import DataLoader
+
+import paths
+from dataset.dataset import AdressoDataset, read_CSV
+from networks import model as model_module
+from core import feature_spec
+
+
+def build_config(config_file, textual_model, audio_model):
+    """读 yaml 拼出和训练时一样的 config。"""
+    with open(config_file, encoding='utf-8') as f:
+        cfg = DotMap(yaml.safe_load(f))
+    if textual_model is not None:
+        cfg.model.textual_model = textual_model
+    if audio_model is not None:
+        cfg.model.audio_model = audio_model
+
+    # 结果目录名**不在这里拼** —— 规则只有一处，见 core/feature_spec.result_names()。
+    # （评估不调 utils.save_config()，因为它会顺手建日志目录、写文件。）
+    # ⚠️ 这里以前是第三份手抄的算法（另外两份在 utils.save_config() 和
+    #    run_train.sh 里）。三处必须完全一致，否则评估会去**另一个目录**找权重，
+    #    或者报"找不到 checkpoint"却看不出为什么。加 run_tag 时尤其危险：
+    #    训练把结果写进了 ..._mean_fill/，而评估还在按 ..._mean/ 找。
+    cfg.model.multimodality = cfg.model.textual_model != '' and cfg.model.audio_model != ''
+    spec = feature_spec.from_config(cfg)
+    cfg.model_name, cfg.path_name = feature_spec.result_names(cfg)
+    cfg.model.model_name = cfg.model_name
+
+    # 把音频编码器的输出维度带进 model 段，网络结构据此决定要不要挂 ResNet 升维
+    # （见 networks/model.py 的 audio_projection_kind）
+    cfg.model.audio_dim = spec.dim('audio') if cfg.model.audio_model else 0
+    return cfg
+
+
+def build_model(cfg):
+    """按配置里的 model.architecture 建模型，直接复用 networks.model.build()。
+
+    和训练侧是**同一份实现** —— 以前这里和 train.py 各写一份
+    `if 'cross' in fusion` 的字符串判断，改一处忘一处就会训评不一致。
+    （不用 train.set_up() 是因为它会 wandb.init() 还会建优化器，评估都不要。）
+    """
+    return model_module.build(cfg.model)
+
+
+def load_weights(model, ckpt_path, device):
+    sd = torch.load(ckpt_path, map_location=device)
+    missing, unexpected = model.load_state_dict(sd, strict=True)
+    if missing or unexpected:
+        print('  ⚠️ 权重对不上：缺 %d 个、多 %d 个' % (len(missing), len(unexpected)))
+    else:
+        print('  ✅ 权重加载成功（%d 个参数块全部对上）' % len(sd))
+    return model
+
+
+@torch.no_grad()
+def predict(model, features, labels, device, batch_size=32):
+    model.eval()
+    loader = DataLoader(AdressoDataset(features, labels), batch_size=batch_size,
+                        shuffle=False)
+    probs, ys = [], []
+    for feats, lab in loader:
+        out = model(feats).squeeze(-1)
+        probs.extend(torch.sigmoid(out.float()).cpu().numpy().tolist())
+        ys.extend(lab.float().cpu().numpy().tolist())
+    return np.array(probs), np.array(ys)
+
+
+def bootstrap_ci(probs, ys, n_boot=2000, seed=0):
+    """对 acc / F1 / AUC 做 bootstrap 95% 置信区间。
+
+    样本少时（这里是 80 条中文）单点数字很容易被过度解读，论文里应报区间。
+    用固定 seed，保证同一份预测每次结果一致。
+    """
+    rng = np.random.default_rng(seed)
+    y = ys.astype(int)
+    p = np.asarray(probs, dtype=float)
+    n = len(y)
+    accs, f1s, aucs = [], [], []
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, n)
+        yy, pp = y[idx], p[idx]
+        pred = (pp >= 0.5).astype(int)
+        accs.append(accuracy_score(yy, pred))
+        f1s.append(f1_score(yy, pred, zero_division=0))
+        try:
+            aucs.append(roc_auc_score(yy, pp))
+        except ValueError:
+            pass
+
+    def ci(a):
+        if not a:
+            return float('nan'), float('nan')
+        return float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))
+
+    return ci(accs), ci(f1s), ci(aucs)
+
+
+def report(tag, probs, ys, thr=0.5):
+    pred = (probs >= thr).astype(int)
+    y = ys.astype(int)
+    tn, fp, fn, tp = confusion_matrix(y, pred, labels=[0, 1]).ravel()
+    acc = accuracy_score(y, pred)
+    try:
+        auc = roc_auc_score(y, probs)
+    except ValueError:
+        auc = float('nan')
+    print('\n================ %s ================' % tag)
+    print('人数：健康 %d 人 / 患病 %d 人' % (tn + fp, tp + fn))
+    print('判对的：%.1f%%（%d/%d）' % (acc * 100, (pred == y).sum(), len(y)))
+    print('AUC：%.3f' % auc)
+    print('查准：%.3f   查全：%.3f   F1：%.3f'
+          % (precision_score(y, pred, zero_division=0),
+             recall_score(y, pred, zero_division=0),
+             f1_score(y, pred, zero_division=0)))
+    print('混淆矩阵（行=实际，列=模型判的）：')
+    print('              判健康   判患病')
+    print('  实际健康    %5d   %5d' % (tn, fp))
+    print('  实际患病    %5d   %5d' % (fn, tp))
+    # 参考：0.5 未必是最佳切点（样本少、类别不均时尤其明显）
+    best_t, best_acc = thr, acc
+    for t in np.arange(0.05, 0.96, 0.05):
+        a = accuracy_score(y, (probs >= t).astype(int))
+        if a > best_acc + 1e-9:
+            best_t, best_acc = float(t), a
+    if best_t != thr:
+        print('（换个切点会更好：阈值 %.2f 时 %.1f%%；默认用的是 0.50）'
+              % (best_t, best_acc * 100))
+    (a_lo, a_hi), (f_lo, f_hi), (u_lo, u_hi) = bootstrap_ci(probs, ys)
+    print('95%% bootstrap CI：acc %.1f~%.1f%%   F1 %.3f~%.3f   AUC %.3f~%.3f'
+          % (a_lo * 100, a_hi * 100, f_lo, f_hi, u_lo, u_hi))
+    return {'acc': float(acc), 'auc': float(auc),
+            'f1': float(f1_score(y, pred, zero_division=0)),
+            'precision': float(precision_score(y, pred, zero_division=0)),
+            'recall': float(recall_score(y, pred, zero_division=0)),
+            'tn': int(tn), 'fp': int(fp), 'fn': int(fn), 'tp': int(tp),
+            'best_thr': best_t, 'best_acc': float(best_acc)}
+
+
+def ckpt_textual_model(ckpt_path):
+    """从权重所在目录名推断训练时用的文本模型。
+
+    目录名 = [YYYY-MM-DD_]{文本}_{音频}_{pause|nopause}[_融合][_池化][_tag]，例：
+        distil_wav2vec2_nopause
+        xlmr_xlsr_pca_pause_s512
+        2026-09-27_distil_wav2vec2_cross_mean（旧命名，同样适用）
+    去掉开头的日期段后，**第一段**就是文本模型名（音频名自带下划线也不影响）。
+    """
+    name = os.path.basename(os.path.dirname(os.path.abspath(ckpt_path)))
+    if not name:
+        return None
+    parts = name.split('_')
+    i = 0
+    while i < len(parts) and re.match(r'^\d{4}-\d{2}-\d{2}$', parts[i]):
+        i += 1
+    return parts[i] if i < len(parts) else None
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--checkpoint', required=True,
+                    help='单折 .pth，或装着 model_fold_*.pth 的目录')
+    ap.add_argument('--config', default=os.path.join(_MODULES, 'configs', 'default.yaml'))
+    ap.add_argument('--textual-model', default=None,
+                    help='特征文件名里的文本侧后缀（决定去读哪个 .pt）。'
+                         '默认跟着 split：test -> chinese，train -> distil')
+    ap.add_argument('--audio-model', default=None, help='同上，音频侧，默认用 yaml 里的值')
+    ap.add_argument('--batch-size', type=int, default=32)
+    ap.add_argument('--device', default=None)
+    ap.add_argument('--random', action='store_true',
+                    help='不加载权重，用随机初始化的模型跑一遍 —— 当作"什么都没学到"的基线。'
+                         '拿它和真权重的分数比，才知道模型到底学到了多少')
+    ap.add_argument('--fold', type=int, default=None,
+                    help='只测某一折的**验证集**（val_uids<n>.npy 里那批，模型训练时没见过）。'
+                         '这才是模型的真实水平；测全集会把背过的样本也算进去，分数虚高')
+    ap.add_argument('--on-train', action='store_true',
+                    help='配合 --fold：改测这一折的训练集部分（背过的样本，只做 sanity check）')
+    ap.add_argument('--uids-file', default=None,
+                    help='只测这个 .npy 里的 uid（相对 <当前split>/splits/ 或绝对路径）。'
+                         '用于"从某折里抽一部分当训练、剩下的专门测遗忘"这类自定义评估集 —— '
+                         '不必也不该去覆盖已有的 val_uids<n>.npy。与 --fold 二选一')
+    ap.add_argument('--save-preds', default=None,
+                    help='每条录音的预测存哪，默认 logs/eval_preds_<时间戳>.csv')
+    args = ap.parse_args()
+
+    device = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
+    split = paths.SPLIT
+    # split → 用哪个文本模型的映射已经在 paths.py 算好了（paths.TEXT_MODEL），
+    # 这里不再重写一遍 —— 以前两处各写一份，改一处忘一处就会不一致
+    # ⚠️ 用 is not None 而不是 or：`--textual-model ''` 是合法输入，表示
+    #    **单模态（只用音频）**，要原样保留空串。用 `or` 会被 paths.TEXT_MODEL
+    #    盖掉，把 audio-only 模型错当成多模态、去读根本不存在的文本特征。
+    textual = args.textual_model if args.textual_model is not None else paths.TEXT_MODEL
+
+    print('当前 split : %s（%s）' % (split, paths.SPLIT_ROOT))
+    print('权重       : %s' % args.checkpoint)
+    print('配置文件   : %s' % args.config)
+    print('设备       : %s' % device)
+
+    trained_textual = ckpt_textual_model(args.checkpoint)
+    if trained_textual and textual and trained_textual != textual:
+        print('\n⚠️⚠️ 语种不一致，分数要打折看：')
+        print('   这个权重是用【%s】（英文）训的，而要测的特征是用【%s】（中文）提的。'
+              % (trained_textual, textual))
+        print('   模型只认 768 维的数字、不认语种，所以照样能跑 —— 但两边不是一个意思，')
+        print('   分数偏低是正常的。想公平比较，得把特征按训练时的模型重提一遍。')
+
+    cfg = build_config(args.config, textual, args.audio_model)
+    print('模型配置   : %s | pooling=%s | %d 层'
+          % (cfg.model_name, cfg.model.pooling, cfg.model.n_layers))
+
+    print('\n读特征 ...')
+    uids, features, labels = read_CSV(cfg)
+    print('读到 %d 条：%s ...' % (len(uids), ', '.join(uids[:5])))
+
+    # 只保留指定的样本子集：--fold（某一折的 val/train）或 --uids-file（自定义 uid 列表）
+    if args.fold is not None and args.uids_file:
+        raise SystemExit('--fold 和 --uids-file 只能给一个')
+    if args.fold is not None or args.uids_file:
+        if args.fold is not None:
+            part = 'train' if args.on_train else 'val'
+            # ⚠️ 这里以前写死「--fold 只能配 train 用」，理由是"折划分只有 train 有"。
+            #    那个前提已经变了：现在 test（中文）也能有自己的折划分
+            #    （paths.SPLITS_DIR 跟着 split 走，见 tools/make_splits.py），
+            #    「用中文 80 条自己切 5 折训练」这个实验就要在 test 下用 --fold。
+            #    所以改成**看文件在不在**：划分文件存在就允许，不存在才报错。
+            split_path = os.path.join(paths.SPLITS_DIR, '%s_uids%d.npy' % (part, args.fold))
+            if not os.path.exists(split_path):
+                raise SystemExit(
+                    '找不到这一折的划分文件：%s\n'
+                    '  · 当前 split=%s，划分目录 = %s\n'
+                    '  · 该 split 还没做过 5 折划分？跑一下：\n'
+                    '      COGNIALIGN_SPLIT=%s python cognialign/tools/make_splits.py --apply'
+                    % (split_path, split, paths.SPLITS_DIR, split))
+            range_tag = '第 %d 折的%s集' % (args.fold, '训练' if args.on_train else '验证')
+            context = ('训练时见过，分数会偏高' if args.on_train
+                       else '训练时没见过 ← 真实水平')
+        else:
+            # 自定义 uid 列表：相对路径按**当前 split 的划分目录**解析，和 --fold 一致。
+            # 用途：从某折里抽一部分当训练、剩下的专门测遗忘（见 make_rehearsal_split.py）。
+            split_path = args.uids_file
+            if not os.path.isabs(split_path):
+                split_path = os.path.join(paths.SPLITS_DIR, split_path)
+            if not os.path.exists(split_path):
+                raise SystemExit(
+                    '找不到 uid 列表文件：%s\n  （相对路径按 %s 解析）'
+                    % (split_path, paths.SPLITS_DIR))
+            range_tag = '自定义 uid 列表（%s）' % os.path.basename(split_path)
+            context = '按给定 uid 过滤'
+        # 不加 allow_pickle：划分文件是定长字符串数组（<U8），和英文那份格式一致。
+        # 加了反而会掩盖"格式写错"这类问题。
+        sel = np.load(split_path)
+        sel_set = {str(u) for u in sel}
+        keep = [i for i, u in enumerate(uids) if str(u) in sel_set]
+        if not keep:
+            raise SystemExit('列表里没有能匹配上的样本：%s' % split_path)
+        uids = [uids[i] for i in keep]
+        features = [features[i] for i in keep]
+        labels = [labels[i] for i in keep]
+        print('限定范围   : %s，%d 条（%s）' % (range_tag, len(uids), context))
+        n_ad = sum(1 for l in labels if float(l) > 0.5)
+        print('           健康 %d 人 / 患病 %d 人' % (len(labels) - n_ad, n_ad))
+
+    print('特征形状   : 音频 %s / 文本 %s'
+          % (tuple(features[0][0].shape), tuple(features[0][1].shape)))
+
+    if os.path.isdir(args.checkpoint):
+        ckpts = sorted(f for f in os.listdir(args.checkpoint) if f.startswith('model_fold_'))
+        ckpts = [os.path.join(args.checkpoint, f) for f in ckpts]
+    else:
+        ckpts = [args.checkpoint]
+    if not ckpts:
+        raise SystemExit('目录里没有 model_fold_*.pth：%s' % args.checkpoint)
+
+    results, all_probs, ys = [], [], None
+    for i, ck in enumerate(ckpts):
+        name = os.path.basename(ck)
+        print('\n---- %s %s ----' % ('随机权重（基线）' if args.random else '加载', name))
+        # 固定随机种子，保证基线可比
+        torch.manual_seed(42)
+        model = build_model(cfg).to(device)
+        if args.random:
+            print('  （--random：没加载任何权重，模型是刚初始化的）')
+        else:
+            load_weights(model, ck, device)
+        probs, ys = predict(model, features, labels, device, args.batch_size)
+        results.append(report('第 %d 折  %s' % (i, os.path.basename(ck)), probs, ys))
+        all_probs.append(probs)
+
+    if len(results) > 1:
+        report('%d 折平均（概率取平均）' % len(results), np.mean(all_probs, axis=0), ys)
+        print('\n各折准确率: %s' % ', '.join('%.1f%%' % (x['acc'] * 100) for x in results))
+
+    out = args.save_preds or os.path.join(_PROJECT_ROOT, 'logs',
+                                          'eval_preds_%s.csv' % time.strftime('%Y%m%d_%H%M%S'))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    probs_out = all_probs[0] if len(all_probs) == 1 else np.mean(all_probs, axis=0)
+    with open(out, 'w', encoding='utf-8', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['uid', 'label', 'prob', 'pred'])
+        for u, y, p in zip(uids, ys, probs_out):
+            w.writerow([u, int(y), '%.4f' % p, int(p >= 0.5)])
+    print('\n每条录音的预测已存到: %s' % out)
+
+
+if __name__ == '__main__':
+    main()

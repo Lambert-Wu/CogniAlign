@@ -11,16 +11,18 @@ data/
 #    不是我们自己训练出来的。自己训练的产物放 checkpoints/，两者别混。
 models/
 
-# 自己训练出来的权重存档：从 modules/logs/<配置名>/ 复制过来的成品。
+# 自己训练出来的权重存档：从 cognialign/logs/<配置名>/ 复制过来的成品。
 # ⚠️ 写成 `checkpoints/*` 而不是 `checkpoints/`：忽略目录本身的话，
 #    git 压根不会进去看，下面的例外就失效了。
 checkpoints/*
 
 # Ignore all files in the logs directory
 logs/*
-# 训练产物：main.py 的 log_path 是相对路径 logs/，而它必须在 modules/ 下运行，
-# 所以模型权重和训练日志实际落在 modules/logs/ —— 这条别删，否则权重会进仓库
-modules/logs/
+# 训练产物：main.py 的 log_path 是相对路径 logs/，而它必须在 cognialign/ 下运行，
+# 所以模型权重和训练日志实际落在 cognialign/logs/ —— 这条别删，否则权重会进仓库
+cognialign/logs/
+# madress-2023 移植的独立产物（特征 .pt / 结果 JSON），同样不进仓库
+madress2023/logs/
 # Ignore all files in the base_logs directory
 base_logs/*
 # Ignore all files in the ablative_logs directory
@@ -67,3 +69,5 @@ env.sh
 #        git rm -r --cached .workbuddy
 .workbuddy/
 logs/
+# Jupyter 自动备份目录：不属于仓库内容
+.ipynb_checkpoints/

@@ -2,14 +2,30 @@
 
 Research code for ADReSSo Alzheimer's detection from speech: multimodal (text + audio)
 transformer over precomputed word-/frame-level embeddings. All Python lives under
-`modules/`; there is no package, no test suite, and no CI.
+`cognialign/`; there is no package, no test suite, and no CI.
 
-Deep docs (Chinese) live in `modules/README.md` and the module/script docstrings. Read
+Deep docs (Chinese) live in `cognialign/README.md` and the module/script docstrings. Read
 those before changing behavior — nearly every non-obvious decision is documented there.
+
+Also in the repo: `madress2023/` — an independent port of the madress-2023 ICASSP-2023
+cross-lingual method (eGeMAPS + tiny attention net; English pretrain → mixed-batch Chinese
+finetune → parameter averaging). It reads `data/` and writes only `madress2023/logs/`; it
+does not import or modify `cognialign/`. Run it with `bash run_madress2023.sh` or from
+inside `madress2023/`.
+
+Also in the repo: `AutomatedSpeech/` — a reproduction of the interpretable-feature method of
+the JMIR 2025 paper "Automated Speech Markers of Alzheimer Dementia: Test of Cross-Linguistic
+Generalizability" (speech-timing + lexico-semantic features + a decision-tree-guided sparse
+MLP), run as English(Pitt)→Chinese here. Like `madress2023/`, it is self-contained: reads
+`data/`, writes only `AutomatedSpeech/logs/`, and never imports or modifies `cognialign/`.
+Notable differences from the paper (WhisperX timestamps instead of WebMAUS, no MMSE
+regression; semantic variability uses fastText cc.en/cc.zh by default, XLM-R as a lighter
+fallback) and the results are documented in `AutomatedSpeech/README.md`
+and `AutomatedSpeech/RESULTS.md`. Run it with `PYTHON=<python> bash AutomatedSpeech/run_all.sh`.
 
 ## Running things
 
-- **`cd modules` before running any module script or `*.py` directly.** Modules import
+- **`cd cognialign` before running any module script or `*.py` directly.** Modules import
   each other as siblings (`import paths`, `from core import ...`). The two root `.sh`
   launchers do the `cd` for you.
 - Feature extraction: `bash run_preprocess.sh -s all` (default `xlmr` + `xlsr`).
@@ -17,15 +33,15 @@ those before changing behavior — nearly every non-obvious decision is document
   samples that already have features, `-c` self-check only.
 - Training: `bash run_train.sh` (same flags, plus `-w disabled|offline|online`).
   `-r` resumes by **fold** (weights are only written when a fold finishes).
-- Evaluate trained weights: `COGNIALIGN_SPLIT=test python modules/evaluate.py \
+- Evaluate trained weights: `COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
   --checkpoint checkpoints/<run>/model_fold_0.pth`. Use `--fold N` to score the
   model on that fold's held-out val split; without it you score the full set and get
   inflated numbers (`--on-train` is a sanity check only).
-- Env self-check: `python modules/tools/check_env.py --mode preprocess|asr|train`.
-- Feature check: `python modules/tools/verify_features.py [--quick]`.
-- PCA audio reduction: `python modules/tools/pca_audio_reduce.py -f configs/xlmr_xlsr_pca.yaml`.
+- Env self-check: `python cognialign/tools/check_env.py --mode preprocess|asr|train`.
+- Feature check: `python cognialign/tools/verify_features.py [--quick]`.
+- PCA audio reduction: `python cognialign/tools/pca_audio_reduce.py -f configs/xlmr_xlsr_pca.yaml`.
 - Generate 5-fold splits for a split (test has none until you do):
-  `COGNIALIGN_SPLIT=test python modules/tools/make_splits.py --apply --stats`.
+  `COGNIALIGN_SPLIT=test python cognialign/tools/make_splits.py --apply --stats`.
 
 There are no unit tests. Do not invent a test command; verify with `check_env.py`,
 `verify_features.py`, and small runs.
@@ -95,9 +111,9 @@ There are no unit tests. Do not invent a test command; verify with `check_env.py
 
 ## Paths, data, outputs
 
-- All paths are centralized in `modules/paths.py`; never hardcode them.
+- All paths are centralized in `cognialign/paths.py`; never hardcode them.
 - Defaults: data in `data/` (gitignored), pretrained baselines in `models/` (gitignored),
-  own trained artifacts in `modules/logs/<path_name>/`, archived copies in
+  own trained artifacts in `cognialign/logs/<path_name>/`, archived copies in
   `checkpoints/` (gitignored except `checkpoints/pca_*.pt`).
 - Layout: `<root>/{train,test}/{audio,words,feat_<name>}/{ad,cn}/...`, label CSVs
   (`adresso-train-mmse-scores.csv`, `test_labels.csv`), and `splits/{train,val}_uids<n>.npy`
@@ -105,7 +121,7 @@ There are no unit tests. Do not invent a test command; verify with `check_env.py
 - Useful env vars: `COGNIALIGN_DATA_ROOT`, `COGNIALIGN_MODELS_DIR`,
   `COGNIALIGN_SPLIT`, `COGNIALIGN_CONFIG`, `COGNIALIGN_OFFLINE=1`,
   `COGNIALIGN_RESUME`, `PYTHON`.
-- Reruns of the same config overwrite that run's `modules/logs/<path_name>/`; move the
+- Reruns of the same config overwrite that run's `cognialign/logs/<path_name>/`; move the
   directory (with its `config.yaml`) to `checkpoints/` to keep it.
 
 ## Data pipeline (for context)

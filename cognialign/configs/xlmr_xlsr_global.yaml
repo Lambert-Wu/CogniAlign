@@ -1,0 +1,61 @@
+# ── XLM-R + XLS-R：Global Concat（不做逐词对齐的对照）──────────────────
+#
+# 两路各自 mean pooling → concat → MLP（networks/model.py: GlobalConcatFusionEncoder）。
+# 对手 = token-level GCA（xlmr_xlsr_gca_at.yaml / logs/xlmr_xlsr_pause_gated_abl/），
+# 二者用同一套特征、同样 loss 选点/5 折/seed42，唯一区别是有没有逐词对齐。
+#
+# 结果目录 = logs/xlmr_xlsr_pause_global/
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'xlmr_xlsr'
+  text_fallback: 'xlmr'
+
+encoders:
+  text:
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'xlsr'
+  fusion: 'cross'
+  architecture: 'global_concat'
+  gated: false
+  run_tag: 'global'
+
+model_name: ''

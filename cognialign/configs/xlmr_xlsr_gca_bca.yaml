@@ -1,0 +1,58 @@
+# ── XLM-R + XLS-R 多模态：BCA（双向 Cross-Attention）────────────────────
+#
+# BidirectionalCrossAttentionTransformerEncoder：A→T 与 T→A 各一路再相加。
+# 结果目录 = logs/xlmr_xlsr_pause_gated_bca/
+
+dataset:
+  max_length: 512
+  pauses: true
+  features_dir: 'xlmr_xlsr'
+  text_fallback: 'xlmr'
+
+encoders:
+  text:
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+
+train:
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'loss'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'xlsr'
+  fusion: 'cross'
+  architecture: 'bidirectional_cross_attention'
+  gated: true
+  run_tag: 'bca'
+
+model_name: ''
