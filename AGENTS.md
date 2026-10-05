@@ -13,6 +13,16 @@ finetune → parameter averaging). It reads `data/` and writes only `madress2023
 does not import or modify `cognialign/`. Run it with `bash run_madress2023.sh` or from
 inside `madress2023/`.
 
+Also in the repo: `AutomatedSpeech/` — a reproduction of the interpretable-feature method of
+the JMIR 2025 paper "Automated Speech Markers of Alzheimer Dementia: Test of Cross-Linguistic
+Generalizability" (speech-timing + lexico-semantic features + a decision-tree-guided sparse
+MLP), run as English(Pitt)→Chinese here. Like `madress2023/`, it is self-contained: reads
+`data/`, writes only `AutomatedSpeech/logs/`, and never imports or modifies `cognialign/`.
+Notable differences from the paper (WhisperX timestamps instead of WebMAUS, no MMSE
+regression; semantic variability uses fastText cc.en/cc.zh by default, XLM-R as a lighter
+fallback) and the results are documented in `AutomatedSpeech/README.md`
+and `AutomatedSpeech/RESULTS.md`. Run it with `PYTHON=<python> bash AutomatedSpeech/run_all.sh`.
+
 ## Running things
 
 - **`cd cognialign` before running any module script or `*.py` directly.** Modules import

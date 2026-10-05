@@ -1,0 +1,14 @@
+# -*- coding: utf-8 -*-
+# AutomatedSpeech 依赖（在其 conda/venv 里安装）
+# 基础环境（本项目 adress env）已含 torch/sklearn/scipy/pandas/librosa/soundfile/transformers。
+nltk>=3.8
+jieba>=0.42
+matplotlib>=3.7
+# 论文原版的 fastText 词向量后端（默认后端）
+fasttext-wheel>=0.9.2
+# 可选：为缺少转写的新增音频生成逐字+转写（SenseVoice）。
+# ⚠️ funasr 需要一个 fbank 后端；用 kaldi-native-fbank 可避免装 torchaudio
+#    （仓库约定：不引入 torchaudio/TorchCodec/FFmpeg，见根目录 AGENTS.md）。
+funasr>=1.4
+kaldi-native-fbank>=1.20
+modelscope>=1.9
