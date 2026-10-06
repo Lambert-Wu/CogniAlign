@@ -33,7 +33,7 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 
 > 选点规则本身会改数字：同一 `legacy_distil_wav2vec2`，accuracy 选点 val F1=0.837，
 > loss 选点=0.794；accuracy 选点选到更早的 checkpoint，中文 test 反而更好。**跨实验必须统一规则。**
-> 详见 `docs/RESULTS.md`。
+> 详见 `cognialign/RESULTS.md`。
 
 ---
 
@@ -95,7 +95,7 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
   配置 `configs/legacy_distil_wav2vec2_maskpool.yaml`。**建议设为后续主配置默认。**
 - **门控融合（GCA）** ❌ **已证伪**（不在原计划内，试过）：`H=G⊙H_att+(1−G)⊙A`，
   门控工作点**冻结在初值**（训练后 bias=初值）、被后续 FFN/分类头吸收 → 英文 val ΔF1≈0、中文 test n.s.。
-  见 `docs/RESULTS.md` "门控融合消融"。**不再投入。**
+  见 `cognialign/RESULTS.md` "门控融合消融"。**不再投入。**
 - **语言对抗 DANN**：在融合表征上加语言判别器（英文=0/中文=1，用无标签中文）。⬜ 未做。
 - **MMD/CORAL 正则**：训练时在融合空间对齐两个语言分布。⬜ 未做。
 - **目标域一致性正则**（dropout 两次前向一致）。⬜ 未做。
@@ -155,4 +155,4 @@ distil 系 AUC 尚可但 F1 崩（阈值/校准）。
 - **2026-10-02** 评估口径：`early_stopping_metric` 由 `accuracy` → `loss`；确认**选点规则显著影响数字**（尤其跨语言）。
 - **2026-10-03** P3 门控 GCA：实现插值式门控 + `gate_bias_init`，5 种子测 → **无效果、证伪**。
 - **2026-10-03** P3 掩码池化：实现 `model.masked_pooling`，5 种子 → **稳定正增益**（英文 val loss 5/5、中文 AUC 5/5）。
-- 结果存档：`docs/RESULTS.md`；本 plan 归档 `docs/crosslingual_zero_shot.md`。
+- 结果存档：`cognialign/RESULTS.md`；本 plan 归档 `docs/crosslingual_zero_shot.md`。

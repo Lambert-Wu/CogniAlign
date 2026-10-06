@@ -1,0 +1,173 @@
+# ── 论文原始配置 · 纯中文内部 5 折（267 条）─────────────────────────────
+#
+# 目的
+# ----
+# 拿论文 CogniAlign 的**原始设置**，在**纯中文**数据集上自己训 + 自己测：
+#   · 结构 / 超参一律照 configs/paper_distil_wav2vec2_200.yaml：
+#       gated 交叉注意力（论文核心 H = G⊙H_att + (1−G)⊙A）、max_length=200、
+#       batch=32、lr=2e-5、early_stopping_metric='accuracy'（论文选点口径）。
+#   · 唯一改动：文本编码器从 DistilBERT（英）换成 bert-base-chinese ——
+#       纯中文语料必须用中文文本模型；这也是论文原始配置在 test 上
+#       本来就会切到的那一支（原配置 split_textual_model.test: chinese）。
+#
+# 和跨语言那次的区别
+# ----------------
+# paper_distil_wav2vec2_200.yaml 是「英文 235 训 → 中文 80 测」，属跨语种。
+# 本配置把中文当成**独立数据集**，在 267 条中文里切 5 折，训 + 测同一语种，
+# 得到的是同语种内部的天花板参考（对比跨语种的低分，可分离"语种"与"能力"）。
+#
+# 数据版本
+# ----
+# 中文 test 已从 80 扩充到 267（ad 114 / cn 153，见 AutomatedSpeech/RESULTS.md）。
+# 逐词时间戳 data/test/words/、音频、标签表都已是 267 条；
+# cognialign 的特征此前只提了 80 条，所以本实验**必须先重提特征**（脚本②，
+# 不需要重跑 ASR）。
+#
+# 特征放到**独立目录** feat_distil_paper_zh267/，不覆盖 feat_distil_paper/
+# （那批 80 条的要留给跨语言实验）。max_length=200 与论文一致，
+# 所以不能复用 512 的 feat_distil/。
+#
+# 跑法（提取和训练必须用**同一份**配置）
+# ----
+#     COGNIALIGN_SPLIT=test bash run_preprocess.sh -s test -f configs/paper_zh_internal_cv.yaml
+#     COGNIALIGN_SPLIT=test bash run_train.sh              -f configs/paper_zh_internal_cv.yaml
+#     # 逐折评估（必须加 --fold，否则会测到训练见过的样本，分数虚高）：
+#     for f in 0 1 2 3 4; do
+#       COGNIALIGN_SPLIT=test python cognialign/evaluate.py \
+#         --config configs/paper_zh_internal_cv.yaml \
+#         --textual-model chinese --audio-model wav2vec2 \
+#         --checkpoint cognialign/logs/chinese_wav2vec2_pause_gated_zhcv/model_fold_$f.pth \
+#         --fold $f
+#     done
+
+# ── 数据集参数 ──────────────────────────────────────────────────────────
+dataset:
+  # 论文原始序列长度。改它必须重跑特征提取（磁盘形状会变）。
+  max_length: 200
+  pauses: true          # 论文带停顿标记那版转写（文件名多一段 _pauses）
+  # 特征放 <split>/feat_distil_paper_zh267/，和跨语言的 feat_distil_paper/ 分开。
+  features_dir: 'distil_paper_zh267'
+  # 只做单模态时文件名里仍带一段文本后缀（本项目用不到）。
+  text_fallback: 'distil'
+  # 生僻字 -> 同音常用字：不重复维护，自动回落到 configs/default.yaml 的同名段。
+
+# ── 编码器登记表（与论文/legacy 配置一致；加模型只改这里，不动 .py）──────
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    # 纯中文语料用 bert-base-chinese：按字切分，和逐字时间戳对得上。
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    roberta:
+      suffix: 'roberta'
+      repo: 'roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'RobertaModel'
+      word_start_prefix: 'Ġ'
+    stella:
+      suffix: 'stella'
+      repo: 'NovaSearch/stella_en_1.5B_v5'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      trust_remote_code: true
+    mistral:
+      suffix: 'mistral'
+      repo: 'mistralai/Mistral-7B-v0.1'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      pad_token_from_eos: true
+    qwen:
+      suffix: 'qwen'
+      repo: 'Qwen/Qwen2.5-7B'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+    egemaps:
+      suffix: 'egemaps'
+      dim: 88
+      fps: 10
+      loader: 'opensmile'
+      opensmile_feature_set: 'eGeMAPSv02'
+      opensmile_feature_level: 'Functionals'
+    mel:
+      suffix: 'mel'
+      dim: 80
+      fps: 50
+      loader: 'mel_librosa'
+
+train:
+  # 训练时取前多少个位置。写 200 = 和 max_length 一致，即不截取。
+  seq_length: 200
+  batch_size: 32        # 论文原始 batch（267 条 / 5 折 → 每折 ~213 训 / ~54 验）
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  # 沿用论文/旧配置的选点规则（验证准确率），保持和 paper 那次同口径。
+  early_stopping_metric: 'accuracy'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  # 纯中文：文本侧直接写 'chinese'（train.py / evaluate.py 不读
+  # split_textual_model，必须写这里才生效）。
+  textual_model: 'chinese'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  # ★ 论文核心：门控交叉注意力
+  gated: true
+  # 结果目录 = logs/chinese_wav2vec2_pause_gated_zhcv/（和跨语言 paper 分开）
+  run_tag: 'zhcv'
+
+model_name: ''

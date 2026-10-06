@@ -248,7 +248,7 @@ def train(model, train_dataloader, valid_dataloader, lossfn, optimizer, lr_sched
         # ── 收尾：选点（默认）还是用最后一个 epoch ────────────────────────────
         # select_best=False：**不做任何基于验证集的选点** —— 固定 epoch 数训练，
         # 直接返回最后一个 epoch 的权重。用于"防止在评测集上选点造成泄漏"的
-        # 严谨评估（见 docs/RESULTS.md 的中文少样本微调章节）。
+        # 严谨评估（见 cognialign/RESULTS.md 的中文少样本微调章节）。
         if select_best:
             if best_weights is not None:
                 model.load_state_dict(best_weights)

@@ -23,6 +23,16 @@ regression; semantic variability uses fastText cc.en/cc.zh by default, XLM-R as 
 fallback) and the results are documented in `AutomatedSpeech/README.md`
 and `AutomatedSpeech/RESULTS.md`. Run it with `PYTHON=<python> bash AutomatedSpeech/run_all.sh`.
 
+Also in the repo: `AnAutomatic/` — a reproduction of the Alzheimer's & Dementia 2025 poster
+"An Automatic and Speech-based Cross-Lingual Classification Framework for Early Screening of
+Cognitive Impairment" (speech → Whisper ASR → LLM translation EN→ZH → text embedding → 6
+classifiers), run as English(Pitt)→Chinese here. Self-contained like the other ports: reads
+`data/`, writes only `AnAutomatic/logs/`, never touches `cognialign/`. The paper's GLM-4
+translation is done with an online OpenAI-compatible API (DeepSeek, key in the gitignored
+`AnAutomatic/api.txt`) and Embedding-3 is replaced by local BERTs (`bert-base-chinese` /
+`xlm-roberta-base`, no downloads); differences and results are in `AnAutomatic/README.md` and
+`AnAutomatic/RESULTS.md`. Run it with `PYTHON=<python> bash AnAutomatic/run_all.sh`.
+
 ## Running things
 
 - **`cd cognialign` before running any module script or `*.py` directly.** Modules import
@@ -45,6 +55,44 @@ and `AutomatedSpeech/RESULTS.md`. Run it with `PYTHON=<python> bash AutomatedSpe
 
 There are no unit tests. Do not invent a test command; verify with `check_env.py`,
 `verify_features.py`, and small runs.
+
+## GPU first, parallelize by default
+
+Make runs fast: use the GPU wherever it can help and fan out independent work instead of
+doing it serially. Concretely:
+
+- **Always use CUDA when a GPU is present.** `train.py`, `evaluate.py`, and
+  `preprocess/extract_features.py` already pick `torch.device("cuda" if ...)`; keep that.
+  Don't pass `--device cpu` or disable CUDA for convenience — `check_env.py` hard-fails
+  for `--mode preprocess|train` without a GPU for exactly this reason. Only fall back to
+  CPU for `--mode asr` or tiny sanity checks.
+- **Keep the expensive parts on-GPU and batched.** Model forward/loss, encoder passes, and
+  inference should run on GPU; raise the batch (`train.batch_size`, `evaluate.py
+  --batch-size`, `tools/probe_*.py --batch-size`) to fill VRAM, while respecting the
+  documented OOM limits in `networks/model.py`. Don't move work to CPU "to be safe".
+  (Exception: `tools/pca_audio_reduce.py` uses sklearn, which is CPU-only — speed that one
+  up by parallelizing across encoders/splits, not by moving it to the GPU.)
+- **Parallelize independent work.** The 5 folds, the train/test splits, per-sample feature
+  extraction, ASR, and PCA are independent — run them concurrently (background jobs, GNU
+  `parallel`, `xargs -P`, or `multiprocessing` for CPU-bound chunks). `run_preprocess.sh -b`
+  already backgrounds; add `nohup ... &` + `wait` around multi-command runs. Prefer
+  process-level parallelism for CPU-bound Python (the GIL makes threads useless there);
+  a `DataLoader(num_workers>0)` helps if `.pt` loading ever becomes the bottleneck.
+- **CPU: 10 usable cores (cgroup quota) — use them all, but `nproc`/`os.cpu_count()` lie.**
+  The container's bandwidth cap is `cpu.max = 1000000 100000` ≈ **10 cores**; the affinity
+  list reads `0–79` only because of cpuset, so `os.cpu_count()` returns 80 and would
+  oversubscribe. Size CPU worker pools to ~10 (`--workers 10`, `xargs -P 10`,
+  `ProcessPoolExecutor(max_workers=10)`, `OMP_NUM_THREADS=10`) and keep those 10 busy —
+  don't leave cores idle. When several CPU jobs run at once, split the budget between them
+  (e.g. 2 jobs × 5 workers) instead of giving each `os.cpu_count()` workers.
+- **Coordinate the GPU, don't stampede it.** Concurrent GPU jobs contend for VRAM; pin each
+  with `CUDA_VISIBLE_DEVICES` and stagger launches if a single job already saturates memory.
+- **Parallelism must not break the invariants.** Two jobs writing the *same* result dir
+  (same config, or configs that collide per the gotcha below) will corrupt each other — set
+  `model.run_tag` to separate parallel runs. Keep feature extraction and training on the same
+  config, and don't parallelize across a shared cache/log path.
+- **No new dependencies for speed.** Parallelism/GPU must come from what's already installed;
+  do not add `torchaudio`, `openai-whisper`, or other packages (see the install rules below).
 
 ## Install / environment
 

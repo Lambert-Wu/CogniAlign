@@ -1,6 +1,6 @@
 # CogniAlign 实验结果汇总
 
-> 生成：2026-10-02 19:50 ｜ 更新：2026-10-03（补门控 GCA 消融 + 掩码池化 + 模态消融矩阵/阈值迁移 + 注意力方向消融 + XLM-R+XLS-R 多语言复跑 + token-level 对齐消融 + 跨语言分布/阈值对齐 + 中文少样本微调 8-shot/中英混合/遗忘/编码器对比）
+> 生成：2026-10-02 19:50 ｜ 更新：2026-10-03（补门控 GCA 消融 + 掩码池化 + 模态消融矩阵/阈值迁移 + 注意力方向消融 + XLM-R+XLS-R 多语言复跑 + token-level 对齐消融 + 跨语言分布/阈值对齐 + 中文少样本微调 8-shot/中英混合/遗忘/编码器对比）；2026-10-05（补论文原始配置 · 纯中文内部 5 折，267 条）
 > 命名 `{文本}_{音频}_{pause|nopause}[_{fusion}][_{pooling}][_{gated}][_{run_tag}][_seed<N>]`
 > （`core/feature_spec.result_names` 是唯一实现；fusion/pooling/gated 仅在非默认时出现，非默认种子加 `_seed<N>`）
 
@@ -287,7 +287,7 @@ bash run_train.sh              -f configs/xlmr_wav2vec2_200.yaml
 
 ## 跨语言诊断：信号丢在哪一步（2026-10-03，本机）
 
-详细版见 **[`docs/CROSSLINGUAL_DIAGNOSIS.md`](CROSSLINGUAL_DIAGNOSIS.md)**（原始输出 `logs/probe_crosslingual_all.log`）。
+详细版见 **[`../docs/CROSSLINGUAL_DIAGNOSIS.md`](../docs/CROSSLINGUAL_DIAGNOSIS.md)**（原始输出 `logs/probe_crosslingual_all.log`）。
 工具 `cognialign/tools/probe_crosslingual.py` **只读特征、不训练、不写产物**，用线性探针 + 置换对照 + 长度混淆检查来定位。
 
 四条要点（都是实测）：
@@ -713,3 +713,65 @@ $PYTHON /tmp/opencode/rigorous_eval.py
 - `dataset/dataset.py`：`train.validate_on_train`（验证集 = 训练集，让留出测试集不参与选点）。
 - `train.py`：把 `train.select_best` 传给 `train()`。
 - `configs/finetune_zh8_rig_ep{5,20,50}.yaml`（固定预算、不选点、20 折）、`finetune_zh8_rig_valtrain{,200,500}.yaml`（验证=那 8 条、20 折）：新增。
+
+---
+
+## 论文原始配置 · 纯中文内部 5 折（2026-10-05）
+
+**问题**：CogniAlign 论文的**原始设置**（DistilBERT+Wav2Vec2、gated GCA、`max_length=200`）在**纯中文**数据上（自己训、自己测，同语种）能到多少？拿它和跨语种分数比，可以把"分数低"里**语种/域**的因素和**模型能力**分开。
+
+背景：此前所有中文数字都是 **80 条、EN→ZH 跨语种**。中文 test 现已扩充到 **267 条**（ad 114 / cn 153），cognialign 的特征此前只提了 80 条 —— 本次用论文配置**重提了全部 267 条**（逐词时间戳/音频已就绪，只跑了脚本②，0 条跳过）。
+
+- **配置**：`configs/paper_zh_internal_cv.yaml`
+  - 结构/超参照论文：**门控交叉注意力**、`max_length=200`、`batch=32`、`lr=2e-5`、`early_stopping_metric='accuracy'`（论文选点口径）、seed 42
+  - **唯一改动**：文本编码器 DistilBERT(英) → **`bert-base-chinese`**（纯中文必须换；论文原本在 test 上就切这一支）
+  - 特征目录 `data/test/feat_distil_paper_zh267/`（200 长、267 条；文本 `chinese` + 音频 `wav2vec2`），**不覆盖**跨语言的 `feat_distil_paper/`
+  - 结果目录 `cognialign/logs/chinese_wav2vec2_pause_gated_zhcv/`
+- **折划分**：`data/test/splits/` 重新生成为 `StratifiedKFold(5, shuffle=True, seed=42)`（267 条 → 每折 ~213 训 / ~54 验）；原 8-shot 划分已备份到 `data/test/splits_fewshot_backup/`
+- **训练**：5 折，逐折按验证准确率早停；best-val acc = 0.907 / 0.870 / 0.849 / 0.830 / 0.887
+
+### 逐折（该折 val，模型训练时没见过；阈值 0.5）
+
+| 折 | Acc | AUC | F1 | 查准 | 查全 | n（健康/患病） |
+|---|---|---|---|---|---|---|
+| 0 | 0.907 | 0.961 | 0.894 | 0.875 | 0.913 | 54（31/23） |
+| 1 | 0.870 | 0.905 | 0.857 | 0.808 | 0.913 | 54（31/23） |
+| 2 | 0.849 | 0.917 | 0.826 | 0.826 | 0.826 | 53（30/23） |
+| 3 | 0.830 | 0.879 | 0.809 | 0.792 | 0.826 | 53（30/23） |
+| 4 | 0.887 | 0.928 | 0.857 | 0.900 | 0.818 | 53（31/22） |
+| **均值 ± std** | **0.869 ± 0.027** | **0.918 ± 0.027** | **0.849 ± 0.029** | 0.840 ± 0.041 | 0.859 ± 0.044 | 267 |
+
+跨折概率拼接（OOF，n=267，153 健康 / 114 患病）：**Acc 0.869 / AUC 0.905 / F1 0.849**。
+
+### 结论
+
+- 同语种内部（267 条）做到 **AUC ≈ 0.92、Acc ≈ 0.87**，折间 std 仅 ~0.03；而同一论文配置的**跨语种**（英→中，旧 80 条）只有 **AUC ≈ 0.71、Acc ≈ 0.52**（见"按论文复现：distil + wav2vec2 · pause · Gated · max_length=200"一节）。→ **差距基本由语种/域解释**，和 `../docs/CROSSLINGUAL_DIAGNOSIS.md`（同语种内部线性探针即 0.89~0.96）的结论一致。
+- 样本从 80→267 后，折间方差明显收窄（对比 80 条时代每折仅 ~16 验证、std 常 0.03~0.07）。
+- ⚠️ 局限：单随机种子（seed 42）；`max_length=200` 为论文原始设置，较长样本会被截断；早停看 53~54 条的验证准确率。
+
+### 复现
+
+```bash
+cd /root/autodl-tmp/CogniAlign
+export PYTHON=/root/miniconda3/envs/adress/bin/python
+# 1) 重生成 5 折划分（原 few-shot 划分已备份到 data/test/splits_fewshot_backup/）
+COGNIALIGN_SPLIT=test $PYTHON cognialign/tools/make_splits.py --apply --force --stats
+# 2) 提特征（267 条、长度 200、文本 chinese + 音频 wav2vec2；无需重跑 ASR）
+COGNIALIGN_SPLIT=test bash run_preprocess.sh -s test -f configs/paper_zh_internal_cv.yaml
+# 3) 训练（5 折）
+COGNIALIGN_SPLIT=test bash run_train.sh -f configs/paper_zh_internal_cv.yaml
+# 4) 逐折评估（必须加 --fold，否则会测到训练见过的样本）
+for f in 0 1 2 3 4; do
+  COGNIALIGN_SPLIT=test $PYTHON cognialign/evaluate.py \
+    --config configs/paper_zh_internal_cv.yaml \
+    --textual-model chinese --audio-model wav2vec2 \
+    --checkpoint cognialign/logs/chinese_wav2vec2_pause_gated_zhcv/model_fold_$f.pth \
+    --fold $f --save-preds cognialign/logs/eval_zhcv_fold_$f.csv
+done
+```
+
+### 本次新增 / 改动
+
+- `configs/paper_zh_internal_cv.yaml`：新增（论文原始设置在纯中文 267 条上的适配，独立 `features_dir` / `run_tag`）。
+- `data/test/feat_distil_paper_zh267/`：新增特征（267 条、长度 200）。
+- `data/test/splits/`：重生成 5 折；原 8-shot 划分备份在 `data/test/splits_fewshot_backup/`。
