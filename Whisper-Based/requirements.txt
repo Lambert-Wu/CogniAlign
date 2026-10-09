@@ -1,0 +1,20 @@
+# Whisper-Based 依赖
+#
+# 本目录**不引入任何新依赖**，全部复用 CogniAlign 环境里已装好的包：
+#   torch (CUDA)          —— decoder 微调 / 推理
+#   transformers          —— WhisperForConditionalGeneration / WhisperTokenizerFast
+#   huggingface_hub       —— 从 hf-mirror 下载 openai/whisper-{small,medium}
+#   librosa, soundfile    —— 读 16kHz 音频（仓库统一不用 torchaudio，见根 requirements.txt）
+#   numpy, pandas         —— 数据
+#   scikit-learn          —— StratifiedKFold 与指标
+#
+# 说明：仓库根 AGENTS.md 明确不新增 torchaudio / openai-whisper。本目录只用
+# transformers 里的 Whisper 实现，encoder 冻结、decoder 微调，不依赖 ffmpeg。
+torch
+transformers
+huggingface_hub
+librosa
+soundfile
+numpy
+pandas
+scikit-learn

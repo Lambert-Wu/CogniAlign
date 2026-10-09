@@ -23,6 +23,8 @@ logs/*
 cognialign/logs/
 # madress-2023 移植的独立产物（特征 .pt / 结果 JSON），同样不进仓库
 madress2023/logs/
+# Whisper-Based 移植的独立产物（encoder 特征缓存 / 结果 JSON），同样不进仓库
+Whisper-Based/logs/
 # Ignore all files in the base_logs directory
 base_logs/*
 # Ignore all files in the ablative_logs directory
