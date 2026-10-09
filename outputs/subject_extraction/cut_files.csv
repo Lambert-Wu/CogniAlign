@@ -1,0 +1,4 @@
+﻿split,file,标签,说话人数,判为受试者,选人依据,人工状态,切掉秒数,原时长s,输出时长s,输出占比,受试者话占比,内容复核,重叠残留s,建议,切割前,切割后
+test,HC_M_019205_001,,2,SPEAKER_00,auto,,4.692,60.0,55.308,92.2%,86%,,0.0,,data/processed/denoised_norm/test/HC_M_019205_001.wav,data/processed/subject_only/test/HC_M_019205_001.wav
+test,HC_F_019225_001,,2,SPEAKER_01,auto,,3.409,60.0,56.591,94.3%,89%,,0.287,,data/processed/denoised_norm/test/HC_F_019225_001.wav,data/processed/subject_only/test/HC_F_019225_001.wav
+test,HC_F_019211_003,,2,SPEAKER_01,auto,,2.312,60.0,57.688,96.2%,94%,,0.0,,data/processed/denoised_norm/test/HC_F_019211_003.wav,data/processed/subject_only/test/HC_F_019211_003.wav

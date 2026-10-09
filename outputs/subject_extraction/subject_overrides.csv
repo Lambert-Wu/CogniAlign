@@ -1,0 +1,13 @@
+split,file,subject,why
+test,HC_M_019209_004,WHOLE,同一人两任务(F0差3.1Hz;故事+蔬菜)
+test,HC_F_122302_009,WHOLE,同一人两任务(F0差0.8Hz)
+test,HC_F_019224_001,WHOLE,同一人两任务(F0差4.8Hz;蔬菜+图片)
+test,HC_F_122302_010,WHOLE,同一人两任务(F0差3.5Hz)
+test,AD_F_040108_036,WHOLE,同一人两任务(F0差3.1Hz;颜色+图片)
+test,HC_F_019211_002,WHOLE,同一人两任务(F0差3.4Hz;蔬菜+开字)
+test,HC_F_019224_003,WHOLE,同一人两任务(F0差3.4Hz;图片+动物)
+test,HC_F_019213_002,WHOLE,存疑保守处理(F0差13.3Hz;两条标签均列家具)
+test,HC_M_019203_004,WHOLE,同一人两任务(F0差3.2Hz;图片+开字/蔬菜)
+test,HC_F_019211_001,WHOLE,同一人两任务(F0差0.0Hz;蔬菜+图片)
+test,HC_F_019202_006,WHOLE,同一人(F0差5.6Hz;第二人仅1.2s碎片)
+test,HC_F_019215_002,WHOLE,同一人(F0差1.2Hz;两条标签均蔬菜)
