@@ -8,8 +8,8 @@
 > **数据版本（本版）**：中文 test 共 **267 条**，全部由 SenseVoice 生成逐字+转写并写入 `data/`
 > （不再走 `logs/asr/`）；音频做了论文的预处理——**去除访谈者语音**（说话人分离，3 个文件被剪辑）
 > + **信道与倒谱均值归一化（channel & mean cepstral normalization）**（脚本见仓库根
-> `extract_subject.py` 与 `normalize_channel_cmn.py`），就地覆盖 `data/{train,test}/audio/`。
-> 中文词单位另做 **jieba 分词（逐字→词，`wordify_zh_words.py`）**：现行 `data/test/words/` 为
+> `scripts/extract_subject.py` 与 `scripts/normalize_channel_cmn.py`），就地覆盖 `data/{train,test}/audio/`。
+> 中文词单位另做 **jieba 分词（逐字→词，`scripts/wordify_zh_words.py`）**：现行 `data/test/words/` 为
 > **词级**，字级另存 `data/test/words_char/`。
 > 结果两套：`*_word`（词级，现行数据）与 `*_cmn`（字级）；**§2–§5 主表用字级**，词级消融见第 11 节。
 
@@ -222,7 +222,7 @@ task was used in both languages"）。0-shot、训英文测西语的官方数字
    - ✅ **已完成——中文 jieba 词级消融**（第 11 节）：把逐字改成词级**并未改善**跨语言，反而
      timing 略降（per-fold 0.553→0.498、few-shot k=20 0.774→0.729）→ **"词单位不可比"不是
      跨语言失败的主因**，原假设被否证。
-   - ⏳ 用备份音频（`data/*/_backup_pre_cmn/`，**已去访谈者、未 CMN**）重抽 timing，做
+   - ⏳ 用备份音频（`backups/*_pre_cmn/`，**已去访谈者、未 CMN**）重抽 timing，做
      **三档消融**：含访谈者 → 去访谈者 → 去访谈者+CMN，把 CMN 的净效果单独量出来；
    - ⏳ 开 **voiced rate**，并单独测**只用停用词**的时序（原文跨语言最优即 stop words，0.75）。
 6. **任何跨语言数字都要配**：per-fold/多种子 + bootstrap CI + 置换对照 + 长度基线
@@ -239,10 +239,10 @@ cd AutomatedSpeech
 bash setup_nltk_data.sh          # NLTK 语料（一次即可）
 bash download_fasttext.sh        # cc.en/cc.zh.300.bin（各 ~7.2G，HF 镜像、多连接）
 
-# 0) 音频预处理（仓库根；本版已就地覆盖 data/{train,test}/audio，各留 _backup_pre_cmn 备份）
-#    去访谈者：extract_subject.py（依赖说话人分离 diarize_pyannote.py 的产物）
+# 0) 音频预处理（仓库 scripts/；本版已就地覆盖 data/{train,test}/audio，备份在 backups/）
+#    去访谈者：scripts/extract_subject.py（依赖 cognialign/preprocess/word_timestamps/diarize_pyannote.py）
 #    信道+倒谱均值归一化：
-python ../normalize_channel_cmn.py --splits train,test      # 就地覆盖 + 自动备份
+python ../scripts/normalize_channel_cmn.py --splits train,test      # 就地覆盖 + 自动备份
 
 # 1) 特征
 python extract_timing.py   --split train && python extract_timing.py   --split test
@@ -295,7 +295,7 @@ python extract_semantic.py --split test  --embedding xlmr
 
 ## 11. 中文词单位消融：字级 vs 词级
 
-把中文从 **逐字**（SenseVoice 原样）改为 **jieba 词级**（脚本 `wordify_zh_words.py`，
+把中文从 **逐字**（SenseVoice 原样）改为 **jieba 词级**（脚本 `scripts/wordify_zh_words.py`，
 31555 字 → 21094 词），音频、文本、预处理完全不变，因此是**干净的单变量消融**。
 字级结果 = `*_cmn`，词级结果 = `*_word`。
 

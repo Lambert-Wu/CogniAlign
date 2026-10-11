@@ -73,3 +73,6 @@ env.sh
 logs/
 # Jupyter 自动备份目录：不属于仓库内容
 .ipynb_checkpoints/
+
+# 所有 *_backup / _backup_* 归档（不进仓库）
+backups/

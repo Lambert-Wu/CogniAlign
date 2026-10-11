@@ -60,6 +60,19 @@ faster-whisper==1.2.1
 #   av（PyAV）自带 ffmpeg 库 ⇒ 系统里不需要装 ffmpeg 可执行文件。
 
 
+# --------------------- 中文语音转写（SenseVoice）----------------------
+# 中文逐字时间戳 + 转写（cognialign/preprocess/word_timestamps/sensevoice.py）。
+# 阿里 FunASR 生态，SenseVoice-Small 是模型本体。模型文件已随仓库放在
+# models/SenseVoiceSmall/ 与 models/speech_fsmn_vad_zh-cn-16k-common-pytorch/，
+# 运行时离线加载（脚本会先把非 ASCII 路径映射成纯 ASCII 再交给 funasr）。
+funasr==1.4.16
+# funasr 需要一个 fbank 后端：torchaudio 或 kaldi-native-fbank 二选一。
+# 本清单**故意不装 torchaudio**（见上"深度学习框架"一节），所以显式加这个。
+kaldi-native-fbank==1.22.3
+# funasr 的依赖（模型下载/管理）；本地已有模型时也照常 import。
+modelscope==1.40.1
+
+
 # ---------------------------- 训练与日志 ----------------------------
 # KFold 划分 + 分类指标（dataset.py / utils.py / tools/build_dataset.py）
 scikit-learn==1.7.2

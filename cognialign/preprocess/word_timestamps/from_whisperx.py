@@ -8,7 +8,7 @@
 并且已经按受试者筛过说话人。所以它可以代替 `transcribe_whisper.py` 的转写产物，
 省掉 40~60 分钟的 ASR。
 
-⚠️ 反过来，`outputs/whisperx/final/*.json` **不能用**：它的时间是切割前的
+⚠️ 反过来，旧的 WhisperX JSON（`final/*.json`）**不能用**：它的时间是切割前的
 （adrso045 是 219.5s，而 subject_only 音频只有 177.9s），拿它配现在的音频会整体错位。
 
 产出（与脚本①完全一致的两种文件）

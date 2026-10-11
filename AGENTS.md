@@ -159,6 +159,11 @@ doing it serially. Concretely:
 
 ## Paths, data, outputs
 
+- **Top-level layout** (details in `docs/PROJECT_LAYOUT.md`): modules (`cognialign/`,
+  `AutomatedSpeech/`, `AnAutomatic/`, `madress2023/`, `Whisper-Based/`), `data/` (datasets
+  only, gitignored), `models/` (pretrained, gitignored), `outputs/` (cross-module
+  preprocessing artifacts, tracked: `diarization/`, `subject_extraction/`), `scripts/`
+  (repo-level data-prep), `backups/` (gitignored archives), `docs/`, `logs/`.
 - All paths are centralized in `cognialign/paths.py`; never hardcode them.
 - Defaults: data in `data/` (gitignored), pretrained baselines in `models/` (gitignored),
   own trained artifacts in `cognialign/logs/<path_name>/`, archived copies in
@@ -178,5 +183,13 @@ doing it serially. Concretely:
 `text_transcriptions.csv`) → `preprocess/extract_features.py` (align words to audio,
 write `.pt`) → `dataset/dataset.py:read_CSV` → `train.py` → `evaluate.py`.
 ASR alternatives: `transcribe_whisper.py` (English), `sensevoice.py` (Chinese),
-`from_whisperx.py` (convert existing WhisperX output). All three must emit the same
-file schemas/pruning rules or script ② will skip samples.
+`from_whisperx.py` (convert existing WhisperX output), `diarize_pyannote.py`
+(pyannote speaker turns + SenseVoice words → `outputs/diarization/`),
+`whisperx_pipeline.py` (LEGACY WhisperX transcribe/align/diarize; needs `whisperx`,
+which is not installed). All must emit the same schemas/pruning rules or script ② will
+skip samples.
+
+Chinese-test preprocessing lives in `scripts/` (full lineage in `docs/DATA_LINEAGE.md`):
+`sensevoice.py` → `diarize_pyannote.py` → `extract_subject.py` (remove examiner) →
+`normalize_channel_cmn.py` (channel + cepstral mean normalization) →
+`wordify_zh_words.py` (char → jieba word). Overwritten data is archived under `backups/`.

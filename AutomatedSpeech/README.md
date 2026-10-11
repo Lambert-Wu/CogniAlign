@@ -21,7 +21,6 @@
 | 颗粒度 | `extract_semantic.py: granularity_features` | WordNet 到 entity 根的最短深度 + 低/中/高占比 |
 | 语义变异性 | `extract_semantic.py: semantic_variability_features` | 相邻词向量余弦距离时间序列统计；3 个变体 |
 | 分类器 | `model.py` | 决策树引导的稀疏 MLP（叶子=神经元，只连路径特征；ridge+早停+类别加权，GPU） |
-| （补充）缺失音频转写 | `transcribe_sensevoice.py` + `download_sensevoice.sh` | SenseVoice 逐字+转写，GPU 批处理；产物写 `logs/asr/`，由 `common.py` 合并读取，不改 `data/` |
 | 实验 | `run_experiment.py` | within-EN（分层 K 折）、between EN→ZH（0-shot）、三个特征集 |
 
 ## 2. 与论文的已知差异（务必写进 Limitations）
@@ -62,10 +61,6 @@ bash download_fasttext.sh        # 下载 cc.en/cc.zh.300.bin（各 ~7.2G，HF �
 # 1) 特征（每步约 1 分钟）
 python extract_timing.py   --split train && python extract_timing.py   --split test
 python extract_semantic.py --split train && python extract_semantic.py --split test
-
-# 1b) 新增音频缺转写时（可选；用 SenseVoice，产物写 logs/asr/，不改 data/）
-bash download_sensevoice.sh
-python transcribe_sensevoice.py --split test --batch 8     # GPU 批处理
 
 # 2) 实验（GPU）
 python run_experiment.py --grid fast          # timing/semantic/fusion × within/cross

@@ -1,6 +1,6 @@
 # 删掉别人的话，留住受试者的话和静音
 
-用 WhisperX 的说话人结果（`outputs/whisperx/speakers/`）编辑音频。源音频 `data/processed/denoised_norm/` **只读、一个字节没动**，输出到 `data/processed/subject_only/`。
+用 WhisperX 的说话人结果（`outputs/diarization/speakers/`）编辑音频。源音频 `data/processed/denoised_norm/` **只读、一个字节没动**，输出到 `data/processed/subject_only/`。
 
 **谁算受试者**：单人录音 → 就是那个人；多人录音 → 说话总时长最长的那位。
 
@@ -53,7 +53,7 @@
 | test/AD_F_040006_001 | 2.8 秒 | 8% |
 | test/HC_F_019215_001 | 2.7 秒 | 9% |
 
-1. 想严格避开这几秒，用 `outputs/whisperx/report/overlaps.csv` 里的时间段，在算特征时排除掉。
+1. 想严格避开这几秒，用 `outputs/diarization/report/overlaps.csv` 里的时间段，在算特征时排除掉。
 2. 说话人区分在重叠处**也不是百分之百准**，所以这张表里的秒数只当参考量级。
 
 ## 自检

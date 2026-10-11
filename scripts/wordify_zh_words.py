@@ -13,9 +13,9 @@ wordify_zh_words.py
 用法
 ----
     # 试跑：写到临时目录，不碰 data/
-    python wordify_zh_words.py --split test --out-dir /tmp/opencode/word_test --limit 3
-    # 全量就地覆盖（自动备份到 data/<split>/_backup_pre_word/）
-    python wordify_zh_words.py --split test
+    python scripts/wordify_zh_words.py --split test --out-dir /tmp/opencode/word_test --limit 3
+    # 全量就地覆盖（自动备份到 backups/<split>_pre_word/）
+    python scripts/wordify_zh_words.py --split test
 """
 from __future__ import annotations
 
@@ -33,7 +33,19 @@ try:
 except Exception as exc:  # pragma: no cover
     sys.exit(f"需要 jieba: {exc}")
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+def _find_repo_root(start: str) -> str:
+    """向上找到含 AGENTS.md 的仓库根，脚本放哪都能定位 data/。"""
+    p = os.path.abspath(start)
+    while True:
+        if os.path.exists(os.path.join(p, "AGENTS.md")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            return os.path.abspath(start)
+        p = parent
+
+
+PROJECT_DIR = _find_repo_root(os.path.dirname(os.path.abspath(__file__)))
 REMOVE = re.compile(r"[^\w\s.,!?'\"\-，。！？、；：]")
 
 
@@ -119,7 +131,7 @@ def main():
 
     # 备份
     if not args.out_dir and args.backup:
-        bk = os.path.join(PROJECT_DIR, "data", split, "_backup_pre_word")
+        bk = os.path.join(PROJECT_DIR, "backups", f"{split}_pre_word")
         if not os.path.exists(bk):
             os.makedirs(bk, exist_ok=True)
             shutil.copytree(words_root, os.path.join(bk, "words"))

@@ -74,7 +74,7 @@ def load_labels(split: str) -> pd.DataFrame:
 
 @lru_cache(maxsize=None)
 def load_transcripts(split: str) -> Dict[str, str]:
-    """合并 data/<split>/text_transcriptions.csv 与本模块 logs/asr/transcripts_<split>.csv。"""
+    """读取 data/<split>/text_transcriptions.csv（逐字/词 + 转写）。"""
     out: Dict[str, str] = {}
     path = os.path.join(split_dir(split), "text_transcriptions.csv")
     if os.path.exists(path):
@@ -83,13 +83,6 @@ def load_transcripts(split: str) -> Dict[str, str]:
             raise ValueError(f"{path} 缺少 uid 列")
         col = "transcription" if "transcription" in df.columns else df.columns[1]
         out.update(dict(zip(df["uid"].astype(str), df[col].fillna("").astype(str))))
-    asr = os.path.join(logs_dir(), "asr", f"transcripts_{split}.csv")
-    if os.path.exists(asr):
-        df2 = pd.read_csv(asr, dtype={"uid": str})
-        if "uid" in df2.columns:
-            col2 = "transcription" if "transcription" in df2.columns else df2.columns[1]
-            for uid, txt in zip(df2["uid"].astype(str), df2[col2].fillna("").astype(str)):
-                out.setdefault(uid, txt)   # data/ 里的原始转写优先
     return out
 
 
@@ -104,15 +97,9 @@ def audio_path(split: str, uid: str, dx: str) -> str:
     return os.path.join(split_dir(split), "audio", dx, f"{uid}.wav")
 
 
-def asr_words_path(split: str, uid: str, dx: str) -> str:
-    return os.path.join(logs_dir(), "asr", "words", split, dx, f"{uid}.csv")
-
-
 def load_words(split: str, uid: str, dx: str) -> Optional[List[Tuple[str, float, float]]]:
-    """读取逐词时间戳；data/ 没有则退回本模块 logs/asr/ 下由 faster-whisper 生成的。"""
+    """读取 data/<split>/words/<dx>/<uid>.csv（列 word,start,end）。"""
     path = words_path(split, uid, dx)
-    if not os.path.exists(path):
-        path = asr_words_path(split, uid, dx)
     if not os.path.exists(path):
         return None
     try:

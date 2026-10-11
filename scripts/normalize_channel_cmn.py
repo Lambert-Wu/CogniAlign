@@ -25,10 +25,10 @@ normalization"（ref. 65）。官方代码仓库 (Crosslingual_AD_Descriptors) �
 用法
 ----
     # 试跑，写到临时目录（不碰 data/）
-    python normalize_channel_cmn.py --splits test --limit 2 --out-dir /tmp/opencode/cmn_test
+    python scripts/normalize_channel_cmn.py --splits test --limit 2 --out-dir /tmp/opencode/cmn_test
 
-    # 全量就地覆盖（自动备份到 data/<split>/_backup_pre_cmn/audio/）
-    python normalize_channel_cmn.py --splits train,test
+    # 全量就地覆盖（自动备份到 backups/<split>_pre_cmn/audio/）
+    python scripts/normalize_channel_cmn.py --splits train,test
 
 依赖：librosa / scipy / numpy / soundfile（均已安装，无需新增）。
 """
@@ -53,7 +53,19 @@ try:
 except Exception as exc:  # pragma: no cover
     sys.exit(f"需要 scipy: {exc}")
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+def _find_repo_root(start: str) -> str:
+    """向上找到含 AGENTS.md 的仓库根，脚本放哪都能定位 data/。"""
+    p = os.path.abspath(start)
+    while True:
+        if os.path.exists(os.path.join(p, "AGENTS.md")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            return os.path.abspath(start)
+        p = parent
+
+
+PROJECT_DIR = _find_repo_root(os.path.dirname(os.path.abspath(__file__)))
 SR = 16000
 N_FFT = 512
 WIN = 400      # 25 ms @ 16 kHz
@@ -180,7 +192,7 @@ def main():
         else:
             out_root = os.path.join(PROJECT_DIR, "data", split, "audio")
             if args.backup:
-                bk = os.path.join(PROJECT_DIR, "data", split, "_backup_pre_cmn", "audio")
+                bk = os.path.join(PROJECT_DIR, "backups", f"{split}_pre_cmn", "audio")
                 if not os.path.exists(bk):
                     print(f"[{split}] 备份 -> {bk}")
                     shutil.copytree(os.path.join(PROJECT_DIR, "data", split, "audio"), bk)

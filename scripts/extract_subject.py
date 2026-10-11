@@ -73,13 +73,21 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-PROJECT_DIR = Path(__file__).resolve().parent
+def _find_repo_root(start: Path) -> Path:
+    """向上找到含 AGENTS.md 的仓库根，脚本放哪都能定位 data/、outputs/。"""
+    for anc in (start, *start.parents):
+        if (anc / "AGENTS.md").exists():
+            return anc
+    return start
+
+
+PROJECT_DIR = _find_repo_root(Path(__file__).resolve().parent)
 sys.path.insert(0, str(PROJECT_DIR))
 
 # 只读的输入。
 SRC_DIR = PROJECT_DIR.joinpath("data", "processed", "denoised_norm")
-SPK_DIR = PROJECT_DIR.joinpath("outputs", "whisperx", "speakers")
-TBL_DIR = PROJECT_DIR.joinpath("outputs", "whisperx")
+SPK_DIR = PROJECT_DIR.joinpath("outputs", "diarization", "speakers")
+TBL_DIR = PROJECT_DIR.joinpath("outputs", "diarization")
 LABEL_DIR = PROJECT_DIR.joinpath("data", "row")
 
 # 全新的输出 —— 源语料永远不会被写。
@@ -755,7 +763,7 @@ def write_report(args, rows):
     L = []
     L.append("# 删掉别人的话，留住受试者的话和静音")
     L.append("")
-    L.append("用 WhisperX 的说话人结果（`outputs/whisperx/speakers/`）编辑音频。"
+    L.append("用分离器（pyannote）的说话人结果（`outputs/diarization/speakers/`）编辑音频。"
              "源音频 `data/processed/denoised_norm/` **只读、一个字节没动**，"
              f"输出到 `{args.out.relative_to(PROJECT_DIR).as_posix()}/`。")
     L.append("")
@@ -854,7 +862,7 @@ def write_report(args, rows):
         L.append(f"| {r['split']}/{r['file']} | {num(r, 'overlap_s'):.1f} 秒 | "
                  f"{num(r, 'overlap_s') / num(r, 'subject_speech_s') * 100:.0f}% |")
     L.append("")
-    L.append("1. 想严格避开这几秒，用 `outputs/whisperx/report/overlaps.csv` 里的时间段，"
+    L.append("1. 想严格避开这几秒，用 `outputs/diarization/report/overlaps.csv` 里的时间段，"
              "在算特征时排除掉。")
     L.append("2. 说话人区分在重叠处**也不是百分之百准**，所以这张表里的秒数只当参考量级。")
     L.append("")
