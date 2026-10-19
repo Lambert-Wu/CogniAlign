@@ -16,7 +16,7 @@
 
 ```
 原始 wav
-  │ ① cognialign/preprocess/word_timestamps/transcribe_whisper.py（WhisperX，英文）
+  │ ① projects/cognialign/preprocess/word_timestamps/transcribe_whisper.py（WhisperX，英文）
   ▼
 data/train/words/<dx>/<uid>.csv (word,start,end)  +  data/train/text_transcriptions.csv
   │ ② scripts/normalize_channel_cmn.py：信道 + 倒谱均值归一化，就地覆盖 data/train/audio
@@ -29,11 +29,11 @@ data/train/{audio(已 CMN), words(词级), text_transcriptions.csv}
 
 ```
 原始 wav (267)
-  │ ① SenseVoice：cognialign/preprocess/word_timestamps/sensevoice.py
+  │ ① SenseVoice：projects/cognialign/preprocess/word_timestamps/sensevoice.py
   │    （取代早期 WhisperX 中文，旧产物已弃；曾备份 _backup_pre_sensevoice）
   ▼
 data/test/words/<dx>/<uid>.csv（逐【字】）+ data/test/text_transcriptions.csv
-  │ ② 说话人分离：cognialign/preprocess/word_timestamps/diarize_pyannote.py
+  │ ② 说话人分离：projects/cognialign/preprocess/word_timestamps/diarize_pyannote.py
   ▼
 outputs/diarization/{speakers/<split>/<uid>.csv, words.csv, segments.csv}
   │ ③ 去访谈者：scripts/extract_subject.py（取话最多的为受试者 → 剪掉提问人段 → 重映射）
@@ -59,9 +59,9 @@ data/test/words_char/（字级，31555 字）+ text_transcriptions_char.csv（�
 
 ```
 data/<split>/{audio, words, text_transcriptions.csv} + 标签
-  ├─ cognialign/preprocess/extract_features.py ─► data/<split>/feat_<name>/<uid>*.pt
-  └─ AutomatedSpeech/extract_timing.py / extract_semantic.py
-        ─► AutomatedSpeech/logs/features/{timing,semantic}_{train,test}.csv
+  ├─ projects/cognialign/preprocess/extract_features.py ─► data/<split>/feat_<name>/<uid>*.pt
+  └─ projects/AutomatedSpeech/extract_timing.py / extract_semantic.py
+        ─► projects/AutomatedSpeech/logs/features/{timing,semantic}_{train,test}.csv
           └─ run_experiment.py / run_cross_adapt.py / run_transferable.py
 ```
 
@@ -87,4 +87,4 @@ data/<split>/{audio, words, text_transcriptions.csv} + 标签
 | `backups/test_splits_fewshot/`、`backups/train_splits_kfold_nonstrat/` | 旧划分 |
 | `.Trash-0/files/_backup_pre_sensevoice/` | WhisperX 时代的中文转写/words |
 | `outputs/diarization/`、`outputs/subject_extraction/` | 分离与去访谈者的中间产物/报告 |
-| `AutomatedSpeech/logs/results/*_cmn/_word/transfer` | 各阶段实验（字级/词级/可迁移子集） |
+| `projects/AutomatedSpeech/logs/results/*_cmn/_word/transfer` | 各阶段实验（字级/词级/可迁移子集） |

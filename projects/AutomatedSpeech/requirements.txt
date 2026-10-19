@@ -1,0 +1,10 @@
+# -*- coding: utf-8 -*-
+# AutomatedSpeech 依赖（在其 conda/venv 里安装）
+# 基础环境（本项目 adress env）已含 torch/sklearn/scipy/pandas/librosa/soundfile/transformers。
+nltk>=3.8
+jieba>=0.42
+matplotlib>=3.7
+# 论文原版的 fastText 词向量后端（默认后端）
+fasttext-wheel>=0.9.2
+# 注：音频缺转写时的 ASR（SenseVoice）由 projects/cognialign/preprocess/word_timestamps/sensevoice.py
+# 生成并写入 data/；本模块不再自带 ASR 脚本，故不再需要 funasr/modelscope。

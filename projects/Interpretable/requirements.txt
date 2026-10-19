@@ -1,0 +1,12 @@
+# TRILLsson 官方只有 TensorFlow 权重，且模型前向很重（内部会构造 ~2.6GB 中间张量），
+# CPU 约 13.5s/10s 段，必须用 GPU（约 0.28s/段）。因此单独建 venv 装 GPU 版 TF，
+# 不改动主环境 /root/miniconda3/envs/adress。
+tensorflow[and-cuda]==2.21.0
+tensorflow-hub
+tf-keras
+soundfile
+numpy
+pandas
+
+# 注意：run_experiment.py（PCA/PLDA/实验）用主环境 adress：
+#   scikit-learn / numpy / pandas / matplotlib 都已在其中。

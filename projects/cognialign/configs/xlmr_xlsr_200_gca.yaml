@@ -1,0 +1,94 @@
+# ── 统一协议重做「第 3 节」：xlmr + xlsr ──────────────────────────────────
+#
+# 协议（本组所有对照共用，唯一变量 = 提取特征的模型）：
+#   max_length=200 / pauses / seq_length=200 / early_stopping_metric=accuracy /
+#   gated(GCA) / 短序列补零。
+#
+# 与 configs/xlmr_wav2vec2_200_gca.yaml 的唯一区别：音频侧 wav2vec2 -> xlsr
+# （xlsr 输出 1024 维，网络自动挂一层 Linear 1024->768，不用改代码）。
+#
+# 跑法：
+#     bash run_preprocess.sh -s all -f configs/xlmr_xlsr_200_gca.yaml
+#     bash run_train.sh              -f configs/xlmr_xlsr_200_gca.yaml
+# 产出：特征 <split>/feat_xlmr_xlsr_200/（长度 200）
+#       权重 projects/cognialign/logs/xlmr_xlsr_pause_gated_s200gca/
+
+dataset:
+  max_length: 200
+  pauses: true
+  features_dir: 'xlmr_xlsr_200'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+
+train:
+  seq_length: 200
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'accuracy'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'xlsr'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: true
+  run_tag: 's200gca'
+
+model_name: ''

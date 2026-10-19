@@ -1,0 +1,114 @@
+# ── 统一协议重做「第 3 节」：xlmr + xlsr_pca（PCA 降维，补零那版）──────────
+#
+# 协议（本组所有对照共用，唯一变量 = 提取特征的模型）：
+#   max_length=200 / pauses / seq_length=200 / early_stopping_metric=accuracy /
+#   gated(GCA) / 短序列补零。
+#
+# 与 configs/xlmr_xlsr_200_gca.yaml 的唯一区别：音频侧不直接用 xlsr 的 1024 维，
+# 而是先用 PCA 压到 768 维（补位策略 = zero，即凑长度的空白行留零）。
+# 先跑 xlmr_xlsr_200_gca.yaml 产出 feat_xlmr_xlsr_200/，再用 PCA 工具压：
+#     bash run_preprocess.sh -s all -f configs/xlmr_xlsr_200_gca.yaml
+#     python projects/cognialign/tools/pca_audio_reduce.py -f configs/xlmr_xlsr_pca_200.yaml
+#     bash run_train.sh              -f configs/xlmr_xlsr_pca_200.yaml
+# 产出：特征 <split>/feat_xlmr_xlsr_pca_200/（长度 200）
+#       权重 projects/cognialign/logs/xlmr_xlsr_pca_pause_gated_s200gca/
+
+dataset:
+  max_length: 200
+  pauses: true
+  features_dir: 'xlmr_xlsr_pca_200'
+  text_fallback: 'distil'
+
+# ── PCA 降维参数（只有 tools/pca_audio_reduce.py 读这一段）────────────────
+pca:
+  audio_model: 'xlsr_pca'
+  source_features_dir: 'xlmr_xlsr_200'
+  source_audio_model: 'xlsr'
+  n_components: 768
+  fit_on: 'train'
+  apply_to: ['train', 'test']
+  whiten: false
+  # 'zero' = 凑长度的空白行留零（第 3 节表里 "PCA/zero" 那一版）。
+  fill_padding: 'zero'
+  model_out: 'projects/cognialign/logs/pca_xlsr_768_s200.pt'
+
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    # XLS-R 原始输出（1024 维）。本实验不直接用它进网络，它是 PCA 的输入。
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+    # 降维后的 XLS-R（768 维）。故意没有 repo —— 不是能加载的模型，
+    # 只是特征在命名和维度上的登记条目（dim=768 == hidden_size，网络不挂投影层）。
+    xlsr_pca:
+      suffix: 'xlsr_pca'
+      dim: 768
+      fps: 50
+
+train:
+  seq_length: 200
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'accuracy'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'xlsr_pca'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: true
+  run_tag: 's200gca'
+
+model_name: ''

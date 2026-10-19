@@ -4,7 +4,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$HERE/madress2023"
+cd "$HERE/projects/madress2023"
 
 # 本机 OMP_NUM_THREADS=0 会让 libgomp 报错，这里强制成 1。
 export OMP_NUM_THREADS=1

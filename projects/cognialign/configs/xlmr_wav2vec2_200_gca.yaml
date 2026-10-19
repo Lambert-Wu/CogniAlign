@@ -1,0 +1,98 @@
+# ── 统一协议重做「第 3 节 英文 5 折基线 + 中文 test」：xlmr + wav2vec2 ──────
+#
+# 协议（本组所有对照共用，只有一个变量 = 提取特征的模型）：
+#   dataset.max_length    : 200          （论文长度）
+#   dataset.pauses        : true         （带停顿）
+#   train.seq_length      : 200          （不截取）
+#   train.early_stopping_metric : accuracy   （旧第 3 节同口径）
+#   model.gated           : true         （GCA 门控交叉注意力）
+#   短序列补零：特征提取时不足 200 的位置写 0（extract_features.py 的默认行为）
+#
+# 与 configs/paper_distil_wav2vec2_200.yaml 的唯一区别：文本侧 distil -> xlmr
+# （test 不再换 chinese，train/test 都用 xlmr）。
+#
+# 跑法（提取和训练必须用同一份配置）：
+#     bash run_preprocess.sh -s all -f configs/xlmr_wav2vec2_200_gca.yaml
+#     bash run_train.sh              -f configs/xlmr_wav2vec2_200_gca.yaml
+# 产出：特征 <split>/feat_xlmr_wav2vec2_200/（长度 200）
+#       权重 projects/cognialign/logs/xlmr_wav2vec2_pause_gated_s200gca/
+
+dataset:
+  max_length: 200
+  pauses: true
+  features_dir: 'xlmr_wav2vec2_200'
+  text_fallback: 'distil'
+
+encoders:
+  text:
+    bert:
+      suffix: ''
+      repo: 'bert-base-uncased'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    distil:
+      suffix: 'distil'
+      repo: 'distilbert-base-uncased'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'DistilBertModel'
+    chinese:
+      suffix: 'chinese'
+      repo: 'bert-base-chinese'
+      dim: 768
+      tokenizer: 'BertTokenizer'
+      model: 'BertModel'
+    xlmr:
+      suffix: 'xlmr'
+      repo: 'FacebookAI/xlm-roberta-base'
+      dim: 768
+      tokenizer: 'AutoTokenizer'
+      model: 'AutoModel'
+      word_start_prefix: '▁'
+  audio:
+    wav2vec2:
+      suffix: 'audio'
+      repo: 'facebook/wav2vec2-base-960h'
+      dim: 768
+      fps: 50
+      processor: 'Wav2Vec2Processor'
+      model: 'Wav2Vec2Model'
+    xlsr:
+      suffix: 'xlsr'
+      repo: 'facebook/wav2vec2-xls-r-300m'
+      dim: 1024
+      fps: 50
+      processor: 'Wav2Vec2FeatureExtractor'
+      model: 'Wav2Vec2Model'
+
+train:
+  seq_length: 200
+  batch_size: 32
+  num_epochs: 200
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  early_stopping: True
+  early_stopping_patience: 20
+  early_stopping_metric: 'accuracy'
+  early_stopping_min_delta: 0.0
+  cross_validation: True
+  cross_validation_folds: 5
+
+model:
+  pooling: 'mean'
+  n_layers: 1
+  dropout: 0.3
+  hidden_size: 768
+  intermediate_size: 3072
+  n_heads: 12
+  num_classes: 1
+  hidden_mlp_size: 256
+  textual_model: 'xlmr'
+  audio_model: 'wav2vec2'
+  fusion: 'cross'
+  architecture: 'cross_attention'
+  gated: true
+  run_tag: 's200gca'
+
+model_name: ''
