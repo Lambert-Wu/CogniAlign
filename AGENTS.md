@@ -102,6 +102,10 @@ doing it serially. Concretely:
 - **Do not add `torchaudio`** — it drags in TorchCodec/FFmpeg; audio is read with
   `librosa`. Do not add `openai-whisper`; ASR uses `faster-whisper` (PyAV, no external
   ffmpeg). See the long rationale at the top of `requirements.txt`.
+- Optional speaker diarization (`preprocess/word_timestamps/diarize_pyannote.py`) needs
+  `pyannote.audio`; install it only for that step with
+  `pip install -r requirements-diarization.txt --extra-index-url https://download.pytorch.org/whl/cu126`.
+  It pulls `torchaudio`/`torchcodec`, so keep it out of the main training/preprocess env.
 - No `setup.py`/`pyproject.toml` — never add `-e .`.
 - HuggingFace traffic defaults to the `hf-mirror.com` mirror (set in the ASR/extract
   scripts before importing transformers).

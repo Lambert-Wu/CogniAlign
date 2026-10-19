@@ -1,0 +1,29 @@
+# =====================================================================
+# 可选依赖：中文说话人分离（pyannote）
+# =====================================================================
+# 只给 projects/cognialign/preprocess/word_timestamps/diarize_pyannote.py 用。
+#
+# 安装（CUDA 12.6）：
+#     pip install -r requirements-diarization.txt \
+#         --extra-index-url https://download.pytorch.org/whl/cu126
+#
+# CUDA 12.4 / 13.0：把下面三处 +cu126 和命令里的 index 一起换成对应版本。
+# 纯 CPU 机器：去掉 +cu126，并用 .../whl/cpu。
+#
+# 为什么单独一个文件：
+#   pyannote.audio 依赖 torchaudio / torchcodec，而主 requirements.txt
+#   故意不装 torchaudio（torchaudio 2.9+ 默认走 TorchCodec，TorchCodec
+#   解码音频需要外部 FFmpeg）。把这条线隔离出来，训练/特征提取环境保持干净。
+#
+# 关于 FFmpeg：
+#   diarize_pyannote.py 用 soundfile 读音频，再把 waveform 张量直接传给
+#   pyannote，不经过 TorchCodec 解码，所以不需要系统 ffmpeg 可执行文件。
+#   如果以后改成让 pyannote 按文件路径读音频，才需要 apt install ffmpeg。
+# =====================================================================
+
+-r requirements.txt
+
+# 与 torch==2.14.0+cu126 配套
+torchaudio==2.11.0+cu126
+torchcodec==0.17.0+cu126
+pyannote-audio==4.0.7

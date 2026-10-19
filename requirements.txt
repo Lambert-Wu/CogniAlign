@@ -1,32 +1,40 @@
 # =====================================================================
 # CogniAlign 依赖清单
 # 生成方式：按项目代码实际 import 的内容，逐条比对当前环境里装着的版本
-# 验证环境：Python 3.10.21 / Windows / CUDA 12.6（torch 2.14.0+cu126）
+# 验证环境：Python 3.10.21，Windows + CUDA 12.6（torch 2.14.0+cu126）；
+#           Linux 服务器（driver 580）实测 torch 2.14.0+cu130，见下面 torch 一节
 # =====================================================================
 #
 # 安装（CUDA 12.6）：
 #     pip install -r requirements.txt \
 #         --extra-index-url https://download.pytorch.org/whl/cu126
 #
-# ⚠️ 末尾那行 --extra-index-url 不是可选项，是必需项。
+# ⚠️ 命令里那个 --extra-index-url 不是可选项，是必需项。
 #    torch 的版本号带本地标记（+cu126），这种 wheel 只有
 #    PyTorch 官方源上有，PyPI 上不存在。CUDA 12.4 就把 cu126 换成 cu124，
-#    以此类推（服务器上先用 nvidia-smi 看 CUDA 版本）。
+#    CUDA 13.0 就换成 cu130，以此类推（服务器上先用 nvidia-smi 看驱动版本）。
+#
+#    本仓库这台 Linux 服务器驱动是 580（对应 CUDA 13.0），现有环境装的是
+#    torch 2.14.0+cu130；cu126 的 wheel 在 580 驱动上也能跑，这里保留 cu126
+#    是为了兼容更老的驱动。要跟服务器现有环境完全一致，就把 cu126 换成 cu130。
 #
 # 纯 CPU 机器（无显卡的服务器 / CI）：
 #     sed 's/+cu126//' requirements.txt > /tmp/req-cpu.txt
 #     pip install -r /tmp/req-cpu.txt --extra-index-url https://download.pytorch.org/whl/cpu
 #
-# 不需要的东西（都确认过，别再往里加）：
+# 主清单不需要的东西（都确认过，别再往里加）：
 #   -e .            项目没有 setup.py / pyproject.toml，写了直接装失败
 #   torchaudio      见"深度学习框架"一节的说明 —— 读音频统一用 librosa
 #   whisper         见文末"故意不列进来"
-#   ffmpeg          见"系统依赖"一节，本项目不需要
+#   ffmpeg          见"系统依赖"一节，主流程不需要
+#
+# 唯一例外是**可选**的说话人分离：它需要 pyannote.audio（连带 torchaudio/
+# torchcodec），单独放在 requirements-diarization.txt，不跑那一步就不用装。
 # =====================================================================
 
 
 # ---------------------------- 深度学习框架 ----------------------------
-# 全项目的张量与模型（cognialign/model.py / dataset.py / main.py）
+# 全项目的张量与模型（projects/cognialign/networks/model.py / dataset/dataset.py / train.py）
 torch==2.14.0+cu126
 # ⚠️ 这里**没有 torchaudio，是故意的**：
 #   torchaudio 2.9 起默认后端换成 TorchCodec，而 TorchCodec 必须依赖外部 FFmpeg 库。
@@ -37,31 +45,43 @@ torch==2.14.0+cu126
 
 
 # ---------------------------- 音频特征提取 ----------------------------
-# 读音频、切成帧、mel 频谱 —— preprocessembeddings.py 三条音频分支全用它
+# 读音频、切成帧、mel 频谱 —— preprocess/extract_features.py 三条音频分支全用它
 librosa==0.11.0
-# 音频 I/O —— librosa 的读写后端；tools/convert_whisperx_words.py 也用它读音频时长
+# 音频 I/O —— librosa 的读写后端；preprocess/word_timestamps/from_whisperx.py、
+#   diarize_pyannote.py、scripts/ 下的数据准备脚本也用它读音频
 soundfile==0.14.0
 # eGeMAPS 声学特征（只有 audio_model='egemaps' 时才用；wav2vec2 分支不靠它）
 opensmile==2.6.0
 
 
+# ------------------------ 仓库级数据准备脚本 --------------------------
+# 中文逐字 → 词级（scripts/wordify_zh_words.py 直接 import jieba）
+jieba==0.42.1
+# 信道 + 倒谱均值归一化（scripts/normalize_channel_cmn.py 直接 import
+#   scipy.fftpack）；scipy 同时也是 sklearn/librosa/funasr 的依赖，这里显式锁版本
+scipy==1.15.3
+
+
 # ---------------------------- 文本编码 ----------------------------
-# DistilBERT 等文本模型 + 学习率调度器（preprocessembeddings.py / main.py）
+# DistilBERT 等文本模型 + 学习率调度器（preprocess/extract_features.py / core/encoders.py / train.py）
 transformers==5.17.0
+# 模型下载 / hf-mirror 镜像（projects/cognialign/core/model_download.py 直接 import；
+#   它同时是 transformers / faster-whisper 的依赖，这里显式锁死版本）
+huggingface-hub==1.32.0
 
 
 # ---------------------------- 语音转写（脚本①）-------------------------
-# 转写 + 词级时间戳（preprocesswhisper.py）
+# 转写 + 词级时间戳（preprocess/word_timestamps/transcribe_whisper.py）
 faster-whisper==1.2.1
-#   它会自动带上 ctranslate2==4.8.2 / av / onnxruntime / huggingface-hub /
-#   tokenizers。实测这些和 transformers 5.17.0 的约束**不冲突**
+#   它会自动带上 ctranslate2（当前解析到 4.8.2）/ av（17.1.0）/ onnxruntime /
+#   huggingface-hub / tokenizers。实测这些和 transformers 5.17.0 的约束**不冲突**
 #   （tokenizers 0.23.2 满足 <0.24.0,>=0.23.1；huggingface-hub 1.32.0 满足
 #   <2.0,>=1.5.0），所以**不需要** --no-deps 单独装。
 #   av（PyAV）自带 ffmpeg 库 ⇒ 系统里不需要装 ffmpeg 可执行文件。
 
 
 # --------------------- 中文语音转写（SenseVoice）----------------------
-# 中文逐字时间戳 + 转写（cognialign/preprocess/word_timestamps/sensevoice.py）。
+# 中文逐字时间戳 + 转写（projects/cognialign/preprocess/word_timestamps/sensevoice.py）。
 # 阿里 FunASR 生态，SenseVoice-Small 是模型本体。模型文件已随仓库放在
 # models/SenseVoiceSmall/ 与 models/speech_fsmn_vad_zh-cn-16k-common-pytorch/，
 # 运行时离线加载（脚本会先把非 ASCII 路径映射成纯 ASCII 再交给 funasr）。
@@ -73,24 +93,31 @@ kaldi-native-fbank==1.22.3
 modelscope==1.40.1
 
 
+# ------------------- 可选：中文说话人分离（pyannote）------------------
+# diarize_pyannote.py 需要 pyannote.audio，而 pyannote.audio 依赖
+# torchaudio / torchcodec —— 正好和上面“故意不装 torchaudio”的主清单冲突。
+# 所以**不放进本文件**，需要跑那一步时再单独装：
+#     pip install -r requirements-diarization.txt \
+#         --extra-index-url https://download.pytorch.org/whl/cu126
+# （CUDA 12.4 / 13.0 记得把 cu126 换成对应版本。）
+
+
 # ---------------------------- 训练与日志 ----------------------------
-# KFold 划分 + 分类指标（dataset.py / utils.py / tools/build_dataset.py）
+# KFold 划分 + 分类指标（dataset/dataset.py / core/utils.py / dataset/build_dataset.py）
 scikit-learn==1.7.2
 # 表格读写（各处）
-# ⚠️ 必须 <3.0：preprocesswhisper.py 用了 DataFrame._append，
-#    它在 pandas 2.1 起被标记废弃、3.0 会被移除
+# ⚠️ 必须 <3.0：transcribe_whisper.py 用了 DataFrame._append（私有 API，
+#    pandas 3.0 可能直接移除；公开的 DataFrame.append 在 2.0 已经删了）。
+#    在 2.3.3 上这个调用可用且不告警，所以固定在 2.3.x。
 pandas==2.3.3
 numpy==2.2.6
 # 训练进度条（utils.py）
 tqdm==4.70.1
 # 读 configs/*.yaml（utils.get_config）
 PyYAML==6.0.3
-# 训练日志（main.py / utils.py）
-# ⚠️ 本机未安装，版本号来自 pip 解析器的实际解析结果（pip install --dry-run）。
-#    如果服务器上装不到这个版本，把 ==0.30.0 去掉让它自己解析即可。
+# 训练日志（train.py / core/utils.py）；当前 adress 环境已验证
 wandb==0.30.0
-# utils.get_config 用它把 yaml 变成点号访问（config.train.num_epochs 这种写法）
-# ⚠️ 同上，本机未安装，版本来自 pip 解析器。
+# core.utils.get_config 用它把 yaml 变成点号访问（config.train.num_epochs 这种写法）
 dotmap==1.3.30
 
 
@@ -102,8 +129,10 @@ dotmap==1.3.30
 #     CentOS/RHEL:    sudo yum install -y libsndfile
 #   缺了它的报错发生在 import soundfile 时（不是安装时），排查起来很费时间。
 #
-# ffmpeg —— **本项目不需要**。原来的 openai-whisper 要靠外部 ffmpeg 解码音频，
+# ffmpeg —— **主流程不需要**。原来的 openai-whisper 要靠外部 ffmpeg 解码音频，
 #   现在换成 faster-whisper，解码走 PyAV（pip 包，自带 ffmpeg 库）。
+#   可选的说话人分离会带进 TorchCodec；本脚本直接把 waveform 传给 pyannote，
+#   不走 TorchCodec 解码，所以不装 ffmpeg 也能跑（详见 requirements-diarization.txt）。
 
 
 # =====================================================================
@@ -115,10 +144,17 @@ dotmap==1.3.30
 #   且 turbo 模型放在 openai 的 CDN 上（本机走代理连不上）。
 #   两者字段一一对应，下游代码无需改动。
 #
-# numba / tiktoken / more-itertools / regex
-#   这几个是 openai-whisper 的依赖被带进来的。全仓 grep 过，
-#   本项目代码一处都没 import，属于环境杂物。
+# whisperx
+#   只有 whisperx_pipeline.py（LEGACY，已不推荐）还 import 它；主流程已经
+#   拆成 SenseVoice + diarize_pyannote。whisperx 依赖旧版 pyannote/torchaudio，
+#   和当前依赖不兼容，**不要装**。
+#
+# numba / tiktoken / regex / more-itertools
+#   都不直接 import，但不能当“环境杂物”删掉：numba 是 librosa 的硬依赖，
+#   tiktoken / regex 是 funasr 的依赖（regex 也被 transformers 依赖），
+#   pip 会自动装。more-itertools 目前没有项目代码直接用，留着即可。
 #
 # matplotlib
-#   项目里没有任何画图代码（grep 过 pyplot/savefig，零命中）。
-#   utils.py 里那几段 LaTeX 表格是拼字符串，不需要绘图库。
+#   cognialign 和 scripts/ 里没有画图代码（grep 过 pyplot/savefig，零命中）。
+#   utils.py 里那几段 LaTeX 表格是拼字符串，不需要绘图库；其他 projects/
+#   子项目用到 matplotlib 的，各自在自己的 requirements 里声明。
