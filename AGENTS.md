@@ -88,8 +88,8 @@ There are no unit tests. Do not invent a test command; verify with `check_env.py
 
 ## Use the box fully — GPU first, but budget it
 
-Goal: train faster by using this machine's **real** resources — **one RTX 3080 Ti
-(12 GB VRAM), a 10-core CPU quota, ~45 GiB RAM** — **without oversubscribing them**.
+Goal: train faster by using this machine's **real** resources — **one NVIDIA A100-PCIE-40GB
+(40 GB VRAM), an 8-core CPU quota, ~48 GiB RAM** — **without oversubscribing them**.
 Several jobs each grabbing "all" cores/VRAM/RAM contend and end up slower (or OOM), so
 budget explicitly instead of stampeding:
 
@@ -100,25 +100,25 @@ budget explicitly instead of stampeding:
   CPU for `--mode asr` or tiny sanity checks.
 - **Keep the expensive parts on-GPU and batched.** Model forward/loss, encoder passes, and
   inference should run on GPU; raise the batch (`train.batch_size`, `evaluate.py
-  --batch-size`, `tools/probe_*.py --batch-size`) to fill the **12 GB** VRAM, respecting the
+  --batch-size`, `tools/probe_*.py --batch-size`) to fill the **40 GB** VRAM, respecting the
   documented OOM limits in `networks/model.py`. Don't move work to CPU "to be safe".
   (Exception: `tools/pca_audio_reduce.py` uses sklearn, which is CPU-only.)
-- **There is only ONE GPU (12 GB) — don't run competing GPU jobs.** Two jobs on the same
+- **There is only ONE GPU (A100 40 GB) — don't run competing GPU jobs.** Two jobs on the same
   card split VRAM and time-slice, so both slow down and one may OOM. Prefer one bigger
-  (larger-batch) job; if you must run several, keep their combined peak under ~12 GB
+  (larger-batch) job; if you must run several, keep their combined peak under ~40 GB
   (watch `nvidia-smi`), pin each with `CUDA_VISIBLE_DEVICES=0`, and stagger launches instead
   of firing them together.
-- **CPU: 10 usable cores in total (cgroup quota) — `nproc`/`os.cpu_count()` lie (80).**
-  `cpu.max = 1000000 100000` ≈ **10 cores**; the affinity list reads `0–79` only because of
-  cpuset, so `os.cpu_count()` would oversubscribe. Size worker pools to that budget
-  (`--workers 10`, `xargs -P 10`, `ProcessPoolExecutor(max_workers=10)`,
-  `OMP_NUM_THREADS=10`) and keep the 10 busy — don't leave cores idle. But the 10 is a
-  **shared** budget: when several CPU jobs run at once, split it (e.g. 2 jobs × 5 workers)
-  rather than giving each 10. Prefer process-level parallelism over threads for CPU-bound
+- **CPU: 8 usable cores in total (cgroup quota) — `nproc`/`os.cpu_count()` lie (52).**
+  `cpu.max = 800000 100000` ≈ **8 cores**; `os.cpu_count()` reports the host's 52 and
+  `sched_getaffinity` gives 8, so size worker pools to 8. Use
+  (`--workers 8`, `xargs -P 8`, `ProcessPoolExecutor(max_workers=8)`,
+  `OMP_NUM_THREADS=8`) and keep the 8 busy — don't leave cores idle. But the 8 is a
+  **shared** budget: when several CPU jobs run at once, split it (e.g. 2 jobs × 4 workers)
+  rather than giving each 8. Prefer process-level parallelism over threads for CPU-bound
   Python (the GIL makes threads useless there).
-- **RAM is capped at ~45 GiB (cgroup) and swap is 0 — `free -h` shows the host's 376 GiB
-  and misleads.** Feature extraction / ASR can be memory-hungry; don't run so many
-  concurrent jobs that their combined peak nears 45 GiB, or the over-limit job gets
+- **RAM is capped at ~48 GiB (cgroup) with ~31 GiB swap — `free -h` can show host values
+  that mislead.** Feature extraction / ASR can be memory-hungry; don't run so many
+  concurrent jobs that their combined peak nears 48 GiB, or the over-limit job gets
   OOM-killed and the whole run is lost.
 - **Parallel runs must not clobber each other.** Two jobs writing the *same* result dir
   (same config, or configs that collide per the gotcha below) corrupt each other — set
