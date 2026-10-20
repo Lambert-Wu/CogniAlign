@@ -23,6 +23,8 @@ logs/*
 projects/cognialign/logs/
 # madress-2023 移植的独立产物（特征 .pt / 结果 JSON），同样不进仓库
 projects/madress2023/logs/
+# MC-PFC 移植的特征缓存（.npy）不进仓库；logs/ 已被上面的 `logs/` 规则覆盖
+projects/MC-PFC/features/
 # Whisper-Based 移植的独立产物（encoder 特征缓存 / 结果 JSON），同样不进仓库
 projects/Whisper-Based/logs/
 # Ignore all files in the base_logs directory

@@ -44,6 +44,16 @@ speechbrain PLDA is reimplemented in pure numpy (`plda.py`) to avoid `torchaudio
 and results are in `projects/Interpretable/README.md` and `projects/Interpretable/RESULTS.md`. Run it with
 `bash projects/Interpretable/setup_env.sh` then `bash projects/Interpretable/run_all.sh`.
 
+Also in the repo: `projects/MC-PFC/` — reproduction of Wang & Wu, Bioengineering 2026
+"Cross-Lingual Alzheimer's Disease Speech Detection: Polarity Inversion and Few-Shot Calibration"
+(Method: English ADReSSo RBF-SVM + Chinese few-shot polarity-flip calibration). Uses
+`facebook/hubert-large-ls960-ft` (downloaded to `models/hubert-large-ls960-ft/`), aggregates the
+267 Chinese recordings to 150 subjects, fixes a 32-person Chinese pool (16 AD + 16 HC) and tests on
+the remaining 118. Self-contained: reads `data/`, writes only `projects/MC-PFC/{features,logs}/`.
+The paper's 0.871 AUC is **not** reproduced on this data (MC-PFC AUC 0.482 single pool / 0.427 ± 0.035
+across 20 pools); see `projects/MC-PFC/RESULTS.md` for diagnostics. Run it with
+`bash projects/MC-PFC/run_all.sh`.
+
 ## Workspace boundaries (each project has its own workspace)
 
 Every directory under `projects/` is a **separate workspace**. When working on a project,
