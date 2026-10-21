@@ -125,7 +125,7 @@ budget explicitly instead of stampeding:
   - If utilization is **<~80%** and memory is well under 40 GB, a long sweep is faster as
     **2–3 processes** (e.g. `--batch-size 6 --num-workers 2` each; keep combined VRAM
     <~36 GB and total CPU workers ≤8). Example: a ~70 min 10-pool decoder sweep at 68%
-    utilization finished in ~30–35 min as 3 processes at 2 seeds.
+    utilization was cut to ~30–35 min as 3 processes at 2 seeds.
   - If utilization is **~100%** or memory is tight, adding jobs only time-slices — use one
     bigger batch, or cut `--seeds`/`--epochs` for scan/robustness runs (2 seeds is enough
     for correlation analyses; don't cut seeds for the headline number).
