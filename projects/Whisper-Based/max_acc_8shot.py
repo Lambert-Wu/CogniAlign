@@ -119,6 +119,8 @@ def main():
     ap.add_argument("--ftp", action="store_true")
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--num-workers", type=int, default=4)
+    ap.add_argument("--feature-tag", default="",
+                    help="特征目录名，如 whisper-medium-tta；默认用 whisper-medium")
     args = ap.parse_args()
 
     global LABELS
@@ -127,7 +129,7 @@ def main():
     y = np.array([LABELS[s] for s in test])
     print(f"[split] support={support} test={len(test)}", flush=True)
 
-    hub = D.FeatureHub("medium")
+    hub = D.FeatureHub("medium", feature_tag=args.feature_tag)
     builder = D.PromptBuilder("medium", ftp=args.ftp)
     template = M.load_template("medium")
     transcripts = T.load_all_transcripts()
@@ -162,7 +164,8 @@ def main():
 
     res = {
         "protocol": {"split_seed": SEED_SPLIT, "support": support, "n_test": len(test),
-                     "ftp": args.ftp, "seeds": args.seeds, "epochs": args.epochs},
+                     "ftp": args.ftp, "seeds": args.seeds, "epochs": args.epochs,
+                     "feature_tag": args.feature_tag},
         "per_seed": per_seed,
         "seed_ens_final": ens(S[:, -1, :].mean(0)),
         "seed_ens_all_epochs": ens(S.mean((0, 1))),
@@ -175,7 +178,8 @@ def main():
             "seed_ens_last3": S[:, -3:, :].mean((0, 1)).tolist(),
         },
     }
-    name = "max_acc_8shot_ftp.json" if args.ftp else "max_acc_8shot.json"
+    name = "max_acc_8shot" + ("_ftp" if args.ftp else "") + \
+           (("_" + args.feature_tag.split("-")[-1]) if args.feature_tag else "") + ".json"
     path = os.path.join(C.logs_dir(), "results", name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:

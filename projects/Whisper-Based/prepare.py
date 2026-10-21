@@ -30,14 +30,16 @@ import pandas as pd
 import common as C
 
 
-def seg_windows(total: float, seg: float = 30.0, min_last: float = 15.0) -> List[Tuple[float, float]]:
-    """连续 30s 窗；最后一段 <min_last 则丢弃（至少保留一段）。"""
+def seg_windows(total: float, seg: float = 30.0, min_last: float = 15.0,
+               hop: float | None = None) -> List[Tuple[float, float]]:
+    """30s 窗；hop=None 时不重叠，hop=15 时每 15s 切一次（重叠一半）。"""
+    step = float(hop) if hop else float(seg)
     wins: List[Tuple[float, float]] = []
     start = 0.0
     while start < total - 1e-6:
         end = min(start + seg, total)
         wins.append((start, end))
-        start += seg
+        start += step
     if len(wins) > 1 and (wins[-1][1] - wins[-1][0]) < min_last:
         wins.pop()
     return wins
@@ -57,7 +59,7 @@ def load_audio_16k(path: str) -> np.ndarray:
     return np.ascontiguousarray(wav)
 
 
-def build_rows(split: str) -> pd.DataFrame:
+def build_rows(split: str, hop: float | None = None) -> pd.DataFrame:
     labels = C.load_labels(split)
     rows = []
     for _, r in labels.iterrows():
@@ -67,7 +69,7 @@ def build_rows(split: str) -> pd.DataFrame:
             continue
         wav = load_audio_16k(path)
         total = len(wav) / 16000.0
-        for k, (s, e) in enumerate(seg_windows(total)):
+        for k, (s, e) in enumerate(seg_windows(total, hop=hop)):
             rows.append(
                 dict(split=split, uid=str(r["uid"]), dx=r["dx"], label=int(r["label"]),
                      lang=C.SPLIT_LANG[split], seg=k, start=round(s, 3), end=round(e, 3),
@@ -76,13 +78,15 @@ def build_rows(split: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def extract(model_size: str, splits, force: bool = False, batch_size: int = 16):
+def extract(model_size: str, splits, force: bool = False, batch_size: int = 16,
+            hop: float | None = None, tag: str = ""):
     import torch
     from transformers import WhisperFeatureExtractor, WhisperForConditionalGeneration
 
     mdir = C.ensure_whisper_model(model_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    feat_dir = os.path.join(C.logs_dir(), "features", f"whisper-{model_size}")
+    feat_name = f"whisper-{model_size}" + (f"-{tag}" if tag else "")
+    feat_dir = os.path.join(C.logs_dir(), "features", feat_name)
     os.makedirs(feat_dir, exist_ok=True)
 
     proc = WhisperFeatureExtractor.from_pretrained(mdir)
@@ -98,9 +102,10 @@ def extract(model_size: str, splits, force: bool = False, batch_size: int = 16):
             print(f"[prepare] {split}: 已有缓存，跳过（--force 重算）")
             continue
 
-        rows = build_rows(split)
+        rows = build_rows(split, hop=hop)
         n = len(rows)
-        print(f"[prepare] {split}: {n} 段（{rows['uid'].nunique()} 受试者），d_model={d_model}")
+        print(f"[prepare] {split}: {n} 段（{rows['uid'].nunique()} 受试者），"
+              f"d_model={d_model}，hop={hop or '不重叠'}")
         enc = np.lib.format.open_memmap(enc_path, mode="w+", dtype=np.float16,
                                         shape=(n, 1500, d_model))
 
@@ -154,8 +159,12 @@ def main():
     ap.add_argument("--splits", nargs="+", default=["train", "test"])
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--hop", type=float, default=None,
+                    help="切窗步长（秒）；默认不重叠（=30），设 15 即重叠一半")
+    ap.add_argument("--tag", default="", help="特征目录后缀，如 ovl -> whisper-medium-ovl")
     args = ap.parse_args()
-    extract(args.model, args.splits, force=args.force, batch_size=args.batch_size)
+    extract(args.model, args.splits, force=args.force, batch_size=args.batch_size,
+            hop=args.hop, tag=args.tag)
 
 
 if __name__ == "__main__":
