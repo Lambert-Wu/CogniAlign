@@ -65,8 +65,8 @@ adaptation), run as English(ADReSSo)→Chinese here. Self-contained like the oth
 No Spanish/Greek data and no IBI head (the label CSVs lack age/gender/education), so EN→ZH mixes
 task + domain + language shift rather than being a clean language transfer. Results
 (within-language and joint EN+ZH hold up, EN→ZH zero-shot collapses to the majority class,
-8-shot Chinese 85.21% acc / AUC 0.897 over 10 seeds on the fixed 8-person pool; 5 random
-pools average 78.17±1.32 acc / 0.879±0.039 AUC) are in
+8-shot Chinese 85.21% acc / AUC 0.897 over 10 seeds on the fixed 8-person pool; 15 random
+pools average 76.90±4.81 acc / 0.882±0.038 AUC) are in
 `projects/Whisper-Based/RESULTS.md`, with method mapping and caveats in its `README.md`. Run it
 with `bash projects/Whisper-Based/run_all.sh --model medium` — the script defaults to `small`,
 but the headline numbers are medium.

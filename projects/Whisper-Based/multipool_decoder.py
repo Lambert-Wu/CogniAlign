@@ -38,6 +38,8 @@ def metrics(y, p):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pools", type=int, default=5)
+    ap.add_argument("--start", type=int, default=1, help="起始随机池编号（1 起）")
+    ap.add_argument("--end", type=int, default=None, help="结束随机池编号（含）")
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -55,13 +57,18 @@ def main():
     pools = [("fixed2024", FIXED_AD + FIXED_HC)]
     rng = np.random.RandomState(10000)
     seen = {tuple(sorted(pools[0][1]))}
-    while len(pools) < args.pools + 1:
+    end = args.end or args.pools
+    while len(pools) <= end:
         p = list(rng.choice(ad_all, 4, replace=False)) + list(rng.choice(hc_all, 4, replace=False))
         key = tuple(sorted(p))
         if key in seen:
             continue
         seen.add(key)
         pools.append((f"pool{len(pools):03d}", p))
+    sel = pools[args.start:end + 1]
+    if args.start == 1:
+        sel = [pools[0]] + sel
+    pools = sel
 
     hub = D.FeatureHub("medium")
     builder = D.PromptBuilder("medium", ftp=False)
@@ -73,7 +80,8 @@ def main():
 
     en_gids = hub.gids_for_uids(C.load_labels("train")["uid"].tolist())
     out = {"protocol": {"n_support": 8, "seeds": args.seeds, "epochs": args.epochs,
-                        "pools": args.pools}, "per_pool": []}
+                        "pools": args.pools, "start": args.start, "end": end},
+           "per_pool": []}
 
     for pi, (pid, support) in enumerate(pools):
         support = sorted(support)
@@ -109,18 +117,20 @@ def main():
                                 "ensemble": e,
                                 "probs": {"test": test, "y": y.tolist(), "p": ens.tolist()}})
 
-    rnd = out["per_pool"][1:]
+    rnd = [r for r in out["per_pool"] if r["pool"] != "fixed2024"]
     for key in ("acc", "auc"):
         v = np.array([r["ensemble"][key] for r in rnd])
         out[f"random_{key}"] = {"mean": float(v.mean()), "std": float(v.std(ddof=1)),
                                 "min": float(v.min()), "max": float(v.max()),
                                 "n": int(len(v))}
-    out["fixed_ref"] = out["per_pool"][0]["ensemble"]
+    out["fixed_ref"] = next((r["ensemble"] for r in out["per_pool"]
+                             if r["pool"] == "fixed2024"), None)
     accs = [r["ensemble"]["acc"] for r in rnd]
     out["vs_8521"] = {"n_above": int(sum(a > 0.8521 for a in accs)),
                       "n": len(accs)}
 
-    path = os.path.join(C.logs_dir(), "results", "multipool_decoder.json")
+    suffix = "" if (args.start == 1 and end == args.pools) else f"_{args.start}_{end}"
+    path = os.path.join(C.logs_dir(), "results", f"multipool_decoder{suffix}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2)
 
@@ -128,7 +138,9 @@ def main():
     print(f"  acc : {out['random_acc']['mean']*100:.2f}±{out['random_acc']['std']*100:.2f} "
           f"[{out['random_acc']['min']*100:.2f}, {out['random_acc']['max']*100:.2f}]")
     print(f"  auc : {out['random_auc']['mean']:.3f}±{out['random_auc']['std']:.3f}")
-    print(f"  fixed2024: acc={out['fixed_ref']['acc']*100:.2f} auc={out['fixed_ref']['auc']:.3f}")
+    if out["fixed_ref"]:
+        print(f"  fixed2024: acc={out['fixed_ref']['acc']*100:.2f} "
+              f"auc={out['fixed_ref']['auc']:.3f}")
     print(f"[saved] {path}")
 
 
