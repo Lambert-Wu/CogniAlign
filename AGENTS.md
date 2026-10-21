@@ -120,11 +120,18 @@ budget explicitly instead of stampeding:
   --batch-size`, `tools/probe_*.py --batch-size`) to fill the **40 GB** VRAM, respecting the
   documented OOM limits in `networks/model.py`. Don't move work to CPU "to be safe".
   (Exception: `tools/pca_audio_reduce.py` uses sklearn, which is CPU-only.)
-- **There is only ONE GPU (A100 40 GB) — don't run competing GPU jobs.** Two jobs on the same
-  card split VRAM and time-slice, so both slow down and one may OOM. Prefer one bigger
-  (larger-batch) job; if you must run several, keep their combined peak under ~40 GB
-  (watch `nvidia-smi`), pin each with `CUDA_VISIBLE_DEVICES=0`, and stagger launches instead
-  of firing them together.
+- **One GPU — measure before you parallelize.** While a job runs, check
+  `nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv,noheader`.
+  - If utilization is **<~80%** and memory is well under 40 GB, a long sweep is faster as
+    **2–3 processes** (e.g. `--batch-size 6 --num-workers 2` each; keep combined VRAM
+    <~36 GB and total CPU workers ≤8). Example: a ~70 min 10-pool decoder sweep at 68%
+    utilization finished in ~30–35 min as 3 processes at 2 seeds.
+  - If utilization is **~100%** or memory is tight, adding jobs only time-slices — use one
+    bigger batch, or cut `--seeds`/`--epochs` for scan/robustness runs (2 seeds is enough
+    for correlation analyses; don't cut seeds for the headline number).
+  - Pin every job with `CUDA_VISIBLE_DEVICES=0`, give each its own log, and run a
+    `logs/PROGRESS.md` watcher (see `projects/Whisper-Based/progress_watch.sh`) so progress
+    is visible without polling. Never let combined VRAM/CPU/RAM cross the budgets above.
 - **CPU: 8 usable cores in total (cgroup quota) — `nproc`/`os.cpu_count()` lie (52).**
   `cpu.max = 800000 100000` ≈ **8 cores**; `os.cpu_count()` reports the host's 52 and
   `sched_getaffinity` gives 8, so size worker pools to 8. Use
