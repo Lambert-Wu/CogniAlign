@@ -54,6 +54,23 @@ The paper's 0.871 AUC is **not** reproduced on this data (MC-PFC AUC 0.482 singl
 across 20 pools); see `projects/MC-PFC/RESULTS.md` for diagnostics. Run it with
 `bash projects/MC-PFC/run_all.sh`.
 
+Also in the repo: `projects/Whisper-Based/` — a reproduction of the INTERSPEECH 2025 paper
+"Whisper-Based Multilingual Alzheimer's Disease Detection and Improvements for Low-Resource
+Language" (30 s windows → frozen Whisper encoder → generate "Normal"/"Alzheimer" from a
+classification prefix; FTP transcript prompts, MJT joint training, EN+ZH low-resource
+adaptation), run as English(ADReSSo)→Chinese here. Self-contained like the other ports: reads
+`data/`, writes only `projects/Whisper-Based/logs/` (`WHISPER_AD_ROOT` overrides), never touches
+`projects/cognialign/`. Each model's encoder pass is cached once as large `.npy` files under
+`logs/features/` (~3 GB, regenerable via `prepare.py --model <m>`); only the decoder is trained.
+No Spanish/Greek data and no IBI head (the label CSVs lack age/gender/education), so EN→ZH mixes
+task + domain + language shift rather than being a clean language transfer. Results
+(within-language and joint EN+ZH hold up, EN→ZH zero-shot collapses to the majority class,
+8-shot Chinese 85.21% acc / AUC 0.897 over 10 seeds on the fixed 8-person pool; 5 random
+pools average 78.17±1.32 acc / 0.879±0.039 AUC) are in
+`projects/Whisper-Based/RESULTS.md`, with method mapping and caveats in its `README.md`. Run it
+with `bash projects/Whisper-Based/run_all.sh --model medium` — the script defaults to `small`,
+but the headline numbers are medium.
+
 ## Workspace boundaries (each project has its own workspace)
 
 Every directory under `projects/` is a **separate workspace**. When working on a project,
@@ -203,7 +220,7 @@ budget explicitly instead of stampeding:
 
 - **Top-level layout** (details in `docs/PROJECT_LAYOUT.md`): all method code lives under
   `projects/` (`cognialign/`, `AutomatedSpeech/`, `AnAutomatic/`, `madress2023/`,
-  `Whisper-Based/`, `Interpretable/`); `data/` (datasets
+  `Whisper-Based/`, `Interpretable/`, `MC-PFC/`); `data/` (datasets
   only, gitignored), `models/` (pretrained, gitignored), `outputs/` (cross-module
   preprocessing artifacts, tracked: `diarization/`, `subject_extraction/`), `scripts/`
   (repo-level data-prep), `backups/` (gitignored archives), `docs/`, `logs/`.

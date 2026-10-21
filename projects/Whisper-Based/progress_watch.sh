@@ -16,6 +16,7 @@ write() {
       n=$(grep -cE '^[[:space:]]*\[seed[0-9]+\] final' "$f" 2>/dev/null || true)
       echo "已完成 seed：${n:-0}"
       grep -E '^[[:space:]]*\[seed[0-9]+\] final' "$f" | tail -3
+      grep -E '^[[:space:]]*\[pool' "$f" | tail -4
       grep -E "epoch[0-9]+/[0-9]+ loss" "$f" | tail -2
       grep -E "seeds, 最后一轮|seeds ×|saved" "$f" | tail -4
       echo
