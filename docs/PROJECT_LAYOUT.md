@@ -12,7 +12,8 @@ CogniAlign/
 │   ├── AnAutomatic/     # 复现：AD 2025 跨语言筛查（ASR→翻译→文本分类）
 │   ├── madress2023/     # 复现：ICASSP 2023 eGeMAPS + 小注意力网（EN→ZH）
 │   ├── Whisper-Based/   # 复现：INTERSPEECH 2025 Whisper 多语言 AD 检测
-│   └── Interpretable/   # TRILLsson 副语言表征的跨语言测试（EN→ZH，非可解释）
+│   ├── Interpretable/   # TRILLsson 副语言表征的跨语言测试（EN→ZH，非可解释）
+│   └── MC-PFC/          # 复现：Bioengineering 2026 跨语言极性反转 + 少样本校准
 ├── data/                # 数据集（gitignored）：只放 audio / words / 标签 / splits
 ├── models/              # 预训练模型（gitignored）
 ├── outputs/             # 跨模块的预处理产物（**已入库**）
