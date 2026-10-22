@@ -27,6 +27,7 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 torch.use_deterministic_algorithms(True, warn_only=True)
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import common as C
 import data as D
@@ -92,7 +93,7 @@ def main():
                                 weight_decay=cfg.weight_decay, eps=cfg.adam_eps)
         for ep in range(cfg.epochs):
             clf.train()
-            for b in dl:
+            for b in tqdm(dl, desc=f"{args.pool} s{seed} ep{ep+1}", leave=False, mininterval=10, dynamic_ncols=True):
                 enc = b["enc"].to(device, non_blocking=True)
                 ids = b["input_ids"].to(device); attn = b["attention_mask"].to(device)
                 pos = b["positions"].to(device); tgt = b["targets"].to(device)
