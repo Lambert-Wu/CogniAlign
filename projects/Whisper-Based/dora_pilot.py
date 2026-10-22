@@ -36,7 +36,7 @@ FIXED_HC = ["0032", "0093", "019213", "171812"]
 
 
 class DoRALinear(nn.Module):
-    def __init__(self, base: nn.Linear, r=8, alpha=16.0):
+    def __init__(self, base: nn.Linear, r=8, alpha=16.0, lora=False):
         super().__init__()
         self.base = base
         for p in self.base.parameters():
@@ -47,20 +47,24 @@ class DoRALinear(nn.Module):
         self.B = nn.Parameter(torch.zeros(base.out_features, r))
         nn.init.kaiming_uniform_(self.A, a=5 ** 0.5)
         self.m = nn.Parameter(base.weight.detach().norm(dim=1, keepdim=True).clone())
+        self.lora = lora
+        if lora:
+            self.m.requires_grad_(False)
 
     def forward(self, x):
         W = self.base.weight + self.scale * (self.B @ self.A)
-        W = W / (W.norm(dim=1, keepdim=True) + 1e-8)
-        W = self.m * W
+        if not self.lora:
+            W = W / (W.norm(dim=1, keepdim=True) + 1e-8)
+            W = self.m * W
         return F.linear(x, W.to(x.dtype), self.base.bias)
 
 
-def replace_linear(module, r=8, alpha=16.0):
+def replace_linear(module, r=8, alpha=16.0, lora=False):
     for name, child in list(module.named_children()):
         if isinstance(child, nn.Linear):
-            setattr(module, name, DoRALinear(child, r, alpha))
+            setattr(module, name, DoRALinear(child, r, alpha, lora))
         else:
-            replace_linear(child, r, alpha)
+            replace_linear(child, r, alpha, lora)
 
 
 def get_support(pool):
@@ -87,6 +91,7 @@ def main():
     ap.add_argument("--num-workers", type=int, default=2)
     ap.add_argument("--proj-out", action="store_true", help="同时训练输出层 proj_out")
     ap.add_argument("--ln", action="store_true", help="同时训练 decoder layer_norm")
+    ap.add_argument("--lora", action="store_true", help="标准 LoRA（不做幅度/归一化）")
     args = ap.parse_args()
 
     support = sorted(get_support(args.pool))
@@ -114,7 +119,7 @@ def main():
     clf = M.build_classifier(template, use_ibi=False).to(device)
     for p in clf.parameters():
         p.requires_grad_(False)
-    replace_linear(clf.decoder, args.rank, args.alpha)
+    replace_linear(clf.decoder, args.rank, args.alpha, args.lora)
     clf = clf.to(device)
     if args.proj_out:
         for p in clf.proj_out.parameters():
@@ -154,8 +159,9 @@ def main():
     seg = T.predict_segments(clf, builder, hub, eval_gids, transcripts, cfg)
     p = subj_probs(seg, test)
     m = T.metrics(y, p)
-    tag = f"r{args.rank}" + ("_po" if args.proj_out else "") + ("_ln" if args.ln else "")
-    print(f"[{args.pool}] DoRA {tag} s{args.seed}: acc={m['acc']*100:.2f} auc={m['auc']:.3f}",
+    tag = f"r{args.rank}" + ("_lora" if args.lora else "") + ("_po" if args.proj_out else "") + ("_ln" if args.ln else "")
+    print(f"[{args.pool}] {'LoRA' if args.lora else 'DoRA'} {tag} s{args.seed}: "
+          f"acc={m['acc']*100:.2f} auc={m['auc']:.3f}",
           flush=True)
     path = os.path.join(C.logs_dir(), "results", f"dora_{args.pool}_{tag}_s{args.seed}.json")
     with open(path, "w", encoding="utf-8") as fh:

@@ -583,6 +583,19 @@
   起到了正则化作用。
 - 局限：只测了 rank=8、all-linear；还没做 LoRA 对照、rank/模块 ablation。
 
+**PEFT 对照：LoRA vs DoRA（各 3 seeds）**
+
+| 池 | 全量 FT | LoRA | DoRA |
+|---|---|---|---|
+| pool010（差池） | 67.75 | 69.72 | **77.23** |
+| pool015（好池） | 81.83 | 80.75 | 80.75 |
+
+- 差池：DoRA 比 LoRA **+7.51**；好池：两者持平。
+- DoRA 的“幅度 + 方向归一化”在支持集不顺手时起正则化作用；LoRA 只改方向，仍会被带偏。
+- AUC：LoRA 在 pool010 更高（0.860 vs 0.842），说明 DoRA 的增益主要是准确率/校准，不是排序。
+- 注：LoRA 的 JSON 曾因文件名 bug 覆盖 DoRA 文件；数值已从日志恢复到
+  `logs/results/lora_vs_dora.json`。
+
 ### 5.18 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
