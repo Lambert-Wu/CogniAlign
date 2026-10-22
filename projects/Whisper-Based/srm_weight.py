@@ -81,7 +81,8 @@ def build_graph(support, support_rows, models, graph="feature"):
         subs = Z.load_subjects()
         rec_of = dict(zip(subs.subject_id.astype(str), subs.recordings.astype(str)))
         gids = hub.gids_for_uids([r for s in support for r in rec_of[s].split(";")])
-        X = np.stack([hub.enc(g) for g in gids]).astype(np.float64)
+        # 段特征是 (T, d_model)，对时间取均值得到段向量
+        X = np.stack([hub.enc(g).mean(0) for g in gids]).astype(np.float64)
         # 支持集段数很少：PCA 到 min(16, n_seg-1)
         k = min(16, max(1, X.shape[0] - 1))
         Zp = PCA(n_components=k, random_state=0).fit_transform(X)
@@ -96,11 +97,11 @@ def build_graph(support, support_rows, models, graph="feature"):
             v = (v * len(ze) + gvar) / (len(ze) + 1.0)
             mu.append(m); var.append(v)
         mu = np.stack(mu); sd = np.sqrt(np.stack(var))
-        D = np.zeros((n, n))
+        dist = np.zeros((n, n))
         for i in range(n):
             for j in range(i + 1, n):
                 d2 = np.sum((mu[i] - mu[j]) ** 2) + np.sum((sd[i] - sd[j]) ** 2)
-                D[i, j] = D[j, i] = np.sqrt(max(d2, 0.0))
+                dist[i, j] = dist[j, i] = np.sqrt(max(d2, 0.0))
     elif graph == "pred":
         # 用第一个模型（或模型平均）的段级 p_ad 分布：1 维高斯
         P = np.array([m["support_p"] for m in models])  # m × n_seg
@@ -114,18 +115,18 @@ def build_graph(support, support_rows, models, graph="feature"):
             v = pe.var() if len(pe) > 1 else 0.0
             v = (v * len(pe) + gv) / (len(pe) + 1.0)
             mu.append(m); sd.append(np.sqrt(v))
-        D = np.zeros((n, n))
+        dist = np.zeros((n, n))
         for i in range(n):
             for j in range(i + 1, n):
-                D[i, j] = D[j, i] = np.sqrt((mu[i] - mu[j]) ** 2 + (sd[i] - sd[j]) ** 2)
+                dist[i, j] = dist[j, i] = np.sqrt((mu[i] - mu[j]) ** 2 + (sd[i] - sd[j]) ** 2)
     else:
         raise SystemExit(f"未知 graph={graph}")
 
     # closeness centrality（完全图：c_e = (n-1)/Σ_j D_ej）
-    off = D.sum(1)
+    off = dist.sum(1)
     c = (n - 1) / np.maximum(off, 1e-12)
     p = c / c.sum()
-    return D, p
+    return dist, p
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +229,7 @@ def main():
     print(f"[{pool_name}] m={m} n={n} unbiased_per_subject={prob.n_unbiased.tolist()}",
           flush=True)
 
-    D, prior = build_graph(support, support_rows, models, graph=args.graph)
+    dist, prior = build_graph(support, support_rows, models, graph=args.graph)
     print("[graph] prior=" + ", ".join(f"{s}:{p:.3f}" for s, p in zip(support, prior)),
           flush=True)
 
@@ -250,7 +251,7 @@ def main():
 
     out = {"pool": pool_name, "m": m, "n": n,
            "support": support, "support_y": support_y,
-           "prior": prior.tolist(), "dist": D.tolist(),
+           "prior": prior.tolist(), "dist": dist.tolist(),
            "loso": {}, "weights": {}, "metrics": {}, "support_risk": {}}
 
     # 基线 uniform

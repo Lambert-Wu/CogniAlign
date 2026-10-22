@@ -59,24 +59,31 @@
 
 ## 1. 最近状态（保留）
 
-### 正在进行：SRM（Structure-informed Risk Minimization）
+### SRM 已完成（负结果）
 
-- 论文：Qiao et al., ICML 2025, *Structure-informed Risk Minimization for Robust
-  Ensemble Learning*。用训练分布的结构图 + centrality 先验约束 Group DRO 的
-  不确定性集，学习对未见测试分布鲁棒的集成权重，**不需要测试数据**。
-- 我们的接入：SSB 扩展成 **全部 16 个 AD×HC 丢弃对**（每个模型 3 AD + 3 HC），
-  每个支持者恰好被 **4 个模型** 留出。
-- 对支持者 `e`，只用没见过 `e` 的 4 个模型做 **交叉拟合风险** `R_e(w)`；
-  8 个支持者的编码器特征（PCA + 对角协方差）算 2-Wasserstein 图，
-  closeness centrality 作为先验 `p`；`min_w max_q Σ q_e R_e - λ KL(q||p)`。
-- `λ` 用支持者 leave-one-subject-out 选；测试集只在最后评估。
-- 脚本：`srm_pool.py`（16 模型池）、`srm_weight.py`（SRM 权重 + 基线）。
-- 状态：pool010 的 16 个模型训练中；完成后对比 uniform-4 / uniform-16 /
-  ERM / Group DRO / SRM。
+- 论文：Qiao et al., ICML 2025。两种环境定义都试了：
+  A. 英文留出 20%（47 人）验证 4 个对角 SSB 模型；
+  B. 16 个 AD×HC 丢弃对 + 每个支持者用 4 个未见模型做交叉拟合风险。
+- 结果：**加权（ERM/DRO/SRM）AUC 都不超过等权平均**。
+  - A：uniform 66.90/0.850；ERM 66.20/0.836；SRM 64.79/0.842。
+    英文验证把 s1 权重推到 0.42，但 s1 中文只有 61.97/0.793——**源域排序不迁移**。
+  - B：uniform 81.69/0.884；ERM 83.10/0.884；SRM 81.69/0.883；
+    8 个支持者先验几乎均匀（0.121–0.136），图没信息量。
+- 结论：SRM 作为负结果/消融，不写主方法；等权概率平均更稳。
+- 脚本：`srm_pool.py`（16 模型池）、`srm_weight.py`（交叉拟合 SRM）、
+  `srm_en_pool.py`（英文留出池）、`srm_en_weight.py`（英文 SRM）。
+
+### 当前主线：完整 SSB（16 个 AD×HC 丢弃对）
+
+- pool010（16 模型，DoRA r8，100% 英文）：uniform-16 **81.69 / AUC 0.884**；
+  单 DoRA 77.23/0.842；4 对 73.24/0.876（校准差，最优阈值 83.10）。
+- 解释：完整枚举降低“丢哪两个人”的方差，概率平均校准更好；AUC 提升主要来自
+  集成，SRM 权重没有额外收益。
+- pool015 的 16 个模型正在训练；之后跑 pool006/014，做 4 池均值。
 
 ### 未完成
 
-- SRM 的 pool010 结果未出；pool015/006/014 未跑。
+- 16 对完整 SSB 的 pool015/006/014 未跑完。
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
 - DoRA+SSB 的 seed1/2 未跑（目前仅 1 seed）。
 - 论文正文未写（`PAPER.md` 只有骨架）。
@@ -99,6 +106,8 @@
 | `dora_ssb_pilot.py` | DoRA + SSB |
 | `srm_pool.py` | SRM 模型池（16 个 AD×HC 丢弃对） |
 | `srm_weight.py` | SRM 权重（交叉拟合风险 + 结构图 + LOSO λ） |
+| `srm_en_pool.py` | 英文留出验证池（4 个对角 SSB 模型） |
+| `srm_en_weight.py` | 英文 SRM 权重（47 个英文受试者） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
