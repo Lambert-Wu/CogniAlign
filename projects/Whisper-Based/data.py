@@ -195,7 +195,7 @@ class SegmentDataset:
         tr = self.transcripts.get(uid) if self.builder.ftp else None
         dec, pos, tgt = self.builder.training_example(lang, label, tr)
         bg = self.bg_map.get(uid, [BG_MISSING, 0.0, BG_MISSING])
-        return gi, dec, pos, tgt, bg
+        return gi, dec, pos, tgt, bg, label, (r["split"] == "train")
 
     def __len__(self) -> int:
         return len(self._cache)
@@ -203,13 +203,16 @@ class SegmentDataset:
     def __getitem__(self, i: int):
         import torch
 
-        gi, dec, pos, tgt, bg = self._cache[i]
+        gi, dec, pos, tgt, bg, lab, is_en = self._cache[i]
         enc = torch.from_numpy(self.hub.enc(gi))
         return {"enc": enc,
                 "input_ids": torch.tensor(dec, dtype=torch.long),
                 "positions": torch.tensor(pos, dtype=torch.long),
                 "targets": torch.tensor(tgt, dtype=torch.long),
-                "bg": torch.tensor(bg, dtype=torch.float32)}
+                "bg": torch.tensor(bg, dtype=torch.float32),
+                "gid": torch.tensor(gi, dtype=torch.long),
+                "label": torch.tensor(lab, dtype=torch.long),
+                "is_en": torch.tensor(is_en)}
 
 
 def make_collate(pad_id: int):
@@ -232,6 +235,9 @@ def make_collate(pad_id: int):
             targets[i, :k] = b["targets"]
         bg = torch.stack([b["bg"] for b in batch])
         return {"enc": enc, "input_ids": input_ids, "attention_mask": attn,
-                "positions": positions, "targets": targets, "bg": bg}
+                "positions": positions, "targets": targets, "bg": bg,
+                "gid": torch.stack([b["gid"] for b in batch]),
+                "label": torch.stack([b["label"] for b in batch]),
+                "is_en": torch.stack([b["is_en"] for b in batch])}
 
     return collate
