@@ -17,9 +17,16 @@ import glob
 import json
 import os
 
+import os
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+torch.use_deterministic_algorithms(True, warn_only=True)
 from torch.utils.data import DataLoader
 
 import common as C
@@ -52,6 +59,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--num-workers", type=int, default=2)
+    ap.add_argument("--only-base", action="store_true")
+    ap.add_argument("--fp32", action="store_true")
     args = ap.parse_args()
 
     support = sorted(get_support(args.pool))
@@ -74,7 +83,7 @@ def main():
     transcripts = T.load_all_transcripts()
     cfg = T.TrainConfig(model_size="medium", epochs=args.epochs,
                         batch_size=args.batch_size, eval_batch_size=32,
-                        num_workers=args.num_workers)
+                        num_workers=args.num_workers, amp=not args.fp32)
     en_gids = hub.gids_for_uids(C.load_labels("train")["uid"].tolist())
     eval_gids = hub.gids_for_uids([r for s in test for r in rec_of[s].split(";")])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -97,7 +106,7 @@ def main():
                 ids = b["input_ids"].to(device); attn = b["attention_mask"].to(device)
                 pos = b["positions"].to(device); tgt = b["targets"].to(device)
                 bg = b["bg"].to(device)
-                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=True):
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=cfg.amp):
                     logits = clf.forward_selected(enc, ids, attn, pos, bg)
                     loss = F.cross_entropy(logits.float().reshape(-1, logits.size(-1)),
                                            tgt.reshape(-1), ignore_index=-100)
@@ -114,6 +123,8 @@ def main():
         return p, {"acc": m["acc"], "auc": m["auc"]}
 
     p_base, m_base = run(support, "base(8)")
+    if args.only_base:
+        return
     ps, ms = [], []
     for i, sup in enumerate(subsets):
         p, m = run(sup, f"bag{i}(6)")
