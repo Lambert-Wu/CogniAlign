@@ -120,6 +120,18 @@
 - 结论：轻量 scope 欠拟合/方差更大，不采用；全量 DoRA 仍是主方法。
 - 脚本：`dora_pilot.py --scope all|cross|self|mlp|last4|cross_last4`，并保存逐受试者 p。
 
+### IBDR 粒子集成（负结果，2026-10-22）
+
+- ICML 2025：K 个粒子共享冻结基底，DPP 交互项 + Wasserstein DRO。
+- 实现：K 个 DoRA adapter；`err_i`=per-sample CE，`l_div=det(E~E~^T)`；
+  `loss=mean CE - α l_div`；pool010 单 seed。
+- K=2 α=0：79.58/0.873；α=0.02：**81.69/0.867**；α=0.5：73.94/0.808；
+  K=4 α=0：78.87/0.852；两阶段（英文基底+支持者适应）α=0.5：69.01/0.814。
+- 参考 CSB-16：81.69/0.884；单 DoRA 3 seeds 77.23/0.842。
+- 结论：α 小只在准确率追平 CSB，AUC 低；α 大直接压垮；K=4 不比 K=2 好；
+  两阶段欠拟合。**IBDR 不采用**。
+- 脚本：`ibdr_pilot.py`（一阶段）、`ibdr_two_stage.py`（英文基底+目标适应）。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -148,6 +160,8 @@
 | `srm_en_weight.py` | 英文 SRM 权重（47 个英文受试者） |
 | `fusion_layer16.py` | Layer-16 特征探针 + decoder 融合（15 池，w=0.2） |
 | `csb4_eval.py` | 4 池 CSB-16 / 4 对 / fusion / 支持阈值主表 |
+| `ibdr_pilot.py` | IBDR 一阶段 K 粒子 + DPP（负结果） |
+| `ibdr_two_stage.py` | IBDR 两阶段（英文基底 + 目标适应，负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
