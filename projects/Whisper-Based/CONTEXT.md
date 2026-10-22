@@ -61,9 +61,9 @@
 
 ### 正在进行
 
-- **Whisper-large-v3 下载**：HF 客户端 xet 超时，改用 `curl -L --retry 30 -C -` 直连
-  `model.safetensors`（3.087 GB）；最后一次检查 **86.5%**，后台运行。
-- 下载文件：`models/whisper-large/model.safetensors`；配置/tokenizer 已就位。
+- **Whisper-large-v3 已下载完成**：`models/whisper-large/model.safetensors`（3.087 GB），
+  离线加载成功，1543.5M 参数；HF xet 超时后用 `curl -L --retry 30 -C -` 直连镜像解决。
+- **正在抽 large 特征**：`prepare.py --model large --splits train test`（约 4.1 GB）。
 - 完成后：
   1. `M.load_template("large")` 自检；
   2. `python prepare.py --model large --splits train test` 抽特征（约 4.1 GB，5–10 分钟）；
