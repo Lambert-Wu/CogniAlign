@@ -63,12 +63,10 @@
 
 - **Whisper-large-v3 已下载完成**：`models/whisper-large/model.safetensors`（3.087 GB），
   离线加载成功，1543.5M 参数；HF xet 超时后用 `curl -L --retry 30 -C -` 直连镜像解决。
-- **正在抽 large 特征**：`prepare.py --model large --splits train test`（约 4.1 GB）。
-- 完成后：
-  1. `M.load_template("large")` 自检；
-  2. `python prepare.py --model large --splits train test` 抽特征（约 4.1 GB，5–10 分钟）；
-  3. `python dora_pilot.py --model large --pool pool010 --seed 0`（以及 pool015），
-     对比 medium DoRA（pool010 77.23 / pool015 80.75）。
+- **large-v3 已测完，无提升**：DoRA large（9.1M）pool010 74.30（2 seeds）、
+  pool015 78.87（1 seed），低于 medium DoRA 77.23 / 80.75；AUC 也更低。
+- 结论：**8-shot 瓶颈是标签数，不是模型容量**；large 不再使用。
+- 下一步：回到 DoRA + SSB 论文；可选补 rank 消融 / DoRA+SSB seed1-2。
 
 ### 未完成
 
