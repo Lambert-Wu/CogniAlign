@@ -115,6 +115,7 @@ def main():
     for p in clf.parameters():
         p.requires_grad_(False)
     replace_linear(clf.decoder, args.rank, args.alpha)
+    clf = clf.to(device)
     if args.proj_out:
         for p in clf.proj_out.parameters():
             p.requires_grad_(True)
