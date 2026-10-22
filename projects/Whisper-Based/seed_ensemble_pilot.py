@@ -15,6 +15,7 @@ import argparse
 import glob
 import json
 import os
+import sys
 
 import os
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
@@ -93,7 +94,8 @@ def main():
                                 weight_decay=cfg.weight_decay, eps=cfg.adam_eps)
         for ep in range(cfg.epochs):
             clf.train()
-            for b in tqdm(dl, desc=f"{args.pool} s{seed} ep{ep+1}", leave=False, mininterval=10, dynamic_ncols=True):
+            for b in tqdm(dl, desc=f"{args.pool} s{seed} ep{ep+1}", leave=False, mininterval=10, dynamic_ncols=True,
+                        disable=not sys.stdout.isatty()):
                 enc = b["enc"].to(device, non_blocking=True)
                 ids = b["input_ids"].to(device); attn = b["attention_mask"].to(device)
                 pos = b["positions"].to(device); tgt = b["targets"].to(device)

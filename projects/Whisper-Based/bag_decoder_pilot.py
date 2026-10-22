@@ -16,6 +16,7 @@ import argparse
 import glob
 import json
 import os
+import sys
 
 import os
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
@@ -102,7 +103,8 @@ def main():
                                 weight_decay=cfg.weight_decay, eps=cfg.adam_eps)
         for ep in range(cfg.epochs):
             clf.train()
-            for b in tqdm(dl, desc=f"{args.pool} s{args.seed} {tag} ep{ep+1}", leave=False, mininterval=10, dynamic_ncols=True):
+            for b in tqdm(dl, desc=f"{args.pool} s{args.seed} {tag} ep{ep+1}", leave=False, mininterval=10, dynamic_ncols=True,
+                        disable=not sys.stdout.isatty()):
                 enc = b["enc"].to(device, non_blocking=True)
                 ids = b["input_ids"].to(device); attn = b["attention_mask"].to(device)
                 pos = b["positions"].to(device); tgt = b["targets"].to(device)
@@ -138,7 +140,10 @@ def main():
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({"pool": args.pool, "base": m_base, "subsets": ms,
                    "ensemble": {"acc": m_ens["acc"], "auc": m_ens["auc"]},
-                   "support": support, "subsets_list": subsets},
+                   "support": support, "subsets_list": subsets,
+                   "probs": {"base": p_base.tolist(),
+                             "subsets": [p.tolist() for p in ps],
+                             "test": test, "y": y.tolist()}},
                   fh, ensure_ascii=False, indent=2)
     print(f"[saved] {path}", flush=True)
 

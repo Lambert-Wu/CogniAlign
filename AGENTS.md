@@ -158,6 +158,13 @@ budget explicitly instead of stampeding:
   installed; do not add `torchaudio`, `openai-whisper`, or other packages (see the install
   rules below).
 
+## Git workflow
+
+- After every code/doc change (and after each experiment that updates `RESULTS.md`), commit
+  and push immediately: `git add <paths> && git commit -m "..." && git push origin master`.
+  Do not leave uncommitted source/doc changes at the end of a turn. `logs/` artifacts stay
+  gitignored; commit code, configs, and docs only.
+
 ## Install / environment
 
 - `pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126`
