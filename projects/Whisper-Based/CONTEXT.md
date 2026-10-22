@@ -59,20 +59,26 @@
 
 ## 1. 最近状态（保留）
 
-### 正在进行
+### 正在进行：SRM（Structure-informed Risk Minimization）
 
-- **Whisper-large-v3 已下载完成**：`models/whisper-large/model.safetensors`（3.087 GB），
-  离线加载成功，1543.5M 参数；HF xet 超时后用 `curl -L --retry 30 -C -` 直连镜像解决。
-- **large-v3 已测完，无提升**：DoRA large（9.1M）pool010 74.30（2 seeds）、
-  pool015 78.87（1 seed），低于 medium DoRA 77.23 / 80.75；AUC 也更低。
-- 结论：**8-shot 瓶颈是标签数，不是模型容量**；large 不再使用。
-- 下一步：回到 DoRA + SSB 论文；可选补 rank 消融 / DoRA+SSB seed1-2。
+- 论文：Qiao et al., ICML 2025, *Structure-informed Risk Minimization for Robust
+  Ensemble Learning*。用训练分布的结构图 + centrality 先验约束 Group DRO 的
+  不确定性集，学习对未见测试分布鲁棒的集成权重，**不需要测试数据**。
+- 我们的接入：SSB 扩展成 **全部 16 个 AD×HC 丢弃对**（每个模型 3 AD + 3 HC），
+  每个支持者恰好被 **4 个模型** 留出。
+- 对支持者 `e`，只用没见过 `e` 的 4 个模型做 **交叉拟合风险** `R_e(w)`；
+  8 个支持者的编码器特征（PCA + 对角协方差）算 2-Wasserstein 图，
+  closeness centrality 作为先验 `p`；`min_w max_q Σ q_e R_e - λ KL(q||p)`。
+- `λ` 用支持者 leave-one-subject-out 选；测试集只在最后评估。
+- 脚本：`srm_pool.py`（16 模型池）、`srm_weight.py`（SRM 权重 + 基线）。
+- 状态：pool010 的 16 个模型训练中；完成后对比 uniform-4 / uniform-16 /
+  ERM / Group DRO / SRM。
 
 ### 未完成
 
+- SRM 的 pool010 结果未出；pool015/006/014 未跑。
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
 - DoRA+SSB 的 seed1/2 未跑（目前仅 1 seed）。
-- large-v3 特征/训练未开始。
 - 论文正文未写（`PAPER.md` 只有骨架）。
 
 ### 关键文件
@@ -91,6 +97,8 @@
 | `seed_ensemble_pilot.py` | 5-seed 同算力对照 |
 | `dora_pilot.py` | DoRA / LoRA（`--model large` 已支持） |
 | `dora_ssb_pilot.py` | DoRA + SSB |
+| `srm_pool.py` | SRM 模型池（16 个 AD×HC 丢弃对） |
+| `srm_weight.py` | SRM 权重（交叉拟合风险 + 结构图 + LOSO λ） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
