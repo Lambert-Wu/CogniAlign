@@ -93,6 +93,11 @@ def main():
     ap.add_argument("--proj-out", action="store_true", help="同时训练输出层 proj_out")
     ap.add_argument("--ln", action="store_true", help="同时训练 decoder layer_norm")
     ap.add_argument("--lora", action="store_true", help="标准 LoRA（不做幅度/归一化）")
+    ap.add_argument("--scope", default="all",
+                    choices=["all", "cross", "self", "mlp", "last4", "cross_last4"],
+                    help="DoRA 作用范围：all=全部 linear；cross=仅 cross-attention；"
+                         "self=仅 self-attention；mlp=仅 fc1/fc2；last4=最后 4 层；"
+                         "cross_last4=最后 4 层的 cross-attention")
     args = ap.parse_args()
 
     support = sorted(get_support(args.pool))
@@ -120,7 +125,25 @@ def main():
     clf = M.build_classifier(template, use_ibi=False).to(device)
     for p in clf.parameters():
         p.requires_grad_(False)
-    replace_linear(clf.decoder, args.rank, args.alpha, args.lora)
+    layers = clf.decoder.layers
+    if args.scope == "all":
+        replace_linear(clf.decoder, args.rank, args.alpha, args.lora)
+    elif args.scope == "cross":
+        for layer in layers:
+            replace_linear(layer.encoder_attn, args.rank, args.alpha, args.lora)
+    elif args.scope == "self":
+        for layer in layers:
+            replace_linear(layer.self_attn, args.rank, args.alpha, args.lora)
+    elif args.scope == "mlp":
+        for layer in layers:
+            layer.fc1 = DoRALinear(layer.fc1, args.rank, args.alpha, args.lora)
+            layer.fc2 = DoRALinear(layer.fc2, args.rank, args.alpha, args.lora)
+    elif args.scope == "last4":
+        for layer in layers[-4:]:
+            replace_linear(layer, args.rank, args.alpha, args.lora)
+    elif args.scope == "cross_last4":
+        for layer in layers[-4:]:
+            replace_linear(layer.encoder_attn, args.rank, args.alpha, args.lora)
     clf = clf.to(device)
     if args.proj_out:
         for p in clf.proj_out.parameters():
@@ -131,7 +154,7 @@ def main():
 
     ps = [p for p in clf.parameters() if p.requires_grad]
     n = sum(p.numel() for p in ps)
-    print(f"[{args.pool}] DoRA r={args.rank} trainable={n/1e6:.1f}M "
+    print(f"[{args.pool}] DoRA r={args.rank} scope={args.scope} trainable={n/1e6:.1f}M "
           f"proj_out={args.proj_out} ln={args.ln}", flush=True)
     opt = torch.optim.AdamW(ps, lr=args.lr, weight_decay=0.0)
     ds = D.SegmentDataset(hub, train_gids, builder, transcripts)
@@ -160,7 +183,7 @@ def main():
     seg = T.predict_segments(clf, builder, hub, eval_gids, transcripts, cfg)
     p = subj_probs(seg, test)
     m = T.metrics(y, p)
-    tag = f"r{args.rank}" + ("_lora" if args.lora else "") + ("_po" if args.proj_out else "") + ("_ln" if args.ln else "")
+    tag = f"r{args.rank}" + ("_lora" if args.lora else "") + ("_po" if args.proj_out else "") + ("_ln" if args.ln else "") + ("" if args.scope == "all" else "_" + args.scope)
     print(f"[{args.pool}] {'LoRA' if args.lora else 'DoRA'} {tag} s{args.seed}: "
           f"acc={m['acc']*100:.2f} auc={m['auc']:.3f}",
           flush=True)
@@ -169,8 +192,10 @@ def main():
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({"pool": args.pool, "seed": args.seed, "rank": args.rank,
                    "alpha": args.alpha, "lr": args.lr, "proj_out": args.proj_out,
-                   "ln": args.ln, "acc": m["acc"], "auc": m["auc"],
-                   "trainable": n}, fh, ensure_ascii=False, indent=2)
+                   "ln": args.ln, "scope": args.scope,
+                   "acc": m["acc"], "auc": m["auc"], "trainable": n,
+                   "test": test, "y": [int(v) for v in y],
+                   "p": [float(v) for v in p]}, fh, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
