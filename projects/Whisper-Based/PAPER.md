@@ -2,15 +2,17 @@
 
 ## Title (working)
 
-**Support-Set Bagging for Robust Cross-Lingual Few-Shot Alzheimer's Speech Detection**
+**Support-Set Bagging and Layer-Probe Fusion for Robust Cross-Lingual Few-Shot Alzheimer's Speech Detection**
 
-Alternative: *Beyond the Lucky Eight: Support-Set Variance and Bagging for Cross-Lingual Few-Shot AD Detection*
+Alternative: *Beyond the Lucky Eight: Support-Set Variance, Bagging, and Probe Fusion for Cross-Lingual Few-Shot AD Detection*
 
 ## One-sentence claim
 
 In cross-lingual 8-shot AD detection, the choice of the eight support subjects dominates
 accuracy; Support-Set Bagging (SSB) reduces this worst-case error and consistently improves
-ranking, without extra labels or test-time adaptation.
+ranking, without extra labels or test-time adaptation. A lightweight probe on a mid-layer
+Whisper encoder feature adds a small, statistically significant ranking gain on hard pools,
+with its layer and regularization selected only from the eight support labels.
 
 ## Abstract (draft)
 
@@ -28,7 +30,11 @@ SSB uses no additional labels and no test inputs, and outperforms a same-compute
 ensemble on the unfavourable pool (+6.62). We further report a subject-level leakage audit
 and a set of controlled negative results (FTP prompts, overlapping windows, encoder
 unfreezing, episodic meta-learning, support-guided reweighting, feature augmentation,
-feature alignment, and data ordering).
+feature alignment, and data ordering). Finally, a layer-16 encoder probe fused with the
+decoder at 20% weight improves the 15-pool mean AUC from 0.8822 to 0.8909 (p=0.025,
+12/15 wins), with layer/regularization selected only from the eight support labels;
+structure-informed risk minimization (SRM) and validation-based ensemble weights do not
+beat uniform averaging.
 
 ## Contributions
 
@@ -49,6 +55,15 @@ feature alignment, and data ordering).
    support-guided importance weighting (random-weight control), feature augmentation
    (non-reproducible), feature alignment / decoupled adapters, and support-first/last
    ordering (support-first collapses to 50%).
+6. **Layer-16 probe fusion.** A logistic probe on frozen Whisper encoder layer 16,
+   trained with English + the eight support subjects, is fused with the decoder at 20%
+   weight. Layer and regularization are selected by leave-one-support-subject-out on the
+   eight labels. On 15 pools, AUC 0.8822→0.8909 (+0.0086, p=0.025, 12/15 wins); gains
+   concentrate on hard pools and vanish when the decoder is already strong.
+7. **Negative ensemble-weighting study.** Structure-informed risk minimization (SRM),
+   ERM, and Group DRO weights learned on English validation or cross-fitted support
+   risks do not beat uniform probability averaging; source-domain model ranking does not
+   transfer to the Chinese target.
 
 ## Method
 
@@ -81,6 +96,17 @@ p(y=AD | x) = (1/K) Σ_k p_k(y=AD | x)
 - **Single model**: full 8 subjects, one decoder.
 - **Seed ensemble**: K full-support decoders with different seeds (same compute as SSB).
 - **Paired evaluation**: same pool, same seed, same test subjects.
+
+### 3.4 Layer-16 probe fusion
+
+- Frozen Whisper encoder layer-16 subject-level features (1024-d, mean-pooled segments).
+- Standardize; logistic regression (C=0.1, balanced class weights), trained on the 235
+  English subjects plus the 8 Chinese support subjects (support weight 40).
+- Fuse with the decoder: `p = 0.8 p_decoder + 0.2 p_probe`.
+- Layer and C are selected by leave-one-support-subject-out on the eight support labels
+  (pool010); the fusion weight is fixed at 0.2. No test labels or test-time adaptation.
+- The probe is intentionally lightweight: it adds no encoder fine-tuning and one linear
+  model; it is a complement, not a replacement for SSB/DoRA.
 
 ## Experimental setup
 
@@ -125,6 +151,24 @@ best pool 83.10). Same-pool/same-seed reruns: bf16 86.62 vs 80.28; fp32 72.54 vs
 - Support-first ordering: 50.00 (boundary collapse); support-last 69.72; interleave 71.59
   with AUC 0.819 (accuracy gain not supported by ranking).
 
+### 5.5 Layer-16 probe fusion (15 pools)
+
+| Method | acc | AUC |
+|---|---|---|
+| decoder | 76.57 | 0.8822 |
+| + layer-16 probe (w=0.2) | **77.32** | **0.8909** |
+| Δ | +0.75 | +0.0086 (12/15 wins, p=0.025) |
+
+- Probe alone: AUC 0.8316. Gains concentrate on weak pools (005/006/007/010/011);
+  strong pools (009/012/013) slightly decrease.
+- **Selection matters:** English CV and English held-out fusion select layer 24, which
+  gives +0.000 on Chinese; support LOSO (8 labels) selects layer 16 / C=0.1 and gives
+  +0.0086. Source-domain selection does not transfer.
+- Exploratory `[12,16,20]` gives +0.0092 (p=0.003) but was selected on test, so it is
+  reported as an ablation, not the main method.
+- On strong SSB decoders the gain shrinks or reverses (pool015 4-diag 0.943→0.935;
+  pool010 4-diag 0.876→0.885). Use fusion when the decoder is weak/uncertain.
+
 ## Discussion / Limitations
 
 - SSB targets worst-case robustness, not average SOTA; on already-favourable pools it is
@@ -134,6 +178,10 @@ best pool 83.10). Same-pool/same-seed reruns: bf16 86.62 vs 80.28; fp32 72.54 vs
   paired multi-seed distributions, never single-run maxima.
 - No Spanish/Greek data; no IBI (age/gender/education absent).
 - The method costs K× training/inference; K=4 was used, K=2/8 not systematically studied.
+- Probe fusion is a small AUC gain, not an accuracy breakthrough; it helps weak decoders
+  and can hurt already-strong SSB ensembles.
+- SRM/ERM/Group DRO ensemble weights do not beat uniform averaging; English validation
+  model ranking does not transfer to Chinese.
 - Pseudo-labelling and test-time adaptation are deliberately excluded (transductive).
 
 ## Conclusion
@@ -149,6 +197,8 @@ without extra labels or test inputs.
 2. **Paired SSB vs base**: per-pool/per-seed deltas (slope/paired dot plot).
 3. **AUC by pool**: base vs SSB, four pools.
 4. **Negative results summary**: method vs control deltas.
+5. **Layer selection transfer**: English-selected layer 24 vs support-LOSO layer 16 on
+   the 15 Chinese pools.
 
 ## Tables
 
@@ -157,3 +207,4 @@ without extra labels or test inputs.
 3. Main SSB results (4 pools).
 4. Same-compute control.
 5. Ablation/negative results.
+6. Layer-16 probe fusion on 15 pools (per-pool deltas, selection ablation).

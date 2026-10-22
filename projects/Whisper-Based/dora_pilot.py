@@ -82,6 +82,7 @@ def get_support(pool):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pool", default="pool010")
+    ap.add_argument("--model", default="medium")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--rank", type=int, default=8)
     ap.add_argument("--alpha", type=float, default=16.0)
@@ -101,11 +102,11 @@ def main():
     test = sorted(set(subs.subject_id.astype(str)) - set(support))
     y = np.array([lab[s] for s in test])
 
-    hub = D.FeatureHub("medium")
-    builder = D.PromptBuilder("medium", ftp=False)
-    template = M.load_template("medium")
+    hub = D.FeatureHub(args.model)
+    builder = D.PromptBuilder(args.model, ftp=False)
+    template = M.load_template(args.model)
     transcripts = T.load_all_transcripts()
-    cfg = T.TrainConfig(model_size="medium", epochs=args.epochs,
+    cfg = T.TrainConfig(model_size=args.model, epochs=args.epochs,
                         batch_size=args.batch_size, eval_batch_size=32,
                         num_workers=args.num_workers)
 
@@ -163,7 +164,8 @@ def main():
     print(f"[{args.pool}] {'LoRA' if args.lora else 'DoRA'} {tag} s{args.seed}: "
           f"acc={m['acc']*100:.2f} auc={m['auc']:.3f}",
           flush=True)
-    path = os.path.join(C.logs_dir(), "results", f"dora_{args.pool}_{tag}_s{args.seed}.json")
+    mtag = "" if args.model == "medium" else f"_{args.model}"
+    path = os.path.join(C.logs_dir(), "results", f"dora{mtag}_{args.pool}_{tag}_s{args.seed}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({"pool": args.pool, "seed": args.seed, "rank": args.rank,
                    "alpha": args.alpha, "lr": args.lr, "proj_out": args.proj_out,
