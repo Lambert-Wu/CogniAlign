@@ -889,6 +889,30 @@ pool010（seed0，50 epochs）：
 - 结论：**MPS-Tuning 的几何约束在冻结 Whisper 8-shot 特征上不成立**；
   线性探针仍是更好的轻量特征分支。不采用。
 
+#### 5.27.1 落点修正：MPS-DoRA（把 MAR/HMS 放进 DoRA 训练内部）
+
+> 不再外接投影头：同一 batch 跑 base decoder（临时关闭 DoRA adapter）和
+> adapted decoder；对 hidden states 算全局 Gram + 每样本 token Gram；
+> adapted pooled 特征做监督对比。loss = CE + λ_mar MAR + λ_hms HMS。
+
+pool010（seed0，5 epochs）：
+
+| 配置 | acc | AUC |
+|---|---|---|
+| λ=0（同脚本 DoRA 对照） | **77.46** | **0.842** |
+| MAR 0.1 only | 64.79 | 0.805 |
+| HMS 0.05 only | 76.06 | 0.829 |
+| MAR 0.1 + HMS 0.05 | 71.83 | 0.798 |
+| MAR 0.5 + HMS 0.1 | 70.42 | 0.826 |
+
+- λ=0 对照 77.46/0.842，和 DoRA 3-seed 均值（77.23/0.842）一致；
+  说明脚本本身没问题。
+- **MAR 单独就把准确率打到 64.79**：把 adapted hidden 拉回 base 几何，直接
+  压住了 DoRA 需要的类间变化。
+- HMS 单独 76.06/0.829，也低于 λ=0；HMS 不能补回来。
+- 结论：**即使放到论文的“训练内部”落点，MPS 的 MAR/HMS 在 Whisper 8-shot
+  DoRA 上仍然负增益**。不采用。
+
 ### 5.28 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机

@@ -166,7 +166,12 @@
 - 结论：投影头 8-shot 直接过拟合（CE→0），MAR/HMS 救不回来；不采用。
   实现只做了全局 MAR / audio-audio HMS；token-level 和 text 版未做，但 CE-only
   已低于线性探针，完整版也难改变量级。
-- 脚本：`mps_pilot.py`。
+- **落点修正 MPS-DoRA**：在 DoRA 训练内部跑 base/adapted 两次 decoder，
+  全局+局部 Gram + 监督对比；pool010 seed0：λ=0 对照 **77.46/0.842**；
+  MAR0.1 only **64.79/0.805**；HMS0.05 only 76.06/0.829；
+  MAR0.1+HMS0.05 71.83/0.798；MAR0.5+HMS0.1 70.42/0.826。
+  **MAR/HMS 都负增益**，落点修正后仍不成立。
+- 脚本：`mps_pilot.py`、`mps_dora_pilot.py`。
 
 ### 未完成
 
@@ -200,6 +205,7 @@
 | `ibdr_two_stage.py` | IBDR 两阶段（英文基底 + 目标适应，负结果） |
 | `so_pilot.py` | SO 稀疏优化（ICCV 2025，负结果） |
 | `mps_pilot.py` | Preserve and Sculpt / MPS-Tuning（ICLR 2026，负结果） |
+| `mps_dora_pilot.py` | MPS-DoRA（训练内部 MAR/HMS，落点修正版，负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

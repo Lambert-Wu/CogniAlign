@@ -49,10 +49,13 @@ class DoRALinear(nn.Module):
         self.m = nn.Parameter(base.weight.detach().norm(dim=1, keepdim=True).clone())
         self.lora = lora
         self.spu = spu
+        self.enabled = True
         if lora:
             self.m.requires_grad_(False)
 
     def forward(self, x):
+        if not self.enabled:
+            return F.linear(x, self.base.weight.to(x.dtype), self.base.bias)
         r = self.r
         if self.spu and self.training:
             r = int(torch.randint(0, self.r + 1, (1,)).item())
