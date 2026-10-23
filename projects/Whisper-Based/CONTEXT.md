@@ -233,6 +233,18 @@
 - 结论：无单一几何分数可解释/预测幸运池；采集建议见 `LUCKY_POOL.md`。
 - 脚本：`lucky_pool_analysis.py`、`lucky_pool_quality.py`；报告 `LUCKY_POOL.md`。
 
+### 卡点诊断（2026-10-23）
+
+- **不是单点，三层**：排序上限 / 8-shot 校准 / 录音段数。
+- 15 池 decoder 76.6 / AUC 0.882；fusion 77.3 / 0.891；4 池 80.63 / 0.890。
+- binormal：AUC 0.882 → 最优阈值 acc ≈80.8%；0.891 → ≈81.5%；**85% 需 AUC≈0.925**。
+- 校准：0.5 阈值 76.6；oracle 阈值 82.1；先验匹配 80.9（transductive）；全局阈值无提升；每池最优阈值 0.01–0.94；支持阈值只 +0.52。
+- 录音段数：1 段 24 人 AUC 0.684 / acc 61.1%；2 段 0.855 / 78.5%；≥3 段 82.2%。6 个常错者 1.5 vs 3.37 段；top 20% 最难者占 54.5% 错误。
+- 支持者段数不预测池 acc（rho +0.26, p=0.36）；不要按段数挑支持者，但采集最好 ≥2 段。
+- 方差：15 池 std 5.37；部分池 3-seed std 达 14；85.21 是尾部。
+- 优先级：P0 校准/分类头（temperature+bias、prototype/cosine、bias-invariant、CSB 集成）；P1 数据质量（≥2–3 段）；P2 中文/多语种编码器或外部中文 AD 数据（唯一到 85）；停止 PEFT/正则/元学习。
+- 脚本：`bottleneck_diag.py`；RESULTS 5.33。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -275,6 +287,7 @@
 | `lucky_pool_analysis.py` | 幸运池几何/测试难度分析 |
 | `lucky_pool_quality.py` | 幸运池录音/转写质量分析 |
 | `LUCKY_POOL.md` | 幸运池可解释性报告 + 数据采集建议 |
+| `bottleneck_diag.py` | 卡点诊断：AUC 上限/校准/段数/方差 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
