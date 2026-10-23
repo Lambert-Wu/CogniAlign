@@ -302,6 +302,15 @@
 - 结论：增广只对弱 probe 有用，不能加新受试者/类别信息；主 fusion 仍 0.894。
 - 脚本 `feature_aug_pilot.py`；RESULTS 5.38。
 
+### Transductive 试点（2026-10-23）
+
+- 图：LP 0.7956、LP+decoder 混合 0.8789、graph smoothing 0.8578、原型迭代 0.7223；
+  全部低于 decoder 0.8822 / 合法 fusion 0.8941。
+- 自训练：soft 蒸馏 0.8887；hard40 0.8771（acc 80.38 但 AUC 低）；hard40+decoder 0.8907；
+  仍低于 0.8941。
+- 结论：decoder 已包含伪标签能给的信号；transductive 不是 0.925 捷径。
+- 脚本 `transductive_pilot.py`、`transductive_st.py`；RESULTS 5.39。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -352,6 +361,8 @@
 | `hetero_ensemble_pilot.py` | Whisper-small + medium 异质集成 |
 | `segment_mil_pilot.py` | Segment attention MIL |
 | `feature_aug_pilot.py` | 支持集特征增广（scale/combo/noise/dropout/Gaussian） |
+| `transductive_pilot.py` | 图标签传播 / 图平滑 / 原型迭代 |
+| `transductive_st.py` | decoder teacher 的自训练/蒸馏 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
