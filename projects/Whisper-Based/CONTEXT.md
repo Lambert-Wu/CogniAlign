@@ -328,6 +328,15 @@
 - 结论：换 mHuBERT 也不是 strict 8-shot 的解法；最好仍是 Whisper 多层 fusion 0.8941。
 - 脚本 `mhubert_features.py`、`mhubert_probe.py`；RESULTS 5.41。
 
+### AST / 统计池化 / PT-MAP（2026-10-23）
+
+- AST 8-shot 61.36/0.6146；融合 76.34/0.8714。
+- mean+max+std 统计池化 75.02/0.8331；融合 77.37/0.8850。
+- PT-MAP Sinkhorn prior 59.20/0.6354、uniform 61.36/0.6667；融合 0.858。
+- 全部低于 Whisper 多层 fusion 0.8941；strict 8-shot 硬上限确认。
+- 脚本 `ast_features.py`、`ast_probe.py`、`statpool_pilot.py`、`ptmap_pilot.py`；
+  RESULTS 5.42。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -383,6 +392,10 @@
 | `shot_curve_subject.py` | Subject-level 标签曲线（8→56-shot） |
 | `mhubert_features.py` | mHuBERT-147 段特征提取 |
 | `mhubert_probe.py` | mHuBERT 8-shot 探针 + Whisper 融合 |
+| `ast_features.py` | AST (AudioSet) 段特征提取 |
+| `ast_probe.py` | AST 8-shot 探针 + Whisper 融合 |
+| `statpool_pilot.py` | mean/max/std 统计池化 |
+| `ptmap_pilot.py` | PT-MAP/Sinkhorn 原型传输 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
