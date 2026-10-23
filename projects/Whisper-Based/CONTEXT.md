@@ -270,6 +270,18 @@
 - 结论：Mixup/LPM-Aug 不采用；MLP probe fusion 只可作小 ablation，仍远低于 85。
 - 脚本 `mixup_pilot.py`；RESULTS 5.35。
 
+### 8-shot 校准试点（2026-10-23）
+
+- 4 池 CSB，交叉拟合支持概率；只用 8 support。
+- p16 raw 79.93/0.878；support threshold **74.30**（过拟合）；beta **59.86**（崩）；
+  temp+bias 80.28；prior correction **80.63**；quantile（transductive）80.28。
+- p16f raw 80.11/0.890；support threshold 76.76；temp+bias 80.11；prior 80.11；
+  quantile **81.69**（transductive）。
+- **80.63 更像 prior correction，不是朴素 support threshold**；support threshold 不稳。
+- 合法上限 ~80.3–80.6；transductive 81.69；仍低于 85；4 池 AUC 0.890 上限约 81.5。
+- 不用 beta/isotonic/Dirichlet；temp+bias 可做安全小校准；prior correction 需已知 prevalence。
+- 脚本 `calib_pilot.py`；RESULTS 5.36。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -315,6 +327,7 @@
 | `bottleneck_diag.py` | 卡点诊断：AUC 上限/校准/段数/方差 |
 | `orbit_geom_pilot.py` | ORBIT 合法子集：球面/双曲原型 + PoE（负结果） |
 | `mixup_pilot.py` | 表征级 Mixup / LPM-Aug 代理 / MLP probe 融合 |
+| `calib_pilot.py` | 8-shot 校准：support threshold/beta/temp+bias/prior/quantile |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

@@ -1217,7 +1217,50 @@ fixed2024 vs 15 池（z-score）：
 
 **结论**：表征级 Mixup 在 8-shot 上是**负结果**；LPM-Aug 的弱代理无效；FAL-AD 不适配当前设定。唯一可留的是 MLP probe 融合的 +0.0027 AUC，仍远低于 85 所需的 0.925。
 
-### 5.36 结论
+### 5.36 8-shot 校准/阈值试点（4 个 CSB 池）
+
+> 代码 `calib_pilot.py`；只用 8 个支持者标签，测试标签只用于最终评估。
+> 支持概率用交叉拟合：decoder 取“pair 包含该支持者”的 4 个模型；probe 用
+> English + 其余 7 人训练后预测留出者。4 池：pool010/006/014/015。
+
+| 方法（p16 = CSB-16） | acc | AUC | bal |
+|---|---|---|---|
+| raw 0.5 | 79.93 | 0.8783 | 0.8071 |
+| support threshold | **74.30** | 0.8783 | 0.7578 |
+| support balanced threshold | 74.30 | 0.8783 | 0.7578 |
+| beta calibration | **59.86** | 0.8031 | 0.5000 |
+| temperature + bias | **80.28** | 0.8780 | 0.8093 |
+| prior correction（已知 prevalence） | **80.63** | 0.8783 | 0.8043 |
+| quantile matching（transductive，对照） | 80.28 | 0.8783 | 0.7948 |
+
+| 方法（p16f = decoder+probe） | acc | AUC | bal |
+|---|---|---|---|
+| raw 0.5 | 80.11 | 0.8898 | 0.8042 |
+| support threshold | 76.76 | 0.8898 | 0.7806 |
+| beta calibration | 59.86 | 0.7359 | 0.5000 |
+| temperature + bias | 80.11 | 0.8898 | 0.8042 |
+| prior correction | 80.11 | 0.8898 | 0.7948 |
+| quantile matching（transductive） | **81.69** | 0.8898 | 0.8095 |
+
+**发现**：
+
+- **8 个支持点上的朴素 support threshold 会过拟合**：p16 从 79.93 掉到 74.30，p16f 从 80.11 掉到 76.76；支持概率大多在 0.001/0.999，阈值几乎由 8 个点决定；
+- **beta calibration（3 参数）在 8 点上直接崩**：退化成全判 HC（59.86，AUC 0.803）；
+- **temperature+bias（2 参数）最稳**，但只在 p16 上 +0.35，p16f 无变化；
+- **prior correction（已知目标 prevalence）在 p16 上复现了 80.63**；p16f 无变化。  
+  这说明 80.63 这个增益很可能来自**基率校正**，而不是“支持集阈值”本身；支持集阈值不是稳健方法；
+- **quantile matching（transductive）在 p16f 上到 81.69**，是这一类里最高的，但它用了测试分数分布 + 真实 prevalence，违反 no-test-inputs，只能作上限对照；
+- **所有合法方法都在 80.1–80.6**；4 池 AUC 0.890 对应的上限约 81.5，85 仍需要 AUC 0.925。
+
+**结论**：
+
+1. **不要用 beta/isotonic/Dirichlet**：8 点撑不起 3+ 参数；
+2. **temperature+bias 可以做安全的小校准**，但增益 ~0–0.35；
+3. **support threshold 不作为主方法**：朴素交叉拟合版本会过拟合；如果论文里用了 80.63，需要说明它更接近 prior correction，而不是支持集阈值；
+4. **已知 prevalence 的 prior correction 是合法且可解释的**（如果部署场景能给出基率）；没有基率时不要假装能估准；
+5. **85 不在阈值层**：校准最多把 4 池从 80.1 推到 81.7（还是 transductive）；15 池的合法上限约 80.8。
+
+### 5.37 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
