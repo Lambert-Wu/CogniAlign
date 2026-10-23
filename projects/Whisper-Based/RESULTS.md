@@ -1038,7 +1038,30 @@ pool010（3 seeds）：
   或改变评测协议（非 8-shot）。
 - 严格 8-shot 的诚实上限仍是 **80.63 / 0.890**。
 
-### 5.31 结论
+### 5.31 Context Tuning / CT-Prompt（ICML 2025 workshop，负结果）
+
+> 论文：Lu et al., *Context Tuning for In-Context Optimization*. 冻结模型，
+> 只优化从 few-shot 示例初始化的 soft prompt / KV prefix；CT-KV 逐层 KV，
+> 线性时间。我们的实现：CT-Prompt，在 decoder 输入前拼 P=8 个可训练 token，
+> 用 8 个中文支持者的音频 encoder 特征初始化；只训 8k 参数；CE + token dropout。
+
+pool010（seed0，20 epochs）：
+
+| 初始化 | acc | AUC |
+|---|---|---|
+| 8 个支持者特征 | **67.61** | **0.815** |
+| 随机 | 64.08 | 0.788 |
+| 参考 DoRA | **77.23** | **0.842** |
+| 参考 16-shot 均值 | 77.86 | 0.859 |
+
+- **support 初始化 > random**（+3.5 acc / +0.027 AUC），ICO 的“用示例初始化
+  上下文”方向成立。
+- 但只训 8k prefix，容量太小；绝对值 67.6，远低于 DoRA。
+- CT-KV 逐层 KV 会更强，但预计 70–75，仍低于 DoRA；16-shot 诊断也说明
+  瓶颈在表征，不在上下文初始化。
+- 结论：**CT-Prompt 不采用**；CT-KV 未实现（预计也不够）。
+
+### 5.32 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

@@ -213,6 +213,16 @@
   **80.63/0.890**。
 - 脚本：`shot_pilot.py`。
 
+### Context Tuning / CT-Prompt（负结果，2026-10-23）
+
+- ICML 2025 workshop：冻结模型，只优化从 few-shot 初始化的 soft prompt/KV prefix。
+- 实现 CT-Prompt：decoder 输入前拼 8 个可训练 token（8k 参数），支持者音频特征
+  初始化 vs 随机；CE + token dropout；pool010 20 epochs。
+- support 初始化 **67.61/0.815**，random **64.08/0.788**；DoRA 77.23/0.842。
+- support > random（+3.5/+0.027），ICO 初始化方向成立；但容量太小，绝对值低。
+- CT-KV 逐层 KV 未实现，预计 70–75，仍低于 DoRA；不采用。
+- 脚本：`ct_prompt_pilot.py`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -251,6 +261,7 @@
 | `flatfsl_pilot.py` | FlatFSL / 两阶段 DoRA（SAM 负结果，两阶段小正结果） |
 | `flatfsl_ssb.py` | 两阶段 + 4 对 SSB（负结果，低于 CSB） |
 | `shot_pilot.py` | 16-shot 诊断（8 AD + 8 HC，结论：85 不是标签问题） |
+| `ct_prompt_pilot.py` | Context Tuning / CT-Prompt（负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
