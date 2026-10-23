@@ -337,6 +337,15 @@
 - 脚本 `ast_features.py`、`ast_probe.py`、`statpool_pilot.py`、`ptmap_pilot.py`；
   RESULTS 5.42。
 
+### 其他模态 eGeMAPS（2026-10-23）
+
+- openSMILE eGeMAPS v02（88 维）段级特征；English+8 中文 support MLP。
+- eGeMAPS 8-shot **47.46/0.4701**（低于随机）；decoder+eGeMAPS 融合 76.43/0.8519。
+- 文本 64.96/0.744、时序/词汇 69.89/0.754，融合都无增益；无视频/临床元数据。
+- TRILLsson low-res n8 0.761，support 特征缺失，融合预期 +0.002，不够。
+- 结论：其他模态帮不上；Whisper 音频是唯一有效信号。
+- 脚本 `egemaps_features.py`、`egemaps_probe.py`；RESULTS 5.43。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -396,6 +405,8 @@
 | `ast_probe.py` | AST 8-shot 探针 + Whisper 融合 |
 | `statpool_pilot.py` | mean/max/std 统计池化 |
 | `ptmap_pilot.py` | PT-MAP/Sinkhorn 原型传输 |
+| `egemaps_features.py` | eGeMAPS v02 段特征提取 |
+| `egemaps_probe.py` | eGeMAPS 8-shot 探针 + Whisper 融合 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
