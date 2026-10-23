@@ -799,6 +799,28 @@ pool010（单 seed）：
 - 结论：**IBDR 在我们的严格 8-shot 二分类任务上没有超过 CSB/DoRA**；
   DPP 权重难调、seed 方差大、粒子多样性没有转化成 AUC。负结果，不采用。
 
+#### 5.24.1 落点修正：Wasserstein DRO + 类概率 DPP
+
+> 之前用的是 per-sample CE 误差 + 没有 DRO；这次按论文补齐：
+> `err_i = 1 - p_i(y|x)`（类概率），DPP `det(E~E~^T)`；
+> DRO 用 SAM 近似：每个粒子按梯度扰动 ρ=0.01，在扰动点重算 loss/DPP，
+> 用扰动梯度更新再还原。K=2、α=0.05。
+
+pool010（3 seeds）：
+
+| seed | 集成 acc | AUC |
+|---|---|---|
+| 0 | 78.87 | 0.840 |
+| 1 | 69.72 | 0.839 |
+| 2 | 78.87 | 0.852 |
+| **均值** | **75.82** | **0.844** |
+
+- 比 DoRA 3-seed 均值（77.23/0.842）：**acc −1.41，AUC +0.002**。
+- seed1 的一个粒子塌到 64.79，集成只有 69.72；DRO 没有解决粒子塌缩/seed 方差。
+- 类概率 DPP 比 CE 误差 DPP 略稳（AUC 0.844 vs 0.864 的 CE 版并不更高），
+  但均值仍低于 DoRA。
+- 结论：**即使补齐 DRO 和类概率 DPP，IBDR 在这个 8-shot 任务上仍是负结果**。
+
 ### 5.25 SR-LoRA / stable-rank 逐层 rank 分配（负结果）
 
 > 论文：Zhang et al., ICCV 2025, *Beyond Low-Rank Tuning: Model Prior-Guided Rank

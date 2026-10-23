@@ -132,6 +132,10 @@
   3-seed 概率集成 79.75/0.873。
 - **同配置同 seed 重跑 pool010 seed0：81.69 → 74.65，差 7 分**，单次结果不可复现。
 - 参考 CSB-16 4 池 79.93/0.878；最好 80.63/0.890。
+- **落点修正 IBDR-DRO**：类概率 `1-p(y)` DPP + SAM/ρ=0.01 DRO；K=2 α=0.05；
+  pool010 3 seeds 78.87/69.72/78.87 → 均值 **75.82/0.844**；
+  DoRA 77.23/0.842；seed1 粒子塌缩。DRO 没解决方差，仍负。
+- 脚本：`ibdr_dro_pilot.py`。
 - 结论：**IBDR 均值低于 CSB/DoRA，不采用**；DPP 权重难调、seed 方差大。
 - 脚本：`ibdr_pilot.py`（一阶段）、`ibdr_two_stage.py`（英文基底+目标适应）。
 
@@ -203,6 +207,7 @@
 | `csb4_eval.py` | 4 池 CSB-16 / 4 对 / fusion / 支持阈值主表 |
 | `ibdr_pilot.py` | IBDR 一阶段 K 粒子 + DPP（负结果） |
 | `ibdr_two_stage.py` | IBDR 两阶段（英文基底 + 目标适应，负结果） |
+| `ibdr_dro_pilot.py` | IBDR + Wasserstein DRO + 类概率 DPP（落点修正，负结果） |
 | `so_pilot.py` | SO 稀疏优化（ICCV 2025，负结果） |
 | `mps_pilot.py` | Preserve and Sculpt / MPS-Tuning（ICLR 2026，负结果） |
 | `mps_dora_pilot.py` | MPS-DoRA（训练内部 MAR/HMS，落点修正版，负结果） |
