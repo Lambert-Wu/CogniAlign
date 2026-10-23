@@ -187,6 +187,18 @@
 - 结论：LayerNorm 预条件子太弱；step-ratio 提升 AUC 但掉准确率；不采用。
 - 脚本：`ofa_pilot.py`。
 
+### FlatFSL / 两阶段 DoRA（2026-10-23）
+
+- WACV 2025：SAM 训 source backbone → target 普通微调。
+- 迁移：Stage1 英文-only DoRA（SAM 或 ERM）→ Stage2 英文+8 支持者 Adam 微调。
+- ERM 4 池 ×3 seeds：pool010 81.92/0.881、pool015 78.87/0.871、
+  pool014 80.28/0.852、pool006 76.29/0.825；**均值 79.34/0.857**。
+- DoRA 直接训练 77.82；CSB-16 79.93/0.878；最好 80.63/0.890。
+- **两阶段比 DoRA +1.52，但低于 CSB/最好方法**；pool010 的 86.62 是单 seed 离群值。
+- SAM：pool010 3 seeds 79.11/0.878，低于 ERM 81.92/0.881；**flatness 没帮助**。
+- 结论：两阶段是小改进，不是新 SOTA；SAM 负结果；不采用为主方法。
+- 脚本：`flatfsl_pilot.py`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -222,6 +234,7 @@
 | `mps_pilot.py` | Preserve and Sculpt / MPS-Tuning（ICLR 2026，负结果） |
 | `mps_dora_pilot.py` | MPS-DoRA（训练内部 MAR/HMS，落点修正版，负结果） |
 | `ofa_pilot.py` | OFA（LayerNorm 预条件子 + step-ratio，负结果） |
+| `flatfsl_pilot.py` | FlatFSL / 两阶段 DoRA（SAM 负结果，两阶段小正结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

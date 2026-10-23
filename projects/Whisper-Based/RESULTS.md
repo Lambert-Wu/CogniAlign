@@ -959,7 +959,40 @@ pool010（seed0，5 epochs）：
   sharpness 项未实现，但 LayerNorm-only 的基础太弱，补齐也难到 DoRA 水平。
   不采用。
 
-### 5.29 结论
+### 5.29 FlatFSL / 两阶段 DoRA 微调（SAM 负结果，两阶段小正结果）
+
+> 论文：Li et al., WACV 2025, *Flatness Improves Backbone Generalisation in
+> Few-Shot Classification*. 流程：SAM 训 source backbone → target 普通微调。
+> 我们的迁移：Stage1 英文 235 人训 DoRA（SAM 或 ERM）；Stage2 从该 adapter
+> 出发，在英文 + 8 支持者上普通 Adam 微调。
+
+pool010（3 seeds）：
+
+| 设置 | acc | AUC |
+|---|---|---|
+| Stage1 ERM + Stage2 FT | 80.99 / **86.62** / 78.17 → **81.92** | 0.881 |
+| Stage1 SAM + Stage2 FT | 80.99 / 74.65 / 81.69 → 79.11 | 0.878 |
+| DoRA 直接训练（参考） | 77.23 | 0.842 |
+
+4 池（Stage1 ERM + Stage2 FT，3 seeds）：
+
+| 池 | acc | AUC |
+|---|---|---|
+| pool010 | 81.92 | 0.881 |
+| pool015 | 78.87 | 0.871 |
+| pool014 | 80.28 | 0.852 |
+| pool006 | 76.29 | 0.825 |
+| **均值** | **79.34** | **0.857** |
+
+- **两阶段协议比 DoRA 直接训练高 +1.52**（79.34 vs 77.82），说明“先英文-only
+  预训练、再英文+支持微调”有一点正则效果。
+- **但低于 CSB-16（79.93/0.878）和最好方法（80.63/0.890）**；
+  pool010 的 86.62 是单 seed 离群值，pool015/006 把均值拉回 79.3。
+- **SAM（FlatFSL 的核心）没有帮助**：pool010 3-seed 79.11/0.878，低于 ERM 81.92/0.881；
+  stage1 SAM loss 在 1–5 之间震荡，flatness 在 8-shot DoRA 上不稳定。
+- 结论：**两阶段是小改进，不是新 SOTA；SAM 部分不成立**。不采用为主方法。
+
+### 5.30 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
