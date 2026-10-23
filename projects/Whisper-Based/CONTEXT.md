@@ -245,6 +245,18 @@
 - 优先级：P0 校准/分类头（temperature+bias、prototype/cosine、bias-invariant、CSB 集成）；P1 数据质量（≥2–3 段）；P2 中文/多语种编码器或外部中文 AD 数据（唯一到 85）；停止 PEFT/正则/元学习。
 - 脚本：`bottleneck_diag.py`；RESULTS 5.33。
 
+### ORBIT 合法子集（2026-10-23）
+
+- 论文是 **zero-shot 多语言**（E+S+G→Chinese），靠 3 个源语言标签做对抗；我们只有
+  English 一个源语言；中文未标注/NCMMSC 标签分别违反 no-test-inputs / 泄漏。
+- 只试球面/双曲原型 + PoE（15 池，层 16，8 support）：球面 69.7/0.780，双曲
+  67.7/0.764，PoE 70.2/0.777；linear probe 75.3/0.832，decoder 76.6/0.882，
+  fusion 77.3/0.891。
+- English+support 原型直接混会塌到 ~50/0.53，说明域偏移；ORBIT 的对抗正是为这个，
+  但严格 8-shot 下无法合法复现。
+- 结论：几何头单独不成立；完整版需要外部 Spanish/Greek 全量预训练 → 中文 8-shot，
+  预期 80–83，不是快速实验。脚本 `orbit_geom_pilot.py`；RESULTS 5.34。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -288,6 +300,7 @@
 | `lucky_pool_quality.py` | 幸运池录音/转写质量分析 |
 | `LUCKY_POOL.md` | 幸运池可解释性报告 + 数据采集建议 |
 | `bottleneck_diag.py` | 卡点诊断：AUC 上限/校准/段数/方差 |
+| `orbit_geom_pilot.py` | ORBIT 合法子集：球面/双曲原型 + PoE（负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

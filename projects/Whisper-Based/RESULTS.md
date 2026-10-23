@@ -1139,7 +1139,47 @@ fixed2024 vs 15 池（z-score）：
 
 **结论**：当前 Whisper-medium 的真实上限约 **81–82%**（oracle 阈值）；15 池均值 77–78%。**85% 不是校准能补出来的，必须先有 +0.03～0.04 AUC 的新表征**；80.63 已经是现有表征的上限，不是可复现的均值。
 
-### 5.34 结论
+### 5.34 ORBIT（零样本跨语言 bi-geometric 对抗）的合法子集试点
+
+> 论文：*Synergizing Zero-Shot Cross-Lingual Alzheimer Detection with Language-Invariant
+> Multimodal Bi-Geometric Adversarial Learning*（arXiv 2606.17254）。
+> 代码 `orbit_geom_pilot.py`；只试**球面/双曲原型 + PoE**，不做语言对抗/跨注意力/聚类。
+
+**完整 ORBIT 不能直接套**：
+
+- 它是 **zero-shot 多语言**方法：训练用 English + Spanish + Greek（LOLO 时 Chinese 留出），
+  靠 **3 个源语言标签**训练语言判别器；我们只有 **English 一个源语言**；
+- 若用中文未标注数据做对抗 → 违反“无测试输入”；若用 NCMMSC 中文标签 → 与我们的
+  中文测试集同源，**泄漏**；
+- 论文的 85–87 是 **zero-shot、全量训练、recording-level 的 LOLO 均值**，不是中文
+  8-shot，也不是 subject-level；不能拿来证明我们能到 85；
+- 训练 4.2–5.5M 可训练参数、50 epochs、跨注意力 + 多 GRL + 双曲/球面 + DEC，
+  代码/数据改造量远大于一个 PEFT 试点。
+
+**合法子集结果**（15 池，层 16 特征，支持集 8 人）：
+
+| 方法 | acc | AUC |
+|---|---|---|
+| decoder + linear probe | **77.3** | **0.891** |
+| decoder | 76.6 | 0.882 |
+| linear probe（English + 8 support） | 75.3 | 0.832 |
+| 球面原型（support only） | 69.7 | 0.780 |
+| 双曲原型（support only） | 67.7 | 0.764 |
+| 球面+双曲 PoE（support only） | 70.2 | 0.777 |
+| 球面原型（English + support） | 50.0 | 0.534 |
+| 双曲原型（English + support） | 50.1 | 0.530 |
+
+- 球面/双曲原型在**冻结特征**上比 linear probe 低 5–6 个 AUC 点，比 decoder 低 10+；
+- 把 English 原型和中文 support 原型直接混在一起会**塌到 50%**——这正是 ORBIT 想用
+  对抗对齐解决的域偏移；但没有多语言源/未标注目标，我们无法合法复现；
+- PoE 没有超过单几何，两个视角高度相关且都弱。
+
+**结论**：**ORBIT 的几何头单独不成立**；它的收益来自“学出来的投影 + 多语言对抗 +
+跨注意力 + 全量数据”，不是球面/双曲本身。严格 8-shot 下不采用；唯一合法的完整版是
+“English + Spanish + Greek 全量预训练 → 中文 8-shot”，需要外部西/希数据和新训练，
+预期 80–83，仍不保证 85，不是快速实验。
+
+### 5.35 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
