@@ -355,6 +355,15 @@
 - 结论：注意力门控不是免费融合；需要目标域标签。多模态门控关闭。
 - 脚本 `gated_fusion_pilot.py`；RESULTS 5.44。
 
+### Audio-anchored residual（2026-10-23）
+
+- Whisper 为主，aux = timing/eGeMAPS/mHuBERT/AST 小残差 `p=(1-a)p_audio+a p_aux`。
+- audio fusion 77.46/0.8925；aux-only 60.85/0.6324；residual a=0.05 77.75/0.8872，
+  a=0.15 77.89/0.8802；全部降 AUC。
+- aux gate 仍选 AST 0.595/mHuBERT 0.380；timing/eGeMAPS 被忽略；aux 无独立 AD 信号。
+- 结论：辅助 Whisper 也负；Whisper 单模态最好；strict 8-shot 上限 0.8941。
+- 脚本 `residual_fusion_pilot.py`；RESULTS 5.45。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -417,6 +426,7 @@
 | `egemaps_features.py` | eGeMAPS v02 段特征提取 |
 | `egemaps_probe.py` | eGeMAPS 8-shot 探针 + Whisper 融合 |
 | `gated_fusion_pilot.py` | 注意力门控多模态融合（负结果） |
+| `residual_fusion_pilot.py` | Audio-anchored residual 辅助融合（负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

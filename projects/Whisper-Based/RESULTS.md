@@ -1451,7 +1451,31 @@ DoRA/CSB、多层/异质集成、MIL、特征增广、transductive、mHuBERT；
 **结论**：注意力门控不是“免费学融合”——**它需要目标域标签来学权重**；8-shot 下源域学到的权重会负迁移。  
 多模态门控这条线也关闭；Whisper 音频 + 固定/支持集融合仍是最好。
 
-### 5.45 结论
+### 5.45 Audio-anchored residual：让其他模态“辅助”Whisper 也负
+
+> 代码 `residual_fusion_pilot.py`；Whisper 为主，aux = timing/eGeMAPS/mHuBERT/AST
+> 只做小残差 `p = (1-α)p_audio + α p_aux`；aux gate 只学 aux 权重，不能关掉 audio。
+
+| 方法 | acc | AUC |
+|---|---|---|
+| audio fusion（Whisper 多层 + decoder） | 77.46 | **0.8925** |
+| aux-only gate | 60.85 | 0.6324 |
+| residual α=0.05 | 77.75 | 0.8872 |
+| residual α=0.10 | 77.65 | 0.8840 |
+| residual α=0.15 | 77.89 | 0.8802 |
+| residual α=0.20 | 77.28 | 0.8741 |
+
+aux gate 权重：**AST 0.595、mHuBERT 0.380、timing 0.016、eGeMAPS 0.008**。
+
+- 即便 audio 是锚点、α 只有 0.05，残差仍然**降 AUC**（0.8925 → 0.8872）；
+- acc 在 α=0.15 微微 +0.3，但 AUC 掉 0.012，属于阈值偏移，不是信号；
+- aux gate 仍然选 AST/mHuBERT，因为它们在 English 源上看起来可用；中文 8-shot 上它们只有 0.61/0.66；
+- **其他模态没有独立于 Whisper 的 AD 信号**；辅助融合只会注入噪声。
+
+**结论**：多模态“辅助 Whisper”也关闭；Whisper 音频单模态仍最好。  
+strict 8-shot 上限 **0.8941**；85 只能靠 56-shot（86.06/0.9289）或外部中文 AD 数据。
+
+### 5.46 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
