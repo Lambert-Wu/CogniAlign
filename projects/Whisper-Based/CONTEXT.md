@@ -257,6 +257,19 @@
 - 结论：几何头单独不成立；完整版需要外部 Spanish/Greek 全量预训练 → 中文 8-shot，
   预期 80–83，不是快速实验。脚本 `orbit_geom_pilot.py`；RESULTS 5.34。
 
+### 表征级 Mixup / LPM-Aug / FAL-AD（2026-10-23）
+
+- 严格 8-shot（English 全量 + 8 中文 support，测试特征不训练）：ERM MLP 76.34/0.847；
+  同类 Mixup 76.48/0.847；全量 Mixup 75.35/0.841；跨域同类 75.68/0.842；
+  域内 75.73/0.840；只用 8 support 70.89/0.790。
+- **Mixup 无增益**；小增益来自 MLP probe 比 linear 强：decoder+ERM MLP w=0.3
+  77.65/0.8936（既有 linear fusion 77.32/0.8909，+0.0027 AUC）。
+- LPM-Aug 弱代理（同类/跨域同类）无效；完整解耦在 8 点上不可估。
+- FAL-AD 是联邦 + VC 合成病理语音，ADReSSo 91.52% 为全量/联邦，不是 8-shot；
+  需 VC 模型/合成音频/重提取特征，且病理真实性存疑，未跑。
+- 结论：Mixup/LPM-Aug 不采用；MLP probe fusion 只可作小 ablation，仍远低于 85。
+- 脚本 `mixup_pilot.py`；RESULTS 5.35。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -301,6 +314,7 @@
 | `LUCKY_POOL.md` | 幸运池可解释性报告 + 数据采集建议 |
 | `bottleneck_diag.py` | 卡点诊断：AUC 上限/校准/段数/方差 |
 | `orbit_geom_pilot.py` | ORBIT 合法子集：球面/双曲原型 + PoE（负结果） |
+| `mixup_pilot.py` | 表征级 Mixup / LPM-Aug 代理 / MLP probe 融合 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
