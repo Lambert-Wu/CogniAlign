@@ -202,6 +202,17 @@
   组合没有超过 CSB，不采用。
 - 脚本：`flatfsl_pilot.py`、`flatfsl_ssb.py`。
 
+### 16-shot 诊断（2026-10-23，决定性）
+
+- 随机 8 AD + 8 HC，134 人测试；3 split ×2 seeds。
+- 6 次：75.37 / 79.85 / 79.10 / 78.36 / 75.37 / 79.10
+  → 均值 **77.86±1.77 / AUC 0.859**。
+- 8-shot 15 池均值 76.90/0.882；16-shot 只 +0.96 acc，AUC 更低。
+- **85 不是标签数问题**：16 个标签也到不了 80；固定池 85.21 是离群值。
+- 瓶颈在特征/跨语言表征，不在标签数/PEFT。严格 8-shot 诚实上限仍是
+  **80.63/0.890**。
+- 脚本：`shot_pilot.py`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -239,6 +250,7 @@
 | `ofa_pilot.py` | OFA（LayerNorm 预条件子 + step-ratio，负结果） |
 | `flatfsl_pilot.py` | FlatFSL / 两阶段 DoRA（SAM 负结果，两阶段小正结果） |
 | `flatfsl_ssb.py` | 两阶段 + 4 对 SSB（负结果，低于 CSB） |
+| `shot_pilot.py` | 16-shot 诊断（8 AD + 8 HC，结论：85 不是标签问题） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
