@@ -223,6 +223,16 @@
 - CT-KV 逐层 KV 未实现，预计 70–75，仍低于 DoRA；不采用。
 - 脚本：`ct_prompt_pilot.py`。
 
+### 幸运池可解释性（2026-10-23）
+
+- fixed2024 vs 15 池：支持集 between/Fisher/silhouette/margin 高（z +0.8~+1.5）、
+  coverage 高（z +2.6）、语速快/停顿少（z +1.7/−2.0）；**测试难度不低**（z −0.65）。
+- 但 15 池中这些描述符与 acc 无显著相关（|rho|<0.35, p>0.2）；pool015 Fisher
+  最高但 acc 65.5，pool007 Fisher 低但 acc 83.1。
+- 85.21 含 seed/epoch 选择；同支持集集成 83.80。
+- 结论：无单一几何分数可解释/预测幸运池；采集建议见 `LUCKY_POOL.md`。
+- 脚本：`lucky_pool_analysis.py`、`lucky_pool_quality.py`；报告 `LUCKY_POOL.md`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -262,6 +272,9 @@
 | `flatfsl_ssb.py` | 两阶段 + 4 对 SSB（负结果，低于 CSB） |
 | `shot_pilot.py` | 16-shot 诊断（8 AD + 8 HC，结论：85 不是标签问题） |
 | `ct_prompt_pilot.py` | Context Tuning / CT-Prompt（负结果） |
+| `lucky_pool_analysis.py` | 幸运池几何/测试难度分析 |
+| `lucky_pool_quality.py` | 幸运池录音/转写质量分析 |
+| `LUCKY_POOL.md` | 幸运池可解释性报告 + 数据采集建议 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
