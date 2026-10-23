@@ -294,6 +294,14 @@
 - 脚本：`layer_ensemble_pilot.py`、`hetero_ensemble_pilot.py`、`segment_mil_pilot.py`；
   RESULTS 5.37。
 
+### 支持集特征增广（2026-10-23）
+
+- 8 support 特征增广到 88/168：scale probe 0.8536（+0.0066 AUC），combo 0.8524；
+  noise 0.8491，dropout 0.8463，类条件高斯 0.8388（更差）。
+- 接到 decoder：fuse_none 0.8935，fuse_scale 0.8933，fuse_combo 0.8924；**无增益**。
+- 结论：增广只对弱 probe 有用，不能加新受试者/类别信息；主 fusion 仍 0.894。
+- 脚本 `feature_aug_pilot.py`；RESULTS 5.38。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -343,6 +351,7 @@
 | `layer_ensemble_pilot.py` | Whisper 多层 probe 集成（正 AUC） |
 | `hetero_ensemble_pilot.py` | Whisper-small + medium 异质集成 |
 | `segment_mil_pilot.py` | Segment attention MIL |
+| `feature_aug_pilot.py` | 支持集特征增广（scale/combo/noise/dropout/Gaussian） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
