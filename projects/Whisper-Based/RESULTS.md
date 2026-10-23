@@ -837,7 +837,32 @@ pool010：
 - 结论：**stable-rank 先验在 Whisper 8-shot 上不成立**；高 rank 过拟合，
   SPU 救不了稳定性。负结果，不采用。
 
-### 5.26 结论
+### 5.26 SO（Sparse Optimization，ICCV 2025，负结果）
+
+> 论文：Mrabah et al., ICCV 2025, *Sparsity Outperforms Low-Rank Projections in
+> Few-Shot Adaptation*. 不做低秩，直接在全模型上做稀疏更新：
+> 密度 κ=0.05%，每步随机选 M=κd 个梯度；Adam 一阶矩按 |μ| 只保留 M 个连接；
+> 支撑集每 T=10 步刷新；模型保持 dense。
+> 我们的实现：`so_pilot.py`，作用在 Whisper decoder；优化器为 SO（随机梯度支撑 +
+> 重要性矩剪枝），不是普通 Adam。
+
+pool010：
+
+| 设置 | 可训练参数 | updates/step | acc | AUC |
+|---|---|---|---|---|
+| SO，全部参数，5 epochs | 456.6M | 228k | 61.97 | 0.790 |
+| SO，仅 decoder 24 层，10 epochs | ~300M | ~150k | **64.79** | **0.802** |
+| 全量微调（参考） | 456.6M | dense | 67.75 | 0.836 |
+| DoRA r8（参考） | 5.4M | dense | **77.23** | **0.842** |
+
+- 只调 decoder blocks 比“连 embedding/proj_out 一起调”好（61.97→64.79），
+  说明分类头/embedding 的稀疏更新有害；但仍低于全量微调。
+- 0.05% 的更新量在 8-shot 下**欠拟合**；loss 到 0.024 收敛，但测试准确率只有 64.79。
+- 核心问题：SO 是“全模型稀疏 fine-tune”，而全量微调本身在这个任务就只有 67.75；
+  DoRA 的增益来自低秩 adapter + 冻结基底，SO 补不上这 10 分。
+- 结论：**SO 在 Whisper 8-shot 上不成立**；不采用。
+
+### 5.27 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

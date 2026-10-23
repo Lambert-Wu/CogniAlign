@@ -147,6 +147,15 @@
 - 结论：高 rank 在 8-shot 过拟合，SPU 救不了 seed 方差；**不采用**。
 - 代码：`dora_pilot.py --scope sr_qvo|sr_all --spu --max-rank --rank-target`。
 
+### SO（Sparse Optimization，负结果，2026-10-23）
+
+- ICCV 2025：全模型 dense，0.05% 随机梯度支撑 + 一阶矩重要性剪枝，T=10 刷新。
+- 实现：`so_pilot.py`，SO optimizer 作用于 Whisper decoder。
+- pool010：全部参数 5 epochs **61.97/0.790**；仅 decoder 24 层 10 epochs
+  **64.79/0.802**；全量微调 67.75/0.836；DoRA 77.23/0.842。
+- 结论：0.05% 更新在 8-shot 欠拟合；SO 的全模型稀疏 fine-tune 追不上 DoRA
+  的低秩 adapter + 冻结基底。**不采用**。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -177,6 +186,7 @@
 | `csb4_eval.py` | 4 池 CSB-16 / 4 对 / fusion / 支持阈值主表 |
 | `ibdr_pilot.py` | IBDR 一阶段 K 粒子 + DPP（负结果） |
 | `ibdr_two_stage.py` | IBDR 两阶段（英文基底 + 目标适应，负结果） |
+| `so_pilot.py` | SO 稀疏优化（ICCV 2025，负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
