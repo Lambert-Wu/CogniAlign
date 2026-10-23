@@ -311,6 +311,15 @@
 - 结论：decoder 已包含伪标签能给的信号；transductive 不是 0.925 捷径。
 - 脚本 `transductive_pilot.py`、`transductive_st.py`；RESULTS 5.39。
 
+### Subject-level 标签曲线（2026-10-23）
+
+- 4/类（8-shot）75.00/0.862；8/类（16-shot）80.82/0.886；
+  14/类（28-shot）83.85/0.906；**28/类（56-shot）86.06/0.9289**。
+- 10 draws ×3 seeds，12/16/20/24 层拼接 MLP；English 全量 + 支持者；无测试输入。
+- **56 个中文标签达到 85/0.929**；28 个标签 83.85/0.906；8 个标签 ~0.86–0.894。
+- 结论：85 的瓶颈是标签数，不是分类头；strict 8-shot 上限 ~0.894。
+- 脚本 `shot_curve_subject.py`；RESULTS 5.40。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -363,6 +372,7 @@
 | `feature_aug_pilot.py` | 支持集特征增广（scale/combo/noise/dropout/Gaussian） |
 | `transductive_pilot.py` | 图标签传播 / 图平滑 / 原型迭代 |
 | `transductive_st.py` | decoder teacher 的自训练/蒸馏 |
+| `shot_curve_subject.py` | Subject-level 标签曲线（8→56-shot） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
