@@ -388,6 +388,17 @@
 - 结论：无可靠支持集几何选池准则；85 仍需 56-shot/外部数据。
 - `POOL50.md`、`pool50_analysis.py`；RESULTS 5.47。
 
+### 相似论文 + SpeechCARE 组件（2026-10-23）
+
+- 最接近：Tamm 2023 English→Greek **8-shot 82.6%**；SpeechCARE Mandarin **51-shot 85.47 F1 / 92.67 AUC**；
+  我们 8-shot 80.6/0.890、56-shot 86.06/0.929。
+- **没有论文报告 strict 8-shot 85**；文献与标签曲线一致。
+- SpeechCARE 组件实测：8k low-pass fusion 0.8834；5s/20% overlap fusion 0.8830；
+  都低于 30s 多层 fusion 0.8941。
+- mHuBERT/mGTE/age/AGF 需 fine-tune + 51+ 样本/age；中文无 age，8-shot 不可 faithful 复现。
+- 结论：不再借 8-shot 组件；85 需 56-shot/外部数据。
+- `PAPER_SURVEY.md`、`lowpass_features.py`、`win5_features.py`、RESULTS 5.48。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -455,6 +466,8 @@
 | `GOOD_POOLS.md` | 好池分析报告 |
 | `pool50_analysis.py` | 50 池评估 + 选池准则留出验证 |
 | `POOL50.md` | 50 池分析报告 |
+| `PAPER_SURVEY.md` | 相似论文 + SpeechCARE 组件调研 |
+| `lowpass_features.py` / `win5_features.py` | SpeechCARE low-pass / 5s 窗特征 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

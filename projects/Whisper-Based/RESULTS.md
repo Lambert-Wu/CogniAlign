@@ -1548,7 +1548,39 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
 **描述性“好池”**（不保证）：低 MMD/diversity（紧凑、近测试）、慢语速/多停顿、段数足够；
 不要只挑 Fisher/margin 最高的“可分”人。必须候选池 + 留出验证、多 seed、AUC/acc 并报。
 
-### 5.48 结论
+### 5.48 相似论文调研 + SpeechCARE 组件试点
+
+> 详见 `PAPER_SURVEY.md`；代码 `lowpass_features.py`、`win5_features.py` 及对应 probe。
+
+**最接近的公开结果**：
+
+| 论文 | 设定 | 结果 |
+|---|---|---|
+| **Tamm et al., Interspeech 2023** | English 228 → Greek **8-shot** | **AD acc 82.6%** |
+| **SpeechCARE, npj Digital Medicine 2025** | Mandarin Chou **51-shot** 微调 | **AUC 92.67 / F1 85.47** |
+| 我们 Whisper 8-shot（4 池） | 8-shot | 80.63 / 0.890 |
+| 我们 Whisper 56-shot | 56-shot | 86.06 / 0.929 |
+
+**8-shot 公开上限约 82.6%，没有论文报告 strict 8-shot 85；51/56-shot 才到 85。**
+
+**SpeechCARE 组件在我们 8-shot 上的实测**：
+
+| 方法 | acc | AUC |
+|---|---|---|
+| Whisper 多层 fusion | 77.46 | **0.8941** |
+| 8kHz low-pass probe | 76.06 | 0.8490 |
+| decoder + low-pass（w=0.2） | 77.75 | 0.8834 |
+| 5s 窗/20% overlap probe | 74.98 | 0.8421 |
+| decoder + win5（w=0.2） | 77.79 | 0.8830 |
+
+- **low-pass 和 5s 窗都没有超过 30s 多层 fusion**；
+- SpeechCARE 的收益依赖 **fine-tune mHuBERT + mGTE + age + AGF + 51-shot**；中文数据无 age，8 标签无法 faithful 复现；
+- frozen mHuBERT 8-shot 只有 0.657，fine-tune mHuBERT 是剩余唯一“大改”，但要 51+ 样本/age，已改设定。
+
+**结论**：文献与我们的数据一致——**strict 8-shot 上限 82–83%，不是 85**。  
+继续借 8-shot 组件只会得到 0.88–0.89 的负结果；85 需要 56-shot 或外部中文 AD 数据。
+
+### 5.49 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
