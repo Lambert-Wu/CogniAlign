@@ -376,6 +376,18 @@
   补录音改善测试队列（单段 AUC 0.684），不是靠选支持者。
 - `GOOD_POOLS.md`、`good_pool_analysis.py`；RESULTS 5.46。
 
+### 50 池选池准则（2026-10-23）
+
+- 50 随机池（多层 MLP，3 seeds）：acc **75.46±6.27**，AUC **0.8504±0.0363**；
+  最高单池 **83.10/0.9082**；没有 85。
+- 关键反直觉：support between/Fisher/margin 与 AUC **负相关**
+  （−0.496/−0.428/−0.469，p≤.002）；低 MMD/diversity、慢语速/多停顿、段数多较好。
+- 原因：支持-测试零和构成；易分 support 留下更难的测试集，不可部署。
+- 30/20 留出 top5：support-only +0.0085 acc/+0.004 AUC（rho .139/.172）；
+  oracle +0.0109；oracle top5 仅 81.83/0.876；选池不能到 85。
+- 结论：无可靠支持集几何选池准则；85 仍需 56-shot/外部数据。
+- `POOL50.md`、`pool50_analysis.py`；RESULTS 5.47。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -441,6 +453,8 @@
 | `residual_fusion_pilot.py` | Audio-anchored residual 辅助融合（负结果） |
 | `good_pool_analysis.py` | 好池/支持集几何/测试构成分析 |
 | `GOOD_POOLS.md` | 好池分析报告 |
+| `pool50_analysis.py` | 50 池评估 + 选池准则留出验证 |
+| `POOL50.md` | 50 池分析报告 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
