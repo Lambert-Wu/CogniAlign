@@ -1359,7 +1359,30 @@ fixed2024 vs 15 池（z-score）：
 **56-shot（28+28）+ 多层特征 MLP**：**86.06 / 0.9289**。  
 如果必须 **8-shot + 无测试输入**，最好仍是 **0.8941**；这不是再换一个 PEFT/正则/增广能补的。
 
-### 5.41 结论
+### 5.41 mHuBERT-147 8-shot：换 backbone 也救不了
+
+> 代码 `mhubert_features.py`、`mhubert_probe.py`；mHuBERT-147（94.4M）提 30s 段特征
+> （569 英/494 中段），再按 subject 平均；English 全量 + 8 中文 support 训练 MLP。
+
+| 方法 | acc | AUC |
+|---|---|---|
+| Whisper decoder | 76.57 | 0.8822 |
+| Whisper 多层 fusion | 77.46 | **0.8941** |
+| **mHuBERT 8-shot 单独** | **62.58** | **0.6572** |
+| decoder + mHuBERT（w=0.1） | 76.71 | 0.8693 |
+| decoder + mHuBERT（w=0.2） | 75.59 | 0.8591 |
+
+- mHuBERT 原始特征的 **英文→中文 8-shot 域差极大**：AUC 0.657，远低于 Whisper；
+- 与 decoder 融合也**降 AUC**（0.8822 → 0.8693），不能作为互补视图；
+- ORBIT 的 mHuBERT 收益依赖**多语言对抗 + 全量多语言训练**；strict 8-shot 下没有这些，raw mHuBERT 不成立；
+- **换 backbone（mHuBERT）不是 8-shot 的解法**。
+
+**结论**：strict 8-shot + 无测试输入 + 当前 150 人数据，合法尝试已覆盖
+DoRA/CSB、多层/异质集成、MIL、特征增广、transductive、mHuBERT；
+**最好仍是 0.8941**。85 需要 **56-shot（86.06/0.9289）** 或外部中文 AD 数据；
+8-shot 本身到不了。
+
+### 5.42 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

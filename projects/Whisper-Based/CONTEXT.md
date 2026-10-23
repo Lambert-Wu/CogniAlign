@@ -320,6 +320,14 @@
 - 结论：85 的瓶颈是标签数，不是分类头；strict 8-shot 上限 ~0.894。
 - 脚本 `shot_curve_subject.py`；RESULTS 5.40。
 
+### mHuBERT-147 8-shot（2026-10-23）
+
+- mHuBERT-147 段特征（569 英/494 中），subject 平均；English+8 中文 support MLP。
+- mHuBERT 单独 **62.58/0.6572**；decoder+mHuBERT w=0.1 **76.71/0.8693**，比 decoder 低。
+- 原始 mHuBERT 英→中 8-shot 域差大；ORBIT 的收益依赖多语言对抗/全量训练。
+- 结论：换 mHuBERT 也不是 strict 8-shot 的解法；最好仍是 Whisper 多层 fusion 0.8941。
+- 脚本 `mhubert_features.py`、`mhubert_probe.py`；RESULTS 5.41。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -373,6 +381,8 @@
 | `transductive_pilot.py` | 图标签传播 / 图平滑 / 原型迭代 |
 | `transductive_st.py` | decoder teacher 的自训练/蒸馏 |
 | `shot_curve_subject.py` | Subject-level 标签曲线（8→56-shot） |
+| `mhubert_features.py` | mHuBERT-147 段特征提取 |
+| `mhubert_probe.py` | mHuBERT 8-shot 探针 + Whisper 融合 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
