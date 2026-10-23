@@ -36,7 +36,7 @@ FIXED_HC = ["0032", "0093", "019213", "171812"]
 
 
 class DoRALinear(nn.Module):
-    def __init__(self, base: nn.Linear, r=8, alpha=16.0, lora=False):
+    def __init__(self, base: nn.Linear, r=8, alpha=16.0, lora=False, spu=False):
         super().__init__()
         self.base = base
         for p in self.base.parameters():
@@ -48,23 +48,88 @@ class DoRALinear(nn.Module):
         nn.init.kaiming_uniform_(self.A, a=5 ** 0.5)
         self.m = nn.Parameter(base.weight.detach().norm(dim=1, keepdim=True).clone())
         self.lora = lora
+        self.spu = spu
         if lora:
             self.m.requires_grad_(False)
 
     def forward(self, x):
-        W = self.base.weight + self.scale * (self.B @ self.A)
+        r = self.r
+        if self.spu and self.training:
+            r = int(torch.randint(0, self.r + 1, (1,)).item())
+        if r == 0:
+            W = self.base.weight
+        else:
+            W = self.base.weight + self.scale * (self.B[:, :r] @ self.A[:r])
         if not self.lora:
             W = W / (W.norm(dim=1, keepdim=True) + 1e-8)
             W = self.m * W
         return F.linear(x, W.to(x.dtype), self.base.bias)
 
 
-def replace_linear(module, r=8, alpha=16.0, lora=False):
+def replace_linear(module, r=8, alpha=16.0, lora=False, spu=False):
     for name, child in list(module.named_children()):
         if isinstance(child, nn.Linear):
-            setattr(module, name, DoRALinear(child, r, alpha, lora))
+            setattr(module, name, DoRALinear(child, r, alpha, lora, spu))
         else:
-            replace_linear(child, r, alpha, lora)
+            replace_linear(child, r, alpha, lora, spu)
+
+
+def stable_rank(w: torch.Tensor) -> float:
+    """srank(W) = ||W||_F^2 / ||W||_2^2 = sum(sigma_i^2) / sigma_1^2."""
+    s = torch.linalg.svdvals(w.detach().float())
+    return float((s * s).sum() / (s[0] * s[0]).clamp(min=1e-12))
+
+
+def replace_stable_all(module, alpha_mult=2.0, max_rank=128, lora=False, spu=False,
+                       rank_target=8.0):
+    """按 stable rank 给 decoder 里所有 linear 分配 rank（预算控制版）。"""
+    items = []
+
+    def collect(m):
+        for name, child in m.named_children():
+            if isinstance(child, nn.Linear):
+                items.append((m, name, child, stable_rank(child.weight)))
+            else:
+                collect(child)
+
+    collect(module)
+    mean_sr = sum(x[3] for x in items) / max(len(items), 1)
+    ranks = []
+    for parent, name, lin, sr in items:
+        if rank_target > 0:
+            r = int(round(sr / mean_sr * rank_target))
+        else:
+            r = int(round(sr))
+        r = max(1, min(r, max_rank))
+        setattr(parent, name, DoRALinear(lin, r, alpha_mult * r, lora, spu))
+        ranks.append(r)
+    return ranks
+
+
+def replace_stable_qvo(decoder, alpha_mult=2.0, max_rank=128, lora=False, spu=False,
+                       rank_target=0.0):
+    """SR-LoRA：只替换 attention 的 q/v/out。
+
+    rank_target=0: 直接用 stable rank（论文原版，可被 max_rank 截断）。
+    rank_target>0: 按 stable rank 的相对比例缩放到目标平均 rank（预算控制版）。
+    """
+    items = []
+    for layer in decoder.layers:
+        for name in ["q_proj", "v_proj", "out_proj"]:
+            lin = getattr(layer.self_attn, name)
+            items.append((layer, name, lin, stable_rank(lin.weight)))
+    mean_sr = sum(x[3] for x in items) / len(items)
+    ranks = []
+    for layer, name, lin, sr in items:
+        if rank_target > 0:
+            r = int(round(sr / mean_sr * rank_target))
+        else:
+            r = int(round(sr))
+        r = max(1, min(r, max_rank))
+        setattr(layer.self_attn, name,
+                DoRALinear(lin, r, alpha_mult * r, lora, spu))
+        ranks.append(r)
+    return ranks
 
 
 def get_support(pool):
@@ -94,10 +159,19 @@ def main():
     ap.add_argument("--ln", action="store_true", help="同时训练 decoder layer_norm")
     ap.add_argument("--lora", action="store_true", help="标准 LoRA（不做幅度/归一化）")
     ap.add_argument("--scope", default="all",
-                    choices=["all", "cross", "self", "mlp", "last4", "cross_last4"],
+                    choices=["all", "cross", "self", "mlp", "last4", "cross_last4", "qvo", "sr_qvo", "sr_all"],
                     help="DoRA 作用范围：all=全部 linear；cross=仅 cross-attention；"
                          "self=仅 self-attention；mlp=仅 fc1/fc2；last4=最后 4 层；"
-                         "cross_last4=最后 4 层的 cross-attention")
+                         "cross_last4=最后 4 层的 cross-attention；"
+                         "sr_qvo=SR-LoRA（q/v/out，rank=stable rank）")
+    ap.add_argument("--max-rank", type=int, default=128,
+                    help="SR-LoRA 的 rank 上限")
+    ap.add_argument("--alpha-mult", type=float, default=2.0,
+                    help="SR-LoRA 的 alpha = alpha_mult * rank")
+    ap.add_argument("--spu", action="store_true",
+                    help="SR-LoRA 的 Stochastic Partial Update：每步随机只用 rank 子集")
+    ap.add_argument("--rank-target", type=float, default=0.0,
+                    help=">0 时把 stable rank 缩放到该平均 rank（预算控制版）")
     args = ap.parse_args()
 
     support = sorted(get_support(args.pool))
@@ -144,6 +218,24 @@ def main():
     elif args.scope == "cross_last4":
         for layer in layers[-4:]:
             replace_linear(layer.encoder_attn, args.rank, args.alpha, args.lora)
+    elif args.scope == "qvo":
+        for layer in layers:
+            for name in ["q_proj", "v_proj", "out_proj"]:
+                lin = getattr(layer.self_attn, name)
+                setattr(layer.self_attn, name,
+                        DoRALinear(lin, args.rank, args.alpha, args.lora))
+    elif args.scope == "sr_qvo":
+        ranks = replace_stable_qvo(clf.decoder, args.alpha_mult, args.max_rank,
+                                   args.lora, args.spu, args.rank_target)
+        print(f"[SR-LoRA] ranks n={len(ranks)} min={min(ranks)} max={max(ranks)} "
+              f"mean={sum(ranks)/len(ranks):.1f} sum={sum(ranks)}", flush=True)
+    elif args.scope == "sr_all":
+        target = args.rank_target if args.rank_target > 0 else 8.0
+        ranks = replace_stable_all(clf.decoder, args.alpha_mult, args.max_rank,
+                                   args.lora, args.spu, target)
+        print(f"[SR-LoRA-all] target={target} n={len(ranks)} min={min(ranks)} "
+              f"max={max(ranks)} mean={sum(ranks)/len(ranks):.1f} sum={sum(ranks)}",
+              flush=True)
     clf = clf.to(device)
     if args.proj_out:
         for p in clf.proj_out.parameters():
@@ -183,7 +275,7 @@ def main():
     seg = T.predict_segments(clf, builder, hub, eval_gids, transcripts, cfg)
     p = subj_probs(seg, test)
     m = T.metrics(y, p)
-    tag = f"r{args.rank}" + ("_lora" if args.lora else "") + ("_po" if args.proj_out else "") + ("_ln" if args.ln else "") + ("" if args.scope == "all" else "_" + args.scope)
+    tag = f"r{args.rank}" + ("_lora" if args.lora else "") + ("_po" if args.proj_out else "") + ("_ln" if args.ln else "") + ("" if args.scope == "all" else "_" + args.scope) + ("_spu" if args.spu else "") + (f"_rt{args.rank_target:g}" if args.rank_target > 0 else "")
     print(f"[{args.pool}] {'LoRA' if args.lora else 'DoRA'} {tag} s{args.seed}: "
           f"acc={m['acc']*100:.2f} auc={m['auc']:.3f}",
           flush=True)

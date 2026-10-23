@@ -799,7 +799,45 @@ pool010（单 seed）：
 - 结论：**IBDR 在我们的严格 8-shot 二分类任务上没有超过 CSB/DoRA**；
   DPP 权重难调、seed 方差大、粒子多样性没有转化成 AUC。负结果，不采用。
 
-### 5.25 结论
+### 5.25 SR-LoRA / stable-rank 逐层 rank 分配（负结果）
+
+> 论文：Zhang et al., ICCV 2025, *Beyond Low-Rank Tuning: Model Prior-Guided Rank
+> Allocation*. 做法：`srank(W)=||W||_F^2/||W||_2^2`，每个 LoRA 模块
+> `rank=srank(W)`；只加在 attention q/v/o；SPU 每步随机只用 rank 子集。
+> 我们的实现：`dora_pilot.py --scope sr_qvo|sr_all --spu --max-rank --rank-target`。
+
+Whisper-medium decoder 的 stable rank（72 个 q/v/o 模块）：
+
+| 统计 | 值 |
+|---|---|
+| min | 5.6 |
+| median | 89.6 |
+| mean | 91.3 |
+| max | 189.3 |
+
+pool010：
+
+| 设置 | 参数量 | acc | AUC |
+|---|---|---|---|
+| SR-LoRA（LoRA，no SPU，cap128） | 12.3M | 40.14 | 0.500 |
+| SR-LoRA（LoRA，SPU，cap128） | 12.3M | 61.97 | 0.697 |
+| SR-LoRA（LoRA，SPU，cap32） | 4.4M | 61.27 | 0.815 |
+| 固定 q/v/o DoRA r8（公平对照） | 1.3M | 59.86 | 0.753 |
+| SR-DoRA（cap32，no SPU） | 4.5M | 69.01 | 0.792 |
+| SR-DoRA（cap32，SPU，seed0/1/2） | 4.5M | **77.46 / 66.20 / 50.00** | 0.819 / 0.761 / 0.811 |
+| **SR-DoRA 3-seed 均值** | 4.5M | **64.55 / 0.797** | — |
+| 全量 DoRA r8（3 seeds） | 5.4M | **77.23** | **0.842** |
+
+- stable rank 均值 91，远大于常用 rank 8；直接搬过来 **8-shot 严重过拟合**，
+  LoRA 甚至发散到 40.14/0.500。
+- SPU 能把 seed0 的 SR-DoRA 拉到 77.46，但 seed1/2 只有 66.20/50.00；
+  **3-seed 均值 64.55，方差极大**，不能当方法。
+- 固定 q/v/o r8 只有 59.86，说明 SR 的 rank 分配相对“固定 qvo”有提升；
+  但绝对值仍远低于全量 DoRA，AUC 也低。
+- 结论：**stable-rank 先验在 Whisper 8-shot 上不成立**；高 rank 过拟合，
+  SPU 救不了稳定性。负结果，不采用。
+
+### 5.26 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

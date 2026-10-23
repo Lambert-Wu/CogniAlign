@@ -135,6 +135,18 @@
 - 结论：**IBDR 均值低于 CSB/DoRA，不采用**；DPP 权重难调、seed 方差大。
 - 脚本：`ibdr_pilot.py`（一阶段）、`ibdr_two_stage.py`（英文基底+目标适应）。
 
+### SR-LoRA / stable-rank 逐层 rank（负结果，2026-10-23）
+
+- ICCV 2025：`rank=srank(W)=||W||_F^2/||W||_2^2`，只加 q/v/o，SPU 随机切片。
+- Whisper decoder q/v/o 的 srank：中位数 89.6、均值 91.3、最大 189；
+  远大于 rank 8。
+- pool010：SR-LoRA no SPU 40.14/0.500；SPU cap128 61.97/0.697；
+  cap32 61.27/0.815；SR-DoRA cap32 SPU 3 seeds **77.46/66.20/50.00**
+  → 均值 **64.55/0.797**；全量 DoRA 3 seeds 77.23/0.842。
+- 固定 q/v/o r8 只有 59.86/0.753；SR 相对它有提升，但绝对值仍低于全量 DoRA。
+- 结论：高 rank 在 8-shot 过拟合，SPU 救不了 seed 方差；**不采用**。
+- 代码：`dora_pilot.py --scope sr_qvo|sr_all --spu --max-rank --rank-target`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
