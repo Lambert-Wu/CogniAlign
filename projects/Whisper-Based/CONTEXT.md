@@ -346,6 +346,15 @@
 - 结论：其他模态帮不上；Whisper 音频是唯一有效信号。
 - 脚本 `egemaps_features.py`、`egemaps_probe.py`；RESULTS 5.43。
 
+### 注意力门控多模态（2026-10-23）
+
+- 模态：Whisper 多层 / mHuBERT / AST / eGeMAPS / timing+lexical；per-subject gate。
+- gate 平均权重 AST 0.386、audio 0.347、mHuBERT 0.237、eGeMAPS 0.014、timing 0.017；
+- gate **71.88/0.7887**，+decoder 0.8803，低于 audio fusion 0.8941。
+- 原因：gate 在 English 源学模态可靠性，源域偏好不迁移；8 个中文标签不足以重学。
+- 结论：注意力门控不是免费融合；需要目标域标签。多模态门控关闭。
+- 脚本 `gated_fusion_pilot.py`；RESULTS 5.44。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -407,6 +416,7 @@
 | `ptmap_pilot.py` | PT-MAP/Sinkhorn 原型传输 |
 | `egemaps_features.py` | eGeMAPS v02 段特征提取 |
 | `egemaps_probe.py` | eGeMAPS 8-shot 探针 + Whisper 融合 |
+| `gated_fusion_pilot.py` | 注意力门控多模态融合（负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
