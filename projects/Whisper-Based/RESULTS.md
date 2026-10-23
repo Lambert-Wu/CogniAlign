@@ -1475,7 +1475,37 @@ aux gate 权重：**AST 0.595、mHuBERT 0.380、timing 0.016、eGeMAPS 0.008**�
 **结论**：多模态“辅助 Whisper”也关闭；Whisper 音频单模态仍最好。  
 strict 8-shot 上限 **0.8941**；85 只能靠 56-shot（86.06/0.9289）或外部中文 AD 数据。
 
-### 5.46 结论
+### 5.46 好池分析：没有单一支持集几何签名
+
+> 详见 `GOOD_POOLS.md`；代码 `good_pool_analysis.py`；15 池 + fixed2024。
+
+**按 acc 的好池**：fixed2024 83.80、pool011 83.10、pool015 83.10、pool012 81.69、
+pool004 79.58、pool001 79.58。  
+**按 AUC 的好池**：pool008 0.929、pool007 0.927、pool015 0.917、pool001 0.913、
+pool004 0.912。**两套好池不是同一批。**
+
+反例：
+
+- **pool011**：acc 第二（83.10），但支持 Fisher 0.414、silhouette −0.036、margin 0.094；
+- **pool009**：支持 Fisher 1.169（最高之一），acc 只有 65.49；
+- **pool007/008**：AUC 0.927/0.929，acc 只有 76.06（阈值/校准差）。
+
+**top5 vs bottom5（按 acc）**：支持 Fisher/silhouette/margin 在 top5 反而略低，
+差异不显著（p=0.42）；支持段数、test 单段比例、seed std 也都不显著。  
+Spearman：支持 Fisher vs acc −0.152、silhouette −0.135、margin −0.133（p>0.57）；
+coverage +0.336（p=0.204）；**没有可用的支持集质量分数**。
+
+**好池靠什么**：
+
+1. 支持-测试的特定交互（测试子集不同）；
+2. 阈值/校准（pool009/007/008 都是高 AUC、低 acc）；
+3. seed 方差（pool003 std 0.142，pool008/013 0.088）；
+4. fixed2024 是几何/coverage/seed 都较好的特例，但不能证明几何决定好坏。
+
+**建议**：不要用 Fisher/margin 单指标选支持者；要候选池 + 留出验证、多 seed、
+同时报 AUC/acc；补录音主要改善测试队列质量（单段受试者 AUC 0.684），不是靠选支持者。
+
+### 5.47 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

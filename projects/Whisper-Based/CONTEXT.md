@@ -364,6 +364,18 @@
 - 结论：辅助 Whisper 也负；Whisper 单模态最好；strict 8-shot 上限 0.8941。
 - 脚本 `residual_fusion_pilot.py`；RESULTS 5.45。
 
+### 好池分析（2026-10-23）
+
+- 按 acc 好池：fixed2024/011/015/012/004/001；按 AUC 好池：008/007/015/001/004；
+  **两套不是同一批**。
+- 反例：011 acc 83.1 但 Fisher 0.414/silhouette −0.036；009 Fisher 1.169 但 acc 65.5；
+  007/008 AUC 0.927/0.929 但 acc 76.1。
+- top5 vs bottom5 的支持几何略低且不显著；Spearman 全弱；无支持集质量分数。
+- 好池靠支持-测试交互 + 阈值校准 + seed 方差；fixed2024 是几何/coverage/seed 特例。
+- 建议：不用 Fisher/margin 单指标选人；候选池+留出验证、多 seed、AUC/acc 并报；
+  补录音改善测试队列（单段 AUC 0.684），不是靠选支持者。
+- `GOOD_POOLS.md`、`good_pool_analysis.py`；RESULTS 5.46。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -427,6 +439,8 @@
 | `egemaps_probe.py` | eGeMAPS 8-shot 探针 + Whisper 融合 |
 | `gated_fusion_pilot.py` | 注意力门控多模态融合（负结果） |
 | `residual_fusion_pilot.py` | Audio-anchored residual 辅助融合（负结果） |
+| `good_pool_analysis.py` | 好池/支持集几何/测试构成分析 |
+| `GOOD_POOLS.md` | 好池分析报告 |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
