@@ -935,7 +935,31 @@ pool010（seed0，5 epochs）：
 - 结论：**即使放到论文的“训练内部”落点，MPS 的 MAR/HMS 在 Whisper 8-shot
   DoRA 上仍然负增益**。不采用。
 
-### 5.28 结论
+### 5.28 OFA（Optimization-Inspired Few-Shot Adaptation，NeurIPS 2025，负结果）
+
+> 论文：Gao et al., NeurIPS 2025, *Optimization Inspired Few-Shot Adaptation for LLMs*.
+> 把前向传播看作预条件梯度下降序列，用 LayerNorm 的 γ/β 作为预条件子；
+> 目标 = CE + λ1·step-ratio + λ2·preconditioned Hessian trace（Hutchinson）。
+> 我们的实现：只训 decoder 的 LayerNorm γ/β（~0.15M），加 step-ratio；
+> sharpness/Hutchinson 项未实现（计算昂贵）；另做 DoRA + LayerNorm 混合版。
+
+pool010（seed0，5 epochs）：
+
+| 配置 | 可训练参数 | acc | AUC |
+|---|---|---|---|
+| LayerNorm 对照 (λ=0) | 0.15M | 67.61 | 0.793 |
+| LayerNorm + step-ratio (λ=0.01) | 0.15M | 64.79 | 0.780 |
+| DoRA 对照 (λ=0，同脚本) | 5.4M | **77.46** | **0.842** |
+| DoRA + LayerNorm + step-ratio (λ=0.01) | 5.5M | 71.83 | **0.854** |
+
+- LayerNorm 预条件子单独只有 67.61/0.793，远低于 DoRA；加 step-ratio 还掉 2.8 acc。
+- DoRA 混合版 AUC +0.012，但 acc −5.6：step-ratio 把概率分布拉平，排序略好、
+  阈值准确率更差。
+- 结论：**OFA 的 LayerNorm/step-ratio 在 Whisper 8-shot 上不成立**；
+  sharpness 项未实现，但 LayerNorm-only 的基础太弱，补齐也难到 DoRA 水平。
+  不采用。
+
+### 5.29 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

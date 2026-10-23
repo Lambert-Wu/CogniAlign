@@ -177,6 +177,16 @@
   **MAR/HMS 都负增益**，落点修正后仍不成立。
 - 脚本：`mps_pilot.py`、`mps_dora_pilot.py`。
 
+### OFA（NeurIPS 2025，负结果，2026-10-23）
+
+- 论文：LayerNorm γ/β 作为预条件子，CE + step-ratio + sharpness（Hutchinson）。
+- 实现：只训 decoder LayerNorm（0.15M）+ step-ratio；sharpness 未实现；
+  另做 DoRA + LayerNorm 混合版。
+- pool010 seed0：LN λ0 67.61/0.793；LN+step 64.79/0.780；
+  DoRA 对照 77.46/0.842；DoRA+LN+step 71.83/0.854。
+- 结论：LayerNorm 预条件子太弱；step-ratio 提升 AUC 但掉准确率；不采用。
+- 脚本：`ofa_pilot.py`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -211,6 +221,7 @@
 | `so_pilot.py` | SO 稀疏优化（ICCV 2025，负结果） |
 | `mps_pilot.py` | Preserve and Sculpt / MPS-Tuning（ICLR 2026，负结果） |
 | `mps_dora_pilot.py` | MPS-DoRA（训练内部 MAR/HMS，落点修正版，负结果） |
+| `ofa_pilot.py` | OFA（LayerNorm 预条件子 + step-ratio，负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
