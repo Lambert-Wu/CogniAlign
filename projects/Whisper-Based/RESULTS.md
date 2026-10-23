@@ -862,7 +862,34 @@ pool010：
   DoRA 的增益来自低秩 adapter + 冻结基底，SO 补不上这 10 分。
 - 结论：**SO 在 Whisper 8-shot 上不成立**；不采用。
 
-### 5.27 结论
+### 5.27 Preserve and Sculpt / MPS-Tuning（ICLR 2026，负结果）
+
+> 论文：Chen et al., ICLR 2026, *Preserve and Sculpt: Manifold-Aligned Fine-tuning
+> of VLMs for Few-Shot Learning*. 做法：MAR 对齐微调前后特征的 Gram 矩阵
+>（近似 Gromov-Wasserstein 上界）；HMS 用 query-support 对比学习拉开类间。
+> 我们的迁移：冻结 Whisper layer-16 特征 + 轻量投影头；全局 Gram 对齐 +
+> audio-audio 监督对比；CE + λ1 MAR + λ2 HMS。
+
+pool010（seed0，50 epochs）：
+
+| 配置 | acc | AUC |
+|---|---|---|
+| CE-only | 74.65 | 0.810 |
+| + MAR (λ=0.5) | 74.65 | 0.782 |
+| + HMS (λ=0.1) | 72.54 | 0.806 |
+| + MAR + HMS | 74.65 | 0.811 |
+| 线性探针（参考） | **77.11** | **0.830** |
+| 16 对 CSB decoder（参考） | 81.69 | 0.884 |
+
+- **CE-only 已经过拟合**：训练 CE 降到 0.0000，测试只有 74.65/0.810；
+  MAR/HMS 都没能改善，HMS 还掉准确率。
+- 我们的实现只做了**全局 Gram**（没做 token-level local MAR）和
+  **audio-audio 对比**（没做 image-text 跨模态）；但 CE-only 已低于线性探针，
+  完整版也很难把特征分支从 0.830 拉到能改变结论的量级。
+- 结论：**MPS-Tuning 的几何约束在冻结 Whisper 8-shot 特征上不成立**；
+  线性探针仍是更好的轻量特征分支。不采用。
+
+### 5.28 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

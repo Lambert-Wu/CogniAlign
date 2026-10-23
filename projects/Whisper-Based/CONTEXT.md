@@ -156,6 +156,18 @@
 - 结论：0.05% 更新在 8-shot 欠拟合；SO 的全模型稀疏 fine-tune 追不上 DoRA
   的低秩 adapter + 冻结基底。**不采用**。
 
+### MPS-Tuning / Preserve and Sculpt（负结果，2026-10-23）
+
+- ICLR 2026：Gram 对齐（MAR）+ query-support 对比（HMS），在 CLIP few-shot 上 +1–2.5。
+- 迁移：冻结 Whisper layer-16 + 投影头；全局 Gram + audio-audio SupCon；
+  CE + 0.5 MAR + 0.1 HMS；pool010 50 epochs。
+- pool010：CE-only 74.65/0.810；+MAR 74.65/0.782；+HMS 72.54/0.806；
+  +both 74.65/0.811；线性探针 77.11/0.830。
+- 结论：投影头 8-shot 直接过拟合（CE→0），MAR/HMS 救不回来；不采用。
+  实现只做了全局 MAR / audio-audio HMS；token-level 和 text 版未做，但 CE-only
+  已低于线性探针，完整版也难改变量级。
+- 脚本：`mps_pilot.py`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -187,6 +199,7 @@
 | `ibdr_pilot.py` | IBDR 一阶段 K 粒子 + DPP（负结果） |
 | `ibdr_two_stage.py` | IBDR 两阶段（英文基底 + 目标适应，负结果） |
 | `so_pilot.py` | SO 稀疏优化（ICCV 2025，负结果） |
+| `mps_pilot.py` | Preserve and Sculpt / MPS-Tuning（ICLR 2026，负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
