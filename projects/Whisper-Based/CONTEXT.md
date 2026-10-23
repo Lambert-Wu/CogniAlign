@@ -197,7 +197,10 @@
 - **两阶段比 DoRA +1.52，但低于 CSB/最好方法**；pool010 的 86.62 是单 seed 离群值。
 - SAM：pool010 3 seeds 79.11/0.878，低于 ERM 81.92/0.881；**flatness 没帮助**。
 - 结论：两阶段是小改进，不是新 SOTA；SAM 负结果；不采用为主方法。
-- 脚本：`flatfsl_pilot.py`。
+- **两阶段 + SSB4**：Stage1 英文 adapter 全局；Stage2 4 个子集；pool010
+  80.28/0.858、pool015 82.39/0.913；低于 CSB-16（81.69/0.884、83.80/0.924）。
+  组合没有超过 CSB，不采用。
+- 脚本：`flatfsl_pilot.py`、`flatfsl_ssb.py`。
 
 ### 未完成
 
@@ -235,6 +238,7 @@
 | `mps_dora_pilot.py` | MPS-DoRA（训练内部 MAR/HMS，落点修正版，负结果） |
 | `ofa_pilot.py` | OFA（LayerNorm 预条件子 + step-ratio，负结果） |
 | `flatfsl_pilot.py` | FlatFSL / 两阶段 DoRA（SAM 负结果，两阶段小正结果） |
+| `flatfsl_ssb.py` | 两阶段 + 4 对 SSB（负结果，低于 CSB） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
