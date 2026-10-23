@@ -282,6 +282,18 @@
 - 不用 beta/isotonic/Dirichlet；temp+bias 可做安全小校准；prior correction 需已知 prevalence。
 - 脚本 `calib_pilot.py`；RESULTS 5.36。
 
+### 多层/异质/MIL（2026-10-23）
+
+- 多层 probe：L16 0.847 → 12/16/20 0.867 → 12/16/20/24 **0.877**。
+- decoder+L16 fusion 0.8909；decoder+med_top **0.8939**；decoder+12/16/20 **0.8941**
+  （+0.0032 AUC，+0.14 acc）。全部层平均融合 0.8929（不选层，保守）。
+- Whisper-small 异质集成拖后腿（med_small 0.8698 / fuse 0.8918）；TRILLsson test 只有
+  142 测试者、无 support，不能作 8-shot 视图。
+- Segment attention MIL 0.8640，fuse 0.8898，不如多层；1–2 段/人，attention 无信息。
+- **合法 8-shot AUC 上限约 0.894**；0.925 需更多标签/未标注目标自训练/TTA/外部中文 AD。
+- 脚本：`layer_ensemble_pilot.py`、`hetero_ensemble_pilot.py`、`segment_mil_pilot.py`；
+  RESULTS 5.37。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -328,6 +340,9 @@
 | `orbit_geom_pilot.py` | ORBIT 合法子集：球面/双曲原型 + PoE（负结果） |
 | `mixup_pilot.py` | 表征级 Mixup / LPM-Aug 代理 / MLP probe 融合 |
 | `calib_pilot.py` | 8-shot 校准：support threshold/beta/temp+bias/prior/quantile |
+| `layer_ensemble_pilot.py` | Whisper 多层 probe 集成（正 AUC） |
+| `hetero_ensemble_pilot.py` | Whisper-small + medium 异质集成 |
+| `segment_mil_pilot.py` | Segment attention MIL |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
