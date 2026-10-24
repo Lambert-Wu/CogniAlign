@@ -427,6 +427,17 @@
 - 继续需目标域无标签 AD（transductive）/1000h+ 更大模型/回 Whisper。
 - `melmae_external.py`、`RESULTS 5.51`。
 
+### 15 池 CSB-16（2026-10-24）
+
+- 240 pair 模型（15×16），每 pair JSON 可续跑；3 workers；DoRA r8/5ep。
+- p16 **0.7948/0.8996**；p16f **0.7939/0.9076**；
+  p16f+prior **0.8080/0.9076**；p16+prior **0.8099/0.8996**；
+  quantile 0.8235/0.9076（transductive）；support threshold 0.7826（过拟合）。
+- 15 池 AUC 比之前 0.8941 +0.0135；**新 SOTA 0.9076 / 80.8 acc**。
+- 4 池 80.63/0.890 是 favorable subset；不再单独 headline。
+- 85 未到（需 AUC 0.925；quantile 82.35）。
+- `csb15_eval.py`、`csb15_fusion.py`、`srm15_resume.sh`；RESULTS 5.52。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -450,6 +461,8 @@
 | `dora_pilot.py` | DoRA / LoRA（`--model large` 已支持） |
 | `dora_ssb_pilot.py` | DoRA + SSB |
 | `srm_pool.py` | SRM 模型池（16 个 AD×HC 丢弃对） |
+| `srm15_resume.sh` | 15 池 CSB-16 续跑（worker 0/1/2） |
+| `csb15_eval.py` / `csb15_fusion.py` | 15 池 p16/p16f/阈值/prior + 多层融合 |
 | `srm_weight.py` | SRM 权重（交叉拟合风险 + 结构图 + LOSO λ） |
 | `srm_en_pool.py` | 英文留出验证池（4 个对角 SSB 模型） |
 | `srm_en_weight.py` | 英文 SRM 权重（47 个英文受试者） |
