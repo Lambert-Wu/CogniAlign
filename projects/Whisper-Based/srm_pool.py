@@ -55,6 +55,8 @@ def main():
     ap.add_argument("--pair-start", type=int, default=0)
     ap.add_argument("--pair-end", type=int, default=-1)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--ftp", action="store_true")
+    ap.add_argument("--adapter-dim", type=int, default=0)
     args = ap.parse_args()
 
     support = sorted(get_support(args.pool))
@@ -73,10 +75,10 @@ def main():
     pairs = pairs[args.pair_start:end]
 
     hub = D.FeatureHub(args.model)
-    builder = D.PromptBuilder(args.model, ftp=False)
+    builder = D.PromptBuilder(args.model, ftp=args.ftp)
     template = M.load_template(args.model)
     transcripts = T.load_all_transcripts()
-    cfg = T.TrainConfig(model_size=args.model, epochs=args.epochs,
+    cfg = T.TrainConfig(model_size=args.model, ftp=args.ftp, epochs=args.epochs,
                         batch_size=args.batch_size, eval_batch_size=32,
                         num_workers=args.num_workers)
 
@@ -100,9 +102,12 @@ def main():
         train_gids = en_gids + sup_g * 40
 
         T.set_seed(args.seed)
-        clf = M.build_classifier(template, use_ibi=False).to(device)
+        clf = M.build_classifier(template, use_ibi=False, adapter_dim=args.adapter_dim).to(device)
         for p in clf.parameters():
             p.requires_grad_(False)
+        if clf.adapter is not None:
+            for p in clf.adapter.parameters():
+                p.requires_grad_(True)
         replace_linear(clf.decoder, args.rank, args.alpha)
         clf = clf.to(device)
         ps = [p for p in clf.parameters() if p.requires_grad]

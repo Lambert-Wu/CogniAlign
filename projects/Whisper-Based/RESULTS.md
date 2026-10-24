@@ -1678,7 +1678,57 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
 **结论**：CSB-16 在 15 池上确实泛化，**0.9076 AUC / 80.8–81.0 acc** 是当前 8-shot 最可信的 SOTA；  
 4 池 80.63/0.890 是 favorable subset，不再单独当 headline。
 
-### 5.53 结论
+### 5.53 Whisper FTP transcript prompt：截断也救不了
+
+> 当前所有 CSB/DoRA 脚本默认 `ftp=False`；这轮加回 FTP，并把转写截断到 64 token
+> （`FTP_MAX_TOKENS=64`），避免 335-token 长转写压过音频。
+
+| 方法 | 池 | acc | AUC |
+|---|---|---|---|
+| no-FTP 单 decoder | 15 | 76.9 | 0.882 |
+| **FTP 全量（335 token，旧结果）** | fixed2024 | 76.76 | 0.791 |
+| FTP64 单 pair（pool001 pair0） | 1 pair | 81.69 | 0.891 |
+| **FTP64 单 decoder** | **15** | **70.47** | **0.828** |
+
+- 单 pair 看起来 AUC +0.008，但 **15 池均值掉到 0.828**，是噪声；
+- 转写是 ASR 结果，含错误/口语噪声；decoder 会过度依赖文本 prompt，压制音频；
+- **FTP 不进入 CSB-16**；当前 `srm_pool.py`/`multipool_decoder.py` 只保留 `--ftp` 开关，
+  默认仍 `False`。
+
+**还在 Whisper 上值得试的架构点**（预期都 ≤1 点，不会到 85）：
+1. **encoder bottleneck adapter**（零初始化，1024→64→1024，encoder 输出残差）；
+2. **multi-verbalizer ensemble**（Normal/Alzheimer、Healthy/Dementia、No/Yes 平均）；
+3. **CSB-16 多 seed 平均**（降方差，可能 +0.3–0.8）；
+4. **layer-gated fusion**（但固定多层已 0.9029 < layer16 0.9076，收益存疑）。
+
+### 5.54 Whisper encoder bottleneck adapter：也负
+
+> 在 encoder 输出后加零初始化 bottleneck adapter：1024→64→1024 残差，
+> 只训练 adapter + DoRA decoder；pool001 pair0 对照。
+
+| 方法 | acc | AUC |
+|---|---|---|
+| no-adapter（pool001 pair0） | 81.69 | 0.883 |
+| **adapter64** | **74.65** | **0.851** |
+
+- 单 pair 就掉 7 分 acc / 0.032 AUC；没有进入 15 池；
+- adapter 在 8-shot 下学不到跨语言域变换，反而干扰已经很强的 decoder；
+- 与 FTP、multi-layer fusion、gating 一样：**在 8-shot 里“加结构”收益为负**。
+
+**Whisper 侧已试的架构/读出改动**：
+
+| 改动 | 结果 |
+|---|---|
+| FTP 全量 / 64-token | 负（0.791 / 0.828） |
+| encoder adapter64 | 负（0.851） |
+| 多层 probe 融合 | 0.9029 < layer16 0.9076 |
+| 平等 gate / residual 多模态 | 负 |
+| support threshold | 过拟合（0.7826） |
+
+**当前 strict 8-shot SOTA 仍是**：
+**15 池 CSB-16 + layer16 probe = 0.7939 / 0.9076；prior = 0.8080 / 0.9076。**
+
+### 5.55 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

@@ -44,6 +44,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--num-workers", type=int, default=4)
+    ap.add_argument("--ftp", action="store_true")
     args = ap.parse_args()
 
     subs = Z.load_subjects()
@@ -71,10 +72,10 @@ def main():
     pools = sel
 
     hub = D.FeatureHub("medium")
-    builder = D.PromptBuilder("medium", ftp=False)
+    builder = D.PromptBuilder("medium", ftp=args.ftp)
     template = M.load_template("medium")
     transcripts = T.load_all_transcripts()
-    cfg = T.TrainConfig(model_size="medium", epochs=args.epochs,
+    cfg = T.TrainConfig(model_size="medium", ftp=args.ftp, epochs=args.epochs,
                         batch_size=args.batch_size, eval_batch_size=32,
                         num_workers=args.num_workers)
 
@@ -130,6 +131,8 @@ def main():
                       "n": len(accs)}
 
     suffix = "" if (args.start == 1 and end == args.pools) else f"_{args.start}_{end}"
+    if args.ftp:
+        suffix += "_ftp"
     path = os.path.join(C.logs_dir(), "results", f"multipool_decoder{suffix}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2)

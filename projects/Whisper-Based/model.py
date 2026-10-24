@@ -24,12 +24,21 @@ import common as C
 
 class WhisperDecoderClassifier(nn.Module):
     def __init__(self, decoder, proj_out, d_model: int, use_ibi: bool = False,
-                 bg_dim: int = 3, bg_hidden: int = 64):
+                 bg_dim: int = 3, bg_hidden: int = 64, adapter_dim: int = 0):
         super().__init__()
         self.decoder = decoder
         self.proj_out = proj_out
         self.d_model = d_model
         self.use_ibi = use_ibi
+        self.adapter = None
+        if adapter_dim > 0:
+            self.adapter = nn.Sequential(
+                nn.LayerNorm(d_model),
+                nn.Linear(d_model, adapter_dim), nn.GELU(),
+                nn.Linear(adapter_dim, d_model),
+            )
+            nn.init.zeros_(self.adapter[-1].weight)
+            nn.init.zeros_(self.adapter[-1].bias)
         if use_ibi:
             self.ibi = nn.Sequential(
                 nn.Linear(bg_dim, bg_hidden), nn.Tanh(), nn.Linear(bg_hidden, d_model)
@@ -43,6 +52,8 @@ class WhisperDecoderClassifier(nn.Module):
     def forward(self, enc: torch.Tensor, input_ids: torch.Tensor,
                 attention_mask: Optional[torch.Tensor] = None,
                 bg: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if self.adapter is not None:
+            enc = enc + self.adapter(enc.to(self.adapter[0].weight.dtype))
         out = self.decoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -62,6 +73,8 @@ class WhisperDecoderClassifier(nn.Module):
         答案 token 通常只有 1~3 个，这样 FTP 335-token 提示也不会产生
         [B, T, vocab] 的大张量。
         """
+        if self.adapter is not None:
+            enc = enc + self.adapter(enc.to(self.adapter[0].weight.dtype))
         out = self.decoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -84,14 +97,14 @@ def load_template(model_size: str):
     return WhisperForConditionalGeneration.from_pretrained(mdir, dtype=torch.float32)
 
 
-def build_classifier(template, use_ibi: bool = False) -> WhisperDecoderClassifier:
+def build_classifier(template, use_ibi: bool = False, adapter_dim: int = 0) -> WhisperDecoderClassifier:
     """从模板深拷贝出 decoder+proj_out（保持权重绑定），丢弃 encoder 省显存。"""
     full = copy.deepcopy(template)
     decoder = full.model.decoder
     proj_out = full.proj_out
     d_model = int(full.config.d_model)
     del full.model.encoder
-    clf = WhisperDecoderClassifier(decoder, proj_out, d_model, use_ibi=use_ibi)
+    clf = WhisperDecoderClassifier(decoder, proj_out, d_model, use_ibi=use_ibi, adapter_dim=adapter_dim)
     if not use_ibi:
         clf.ibi = None
     del full

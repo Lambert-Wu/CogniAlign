@@ -438,6 +438,14 @@
 - 85 未到（需 AUC 0.925；quantile 82.35）。
 - `csb15_eval.py`、`csb15_fusion.py`、`srm15_resume.sh`；RESULTS 5.52。
 
+### Whisper 架构改动负结果（2026-10-24）
+
+- FTP 全量 0.7676/0.791；FTP64 单 pair 81.69/0.891，但 **15 池 70.47/0.828**；
+- encoder bottleneck adapter64（pool001 pair0）**74.65/0.851**，no-adapter 81.69/0.883；
+- 多层 probe 0.9029 < layer16 0.9076；gate/residual 多模态负；support threshold 0.7826。
+- 当前 strict 8-shot SOTA：**15 池 CSB-16 p16f 0.7939/0.9076；prior 0.8080/0.9076**。
+- 结论：8-shot 加结构/加 prompt 都是负；85 需 56-shot/外部数据。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。

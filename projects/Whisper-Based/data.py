@@ -134,7 +134,7 @@ class PromptBuilder:
         ids = self.head_ids(lang)
         if self.ftp and transcript:
             tids = self.tokenizer.encode(transcript, add_special_tokens=False)
-            tids = tids[-FTP_MAX_TOKENS:]
+            tids = tids[-int(os.environ.get("FTP_MAX_TOKENS", str(FTP_MAX_TOKENS))):]
             ids = ids + tids + self.prefix_ids
         else:
             ids = ids + self.prefix_ids
