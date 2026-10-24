@@ -1606,7 +1606,27 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
 
 **结论**：from-scratch 轻量模型在 strict 8-shot 下不可用；不要替换 Whisper。
 
-### 5.50 结论
+### 5.50 FLEURS 中文 mel-MAE（10h 无标签预训练）
+
+> 代码 `fleurs_mel.py`、`melmae_external.py`；FLEURS `cmn_hans_cn` train：
+> 3246 wav → 1168 个 30s mel；English 569 段 + FLEURS 无标签；
+> 75% mask mel-MAE，40 epochs；再 English+8 中文 support 微调。
+
+| 模型 | 预训练数据 | acc | AUC |
+|---|---|---|---|
+| LiteWhisper（English-only） | 569 段 English | 45.99 | 0.4467 |
+| **LiteWhisper + FLEURS MAE** | 569 English + 1168 FLEURS | **66.76** | **0.6790** |
+| Whisper-medium DoRA + fusion | 680k h Whisper | **77.46** | **0.8941** |
+
+- **自监督预训练确实有效**：0.4467 → 0.6790（+0.232 AUC），从“低于随机”到“明显高于随机”；
+- 但 10h 普通话 + 569 英文，仍远小于 Whisper 的 680k 小时；AUC 差 **0.215**；
+- MAE loss 0.918 → 0.848（40 epochs），还没有完全收敛；加数据/加 epochs 可能再涨，但不会补 0.2；
+- **结论**：from-scratch 不是架构问题，是**数据规模**；10h 中文不够替代 Whisper 预训练。
+
+**如果继续 from-scratch**：需要 AISHELL-1（178h）/ MAGICDATA（755h）/ Common Voice 级别 + 更长预训练；
+即使这样，能否到 0.894 也不保证。**当前 SOTA 仍用 Whisper 预训练权重。**
+
+### 5.51 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

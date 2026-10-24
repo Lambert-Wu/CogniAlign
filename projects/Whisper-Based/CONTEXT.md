@@ -408,6 +408,15 @@
 - 要从零：大规模无标签 SSL 预训练 + 8-shot，或 56+ 标签/外部数据。
 - 脚本 `lite_speech_pilot.py`；RESULTS 5.49。
 
+### FLEURS mel-MAE（2026-10-24）
+
+- FLEURS cmn_hans_cn train（1.77GB）→ 3246 wav → 1168 个 30s mel。
+- English 569 + FLEURS 1168 无标签，75% mask mel-MAE（40 ep）；English+8 中文 support 微调。
+- **66.76 acc / 0.6790 AUC**；English-only from-scratch 45.99/0.4467；Whisper 77.46/0.8941。
+- SSL 有效（+0.232 AUC），但 10h vs Whisper 680k h；数据规模差距，不是架构。
+- 继续需 AISHELL-178h/MAGICDATA-755h + 更长预训练；不保证到 0.894。
+- `fleurs_mel.py`、`melmae_pilot.py`、`melmae_external.py`；RESULTS 5.50。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -478,6 +487,7 @@
 | `PAPER_SURVEY.md` | 相似论文 + SpeechCARE 组件调研 |
 | `lowpass_features.py` / `win5_features.py` | SpeechCARE low-pass / 5s 窗特征 |
 | `lite_speech_pilot.py` | 轻量 Whisper-style 从零训练（负结果） |
+| `fleurs_mel.py` / `melmae_pilot.py` / `melmae_external.py` | FLEURS mel-MAE + 8-shot |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
