@@ -399,6 +399,15 @@
 - 结论：不再借 8-shot 组件；85 需 56-shot/外部数据。
 - `PAPER_SURVEY.md`、`lowpass_features.py`、`win5_features.py`、RESULTS 5.48。
 
+### 轻量 from-scratch 模型（2026-10-24）
+
+- LiteWhisper：80 mel → 2 conv → 4 层 Transformer d=192 → ECAPA pooling；
+  **无 Whisper 预训练权重**；English 全量 + 8 中文 support；15 池 ×2 seeds。
+- **45.99 acc / 0.4467 AUC（低于随机）**；训练 loss 0.0005，完全过拟合。
+- 结论：不是架构问题，是没有预训练/数据太少；Whisper 预训练是跨语言 AD 的主要资产。
+- 要从零：大规模无标签 SSL 预训练 + 8-shot，或 56+ 标签/外部数据。
+- 脚本 `lite_speech_pilot.py`；RESULTS 5.49。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -468,6 +477,7 @@
 | `POOL50.md` | 50 池分析报告 |
 | `PAPER_SURVEY.md` | 相似论文 + SpeechCARE 组件调研 |
 | `lowpass_features.py` / `win5_features.py` | SpeechCARE low-pass / 5s 窗特征 |
+| `lite_speech_pilot.py` | 轻量 Whisper-style 从零训练（负结果） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |
