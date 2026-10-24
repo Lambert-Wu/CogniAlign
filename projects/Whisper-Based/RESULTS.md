@@ -1626,7 +1626,32 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
 **如果继续 from-scratch**：需要 AISHELL-1（178h）/ MAGICDATA（755h）/ Common Voice 级别 + 更长预训练；
 即使这样，能否到 0.894 也不保证。**当前 SOTA 仍用 Whisper 预训练权重。**
 
-### 5.51 结论
+### 5.51 AISHELL-1 53h 中文 mel-MAE：数据量也到平台
+
+> 数据：AISHELL-1 100 speakers → 5152 个 30s 窗（约 43h）+ FLEURS-zh 1168 窗（10h）
+> + English 569 段；mel-MAE 40 epochs；English+8 中文 support 微调；15 池 ×2 seeds。
+> 代码沿用 `melmae_external.py`；结果 `melmae_aishell.json`。
+
+| 预训练数据 | acc | AUC |
+|---|---|---|
+| English-only 569 | 45.99 | 0.4467 |
+| **FLEURS-zh 10h** | **66.76** | **0.6790** |
+| FLEURS-zh + en 20h | 62.77 | 0.6269 |
+| **AISHELL 43h + FLEURS-zh 10h（53h）** | **66.62** | **0.6686** |
+| Whisper-medium | 77.46 | 0.8941 |
+
+- **53h 没有超过 10h**：0.6686 vs 0.6790；加朗读语音数据到平台；
+- English FLEURS 会**稀释**中文（20h 掉到 0.627）；AISHELL+FLEURS 也没有额外收益；
+- MAE loss 0.900 → 0.809（40 epochs），还没有完全收敛，但 fine-tune AUC 已平台；
+- 问题不只是“数据量”，还有**域**（朗读语音 vs 自发 AD 语音）、**模型容量**、**MAE 配方**；
+- **from-scratch mel-MAE 在 8-shot 上仍远低于 Whisper 的 0.894**。
+
+**要继续，只能**：
+1. 用**目标域无标签 AD 语音**（transductive，当前不允许）；
+2. 用 **1000h+** 语音 + 更大模型 + 更长预训练；
+3. 或直接回到 Whisper 预训练。
+
+### 5.52 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

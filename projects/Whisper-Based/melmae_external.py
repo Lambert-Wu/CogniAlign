@@ -21,18 +21,30 @@ from melmae_pilot import MAE, MAECls, pretrain, train_cls, load_mel, DEV
 def main():
     mel_en = load_mel("train")
     mel_te = load_mel("test")
-    mel_ex = np.load(os.environ.get("MEL_EX", "/tmp/fleurs/mel.npy")).astype(np.float32)
-    if mel_ex.shape[2] < 3008:
-        pad = np.zeros((len(mel_ex), mel_ex.shape[1], 3008), dtype=np.float32)
-        pad[:, :, :mel_ex.shape[2]] = mel_ex
-        mel_ex = pad
+    paths = os.environ.get("MEL_EX", "/tmp/fleurs/mel.npy").split(",")
+    parts = []
+    for p in paths:
+        a = np.load(p).astype(np.float32)
+        if a.shape[2] < 3008:
+            pad = np.zeros((len(a), a.shape[1], 3008), dtype=np.float32)
+            pad[:, :, :a.shape[2]] = a
+            a = pad
+        parts.append(a)
+        print("external part", p, a.shape, flush=True)
+    mel_ex = np.vstack(parts)
     print("en", mel_en.shape, "external", mel_ex.shape, flush=True)
     mel_pre = np.vstack([mel_en, mel_ex])
     # shuffle once
     rng = np.random.default_rng(0)
     mel_pre = mel_pre[rng.permutation(len(mel_pre))]
-    mae = pretrain(mel_pre, epochs=40)
-    torch.save(mae.state_dict(), os.path.join(C.logs_dir(), "results", os.environ.get("MAE_CKPT", "melmae_fleurs.pt")))
+    ckpt = os.path.join(C.logs_dir(), "results", os.environ.get("MAE_CKPT", "melmae_fleurs_multi.pt"))
+    if os.path.exists(ckpt):
+        mae = MAE().to(DEV)
+        mae.load_state_dict(torch.load(ckpt, map_location=DEV))
+        print("[load]", ckpt, flush=True)
+    else:
+        mae = pretrain(mel_pre, epochs=int(os.environ.get("MAE_EPOCHS", "40")))
+        torch.save(mae.state_dict(), ckpt)
 
     rows_en = pd.read_csv(os.path.join(C.logs_dir(), "features", "whisper-medium",
                                        "rows_train.csv"), dtype={"uid": str})
@@ -65,7 +77,7 @@ def main():
     df = pd.DataFrame(rows)
     print("\n=== 15 pools (2 seeds) ===")
     print(df[["acc", "auc"]].mean(), df[["acc", "auc"]].std())
-    with open(os.path.join(C.logs_dir(), "results", os.environ.get("MAE_OUT", "melmae_fleurs.json")), "w",
+    with open(os.path.join(C.logs_dir(), "results", os.environ.get("MAE_OUT", "melmae_fleurs_multi.json")), "w",
               encoding="utf-8") as fh:
         json.dump({"per_pool": rows}, fh, ensure_ascii=False, indent=2)
     print(f"[saved] logs/results/{os.environ.get('MAE_OUT', 'melmae_fleurs.json')}")

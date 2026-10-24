@@ -417,6 +417,16 @@
 - 继续需 AISHELL-178h/MAGICDATA-755h + 更长预训练；不保证到 0.894。
 - `fleurs_mel.py`、`melmae_pilot.py`、`melmae_external.py`；RESULTS 5.50。
 
+### AISHELL 53h mel-MAE（2026-10-24）
+
+- AISHELL-1 100 speakers → 5152 个 30s 窗（43h）+ FLEURS-zh 10h + English 569；
+  40 ep mel-MAE；English+8 中文 support 微调。
+- **66.62 acc / 0.6686 AUC**；FLEURS-zh 10h 66.76/0.6790；English-only 45.99/0.4467；
+  FLEURS zh+en 20h 62.77/0.6269；Whisper 77.46/0.8941。
+- **53h 没超过 10h**：朗读语音数据到平台；英文稀释中文；域/容量/配方，不只是数据量。
+- 继续需目标域无标签 AD（transductive）/1000h+ 更大模型/回 Whisper。
+- `melmae_external.py`、`RESULTS 5.51`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -487,7 +497,8 @@
 | `PAPER_SURVEY.md` | 相似论文 + SpeechCARE 组件调研 |
 | `lowpass_features.py` / `win5_features.py` | SpeechCARE low-pass / 5s 窗特征 |
 | `lite_speech_pilot.py` | 轻量 Whisper-style 从零训练（负结果） |
-| `fleurs_mel.py` / `melmae_pilot.py` / `melmae_external.py` | FLEURS mel-MAE + 8-shot |
+| `fleurs_mel.py` / `melmae_pilot.py` / `melmae_external.py` | FLEURS/AISHELL mel-MAE + 8-shot |
+| `thchs_mel.py` | THCHS mel（未使用） |
 | `dncl_linear.py` / `dncl_ssb_pilot.py` | DNCL 负结果 |
 | `cheap_trio.py` | SWA/batch16/median 负结果 |
 | `order_pilot.py` | 数据排列负结果 |

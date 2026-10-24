@@ -17,8 +17,8 @@ N_MEL = 80
 HOP = 160
 FRAMES = 3000
 WIN = 30 * SR
-ROOT = "/tmp/fleurs/extracted"
-OUT = "/tmp/fleurs/mel.npy"
+ROOT = os.environ.get("FLEURS_ROOT", "/tmp/fleurs/extracted")
+OUT = os.environ.get("FLEURS_OUT", "/tmp/fleurs/mel.npy")
 
 
 def main():
