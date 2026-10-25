@@ -560,6 +560,10 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
   - CSB support 误差：hard 0.9078（β 无影响）、ridge 0.8993；
   - **CSB 在 8 support 上几乎全对，没有 error 可学**；surrogate 错误不迁移；
   - 这条线关闭；`error_focused_probe.py`、`error_focused_csb.py`；RESULTS 5.64。
+- **独立文本 probe 也负**：XLM-R 768 维，文本单独 0.7087；
+  p16 + 文本 w=0.01/0.1 = 0.8986/0.8932，门控最好 0.8980，
+  全部低于 0.9076。音频表征已含语言信息，文本更噪且不互补；
+  `text_probe.py` / `text_probe_extra.py`；RESULTS 5.65。
 
 ### 未完成
 
@@ -602,6 +606,7 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 | `triple_fusion.py` / `gated_probe.py` | 三方 / 门控融合负结果 |
 | `COUNTERMEASURES.md` | 对策完整报告 |
 | `error_focused_probe.py` / `error_focused_csb.py` | 残差/难例/误差门控（负结果） |
+| `text_probe.py` / `text_probe_extra.py` | XLM-R 独立文本 probe（负结果） |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
