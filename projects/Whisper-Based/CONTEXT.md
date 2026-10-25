@@ -12,8 +12,10 @@
 | 单 decoder | 76.90 | 0.882 |
 | CSB-16 p16 | 79.48 | 0.8996 |
 | **CSB-16 + layer16 probe（p16f）** | **79.39** | **0.9076** |
-| **p16f + prior（已知 40.7% prevalence）** | **80.61** | **0.9076** |
-| p16f + OOF 温度 + prior（探索） | 81.46 | 0.9076 |
+| p16f + prior（已知 40.7% prevalence） | 80.61 | 0.9076 |
+| **BCP：bagged 联合 probe + prior（B=50，w=0.2）** | **81.16** | **0.9081** |
+| BCP B=25/100 | **81.38 / 81.33** | 0.9089 / 0.9087 |
+| p16f + OOF 温度 + prior（探索） | 81.46 | 0.9076（AUC 掉的温度版 0.9045） |
 | 56-shot（标签曲线） | 86.06 | 0.9289 |
 
 **可写的贡献（按可信度排序）**
@@ -36,11 +38,20 @@
 4. **跨语言 probe + decoder 融合**：L16 探针把 AUC 从 0.8996 提到 0.9076；
    纯英文探针融合 AUC 0.9083，但阈值错位、acc 只有 78.97（prior 后）。
 5. **prevalence-aware 校准**：队列 prevalence 61/150=40.7% → acc 79.39→80.61。
-6. **系统负结果**：外部朗读 HC、AdaIN、SpecAugment、Mixup、FTP、adapter、
-   from-scratch mel-MAE、其他模态、gated/residual fusion 全部没有超过。
+6. **BCP（Bagged Cross-Lingual Probe）**：对 English + 8 support 的联合 probe
+   做 50 次 bootstrap，平均概率，w=0.2 接 decoder，prior 校准：
+   **acc 81.16–81.38 / AUC 0.9081–0.9089**（vs 80.61 / 0.9076）。
+   Δacc +0.70 点，bootstrap 95% CI [+0.19, +1.27]，p=0.0028；
+   ΔAUC 不显著（CI 含 0）。收益是概率平滑/校准，不是排序。
+   单独温度校准也能到 81.22，但 AUC 掉到 0.9045；bagging 更好。
+7. **系统负结果**：外部朗读 HC、AdaIN、SpecAugment、Mixup、FTP、adapter、
+   from-scratch mel-MAE、其他模态、gated/residual fusion、ORA、shrinkage
+   stacking、gated probe、三方融合全部没有超过。
 
-**还没解决**：strict 8-shot 85% 不可达（AUC 0.9076 的 acc 上限约 83%）；
+**还没解决**：strict 8-shot 85% 不可达（AUC 0.909 的 acc 上限约 83%）；
 85 只能靠 56-shot（86.06）或外部**临床**中文 AD 数据。
+**probe 更准 ≠ 融合更好**：bag_en_zh probe 0.862，但接 decoder 只有 0.902；
+decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 
 ## 0. 旧记忆（已压缩）
 
@@ -518,6 +529,23 @@
 - **纯英文探针 + decoder**：AUC 0.9083（w=0.3），但 acc 74.65；prior 后 78.97，
   不如联合 probe。`fusion_extra.py`、`zero_anchor.py`。
 
+### 方向诊断后的对策（2026-10-25）
+
+- **BDE**：bag 英文方向 + 单个 8-shot 中文方向 → probe **0.8617/0.8465**
+  （vs fixed 0.8388/0.8249；13/15、14/15 胜）。
+- **RSE**：随机 64 维子空间，英文+中文各一套 → **0.8585/0.8592**；
+  L24 `rand_sub` 0.8642。
+- **ORA / shrinkage stacking / gated probe / 三方融合**：全负。
+- **接 decoder 的负结果**：`bag_en_zh/rand_en_zh/rand_sub` 的 AUC 0.9009–0.9017
+  < 0.9076；probe 更准但与 decoder 误差重叠。
+- **BCP 正结果**：bag 联合 probe（English+8 support，B=50，w=0.2）→
+  **81.16 / 0.9081**；B=25/100 81.38/81.33，AUC 0.9089/0.9087。
+  Δacc +0.70 点（95% CI +0.19–+1.27，p=0.0028）；ΔAUC 不显著。
+- 温度对照：单 probe 温度校准 81.22 但 AUC 0.9045；bagging 保持 AUC。
+- w 不能从 support 选（OOF 全选 w=0）；w=0.2 沿用原协议。
+- `countermeasures.py`、`bag_combined*.py`、`probe_temp.py`、
+  `COUNTERMEASURES.md`；RESULTS 5.63。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -552,6 +580,12 @@
 | `direction_domain_align.py` | 中心化/白化/CORAL 控制 |
 | `fusion_significance.py` | 固定 0.5/0.5 融合的配对检验 |
 | `DIRECTION_PROOF.md` | 方向证明完整报告 |
+| `countermeasures.py` | BDE / RSE / ORA / stacking / 门控（probe 层） |
+| `countermeasures_decoder.py` | bag_en_zh / rand 接 decoder |
+| `bag_combined.py` / `bag_combined_verify.py` / `bag_combined_seeds.py` | BCP（bagged 联合 probe） |
+| `probe_temp.py` | 单 probe 温度校准对照 |
+| `triple_fusion.py` / `gated_probe.py` | 三方 / 门控融合负结果 |
+| `COUNTERMEASURES.md` | 对策完整报告 |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
