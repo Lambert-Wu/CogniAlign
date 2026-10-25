@@ -22,10 +22,17 @@
    acc 57–85，单池结果不可引用；必须报池均值/方差。
 2. **成对类别均衡集成（CSB）消融**：p1 74.66 → p4 76.24 → p8 79.08 → p16 79.48；
    增益来自“成对均衡 + 多对集成”，8 对已饱和（16 对不是必须）。
-3. **跨语言可迁移的类可分几何（分析）**：纯英文 LR 零样本在中文 L24 达
-   **AUC 0.805**，8 个中文标签只加到 0.833；但英文/中文 LR 权重余弦只有
-   **0.08**——transfer **不是靠共享方向**，而是靠共享的类可分几何。
-   strict 8-shot 主要是在重新定方向/校准。这是最有“科学发现”味的一条。
+3. **跨语言可迁移的类可分几何（已做严谨对照）**：纯英文 LR 零样本在中文
+   L16/L24 达 **AUC 0.774/0.805**，但英中 LR 权重余弦只有 **0.077/0.089**；
+   同语言 pool→pool 余弦高 3 倍（**0.279/0.233**），AUC 却相同（0.782/0.765）。
+   跨语言 cos 在同语言分布的 6–11 百分位，AUC 在 44–70 百分位；cos 十分位
+   从 0.05 到 0.53，AUC 只变 +0.02。低余弦不是小样本噪声（分半 0.235/0.412，
+   reliability 随 n 上升，跨语言不升）、不是时长/性别、不是整体均值/协方差偏移
+   （中心化不变；白化/CORAL 反而掉点）。固定 0.5/0.5 融合把 probe 从
+   0.774/0.805 提到 **0.839/0.825**，说明两个方向**互补**。
+   结论：**迁移不是靠共享方向**；英文方向可迁移，但不是中文会学到的方向；
+   可迁移的是英文方向 + 共享类可分几何，8-shot 是小角度关键修正。
+   详见 `DIRECTION_PROOF.md`、RESULTS 5.62。
 4. **跨语言 probe + decoder 融合**：L16 探针把 AUC 从 0.8996 提到 0.9076；
    纯英文探针融合 AUC 0.9083，但阈值错位、acc 只有 78.97（prior 后）。
 5. **prevalence-aware 校准**：队列 prevalence 61/150=40.7% → acc 79.39→80.61。
@@ -538,6 +545,13 @@
 | `csb15_eval.py` / `csb15_fusion.py` | 15 池 p16/p16f/阈值/prior + 多层融合 |
 | `csb15_ablation.py` | CSB-N 消融（p1/p4/p8/p16） |
 | `en_direction_scan.py` | 英文零样本 AD 方向 / 各层跨语言 probe |
+| `direction_proof.py` | 方向证明主实验（H1–H6） |
+| `within_zh_analysis.py` | 210 个同语言 pool→pool、cos–AUC 分离 |
+| `direction_robustness.py` | 层/分类器/bootstrap/性别控制 |
+| `direction_extra.py` | reliability-vs-n、英文 LDA 余弦 |
+| `direction_domain_align.py` | 中心化/白化/CORAL 控制 |
+| `fusion_significance.py` | 固定 0.5/0.5 融合的配对检验 |
+| `DIRECTION_PROOF.md` | 方向证明完整报告 |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
