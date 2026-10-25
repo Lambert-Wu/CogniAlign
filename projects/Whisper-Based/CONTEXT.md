@@ -7,16 +7,20 @@
 
 **Strict 8-shot（4 AD + 4 HC，15 池，subject-level）**
 
-| 方法 | acc | AUC |
+| 方法 | acc@0.5 | AUC |
 |---|---|---|
 | 单 decoder | 76.90 | 0.882 |
 | CSB-16 p16 | 79.48 | 0.8996 |
-| **CSB-16 + layer16 probe（p16f）** | **79.39** | **0.9076** |
-| p16f + prior（已知 40.7% prevalence） | 80.61 | 0.9076 |
-| **BCP：bagged 联合 probe + prior（B=50，w=0.2）** | **81.16** | **0.9081** |
-| BCP B=25/100 | **81.38 / 81.33** | 0.9089 / 0.9087 |
-| p16f + OOF 温度 + prior（探索） | 81.46 | 0.9076（AUC 掉的温度版 0.9045） |
+| **CSB-16 + layer16 probe（p16f，no prior）** | **79.39** | **0.9076** |
+| **BCP（no prior）** | **79.25** | **0.9082** |
+| p16f + prior（**假设** 40.7%） | 80.61* | 0.9076 |
+| BCP + prior（**假设** 40.7%） | 81.16* | 0.9081 |
+| BCP + prior（**假设** 30%） | 82.39* | 0.9081 |
 | 56-shot（标签曲线） | 86.06 | 0.9289 |
+
+> **`*` prevalence-dependent，不是稳健 SOTA。** assumed prevalence 从 0.10 到 0.70，
+> accuracy 在 **73.5–82.4** 之间变化；0.5 阈值下 BCP 79.25 vs p16f 79.39
+> （p=0.63），**没有增益**。主指标应报 **AUC + acc@0.5**；prior 只作敏感性分析。
 
 **可写的贡献（按可信度排序）**
 
@@ -39,19 +43,22 @@
    纯英文探针融合 AUC 0.9083，但阈值错位、acc 只有 78.97（prior 后）。
 5. **prevalence-aware 校准**：队列 prevalence 61/150=40.7% → acc 79.39→80.61。
 6. **BCP（Bagged Cross-Lingual Probe）**：对 English + 8 support 的联合 probe
-   做 50 次 bootstrap，平均概率，w=0.2 接 decoder，prior 校准：
-   **acc 81.16–81.38 / AUC 0.9081–0.9089**（vs 80.61 / 0.9076）。
-   Δacc +0.70 点，bootstrap 95% CI [+0.19, +1.27]，p=0.0028；
-   ΔAUC 不显著（CI 含 0）。收益是概率平滑/校准，不是排序。
-   单独温度校准也能到 81.22，但 AUC 掉到 0.9045；bagging 更好。
+   做 50 次 bootstrap，平均概率，w=0.2 接 decoder。
+   **prevalence-free：79.25 / 0.9082**，vs p16f 79.39 / 0.9076
+   （acc p=0.63，AUC p=0.54）——**没有显著增益**。
+   加 prior（假设 40.7%）才到 81.16；改假设 30% 到 82.39，改 10% 掉到 73.47。
+   **结论：BCP 是校准变体，不是稳健 SOTA；81.16 不能作为 headline。**
 7. **系统负结果**：外部朗读 HC、AdaIN、SpecAugment、Mixup、FTP、adapter、
    from-scratch mel-MAE、其他模态、gated/residual fusion、ORA、shrinkage
    stacking、gated probe、三方融合全部没有超过。
+8. **prevalence 敏感性（方法学）**：任何 accuracy 都必须报 assumed prevalence；
+   0.10–0.70 可让 acc 在 73.5–82.4 间变化。论文主表用 **AUC + acc@0.5**。
 
 **还没解决**：strict 8-shot 85% 不可达（AUC 0.909 的 acc 上限约 83%）；
 85 只能靠 56-shot（86.06）或外部**临床**中文 AD 数据。
 **probe 更准 ≠ 融合更好**：bag_en_zh probe 0.862，但接 decoder 只有 0.902；
 decoder 融合增益来自“不同错误”，不是更高单独 AUC。
+**prevalence 不可靠**：prior 校准不是方法增益，是阈值假设；不要用它刷 acc。
 
 ## 0. 旧记忆（已压缩）
 
@@ -538,9 +545,12 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 - **ORA / shrinkage stacking / gated probe / 三方融合**：全负。
 - **接 decoder 的负结果**：`bag_en_zh/rand_en_zh/rand_sub` 的 AUC 0.9009–0.9017
   < 0.9076；probe 更准但与 decoder 误差重叠。
-- **BCP 正结果**：bag 联合 probe（English+8 support，B=50，w=0.2）→
-  **81.16 / 0.9081**；B=25/100 81.38/81.33，AUC 0.9089/0.9087。
-  Δacc +0.70 点（95% CI +0.19–+1.27，p=0.0028）；ΔAUC 不显著。
+- **BCP 校准变体**：bag 联合 probe（English+8 support，B=50，w=0.2）。
+  prevalence-free **79.25 / 0.9082** vs p16f 79.39 / 0.9076
+  （acc p=0.63，AUC p=0.54）——**没有显著增益**。
+  加 prior（假设 40.7%）才到 81.16；假设 30% 到 82.39，10% 掉到 73.47。
+- **prevalence 敏感性**：0.10–0.70 让 acc 在 73.5–82.4 间变化；
+  prior 是阈值假设，不是方法增益。主表用 AUC + acc@0.5。
 - 温度对照：单 probe 温度校准 81.22 但 AUC 0.9045；bagging 保持 AUC。
 - w 不能从 support 选（OOF 全选 w=0）；w=0.2 沿用原协议。
 - `countermeasures.py`、`bag_combined*.py`、`probe_temp.py`、

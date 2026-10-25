@@ -116,41 +116,69 @@ score = s_en + λ s_perp,  λ ∈ {0, .25, .5, .75, 1, 1.5, 2}
   误差重叠更多，互补性下降；
 - prior acc 看起来更高，是阈值/校准效应，不能当排序提升。
 
-### 4.2 关键正结果：bagging **联合 probe**（English + 8 support）
+### 4.2 bagging 联合 probe：prevalence-free 没有增益
 
-| 设定 | acc@0.5 | AUC | prior acc |
+| 设定 | acc@0.5 | AUC | prior acc（**假设** 40.7%） |
 |---|---|---|---|
-| 单 probe，w=0.2 | 79.39 | 0.9076 | 80.61 |
-| **bagged probe，B=50，w=0.2** | **79.58** | **0.9081** | **81.16** |
-| bagged probe，B=25，w=0.2 | — | 0.9089 | **81.38** |
-| bagged probe，B=100，w=0.2 | — | 0.9087 | **81.33** |
-| bagged probe，w=0.3 | — | 0.9095 | 81.22 |
+| 单 probe，w=0.2 | **79.39** | 0.9076 | 80.61 |
+| bagged probe，B=50，w=0.2 | 79.25 | **0.9082** | 81.16 |
+| bagged probe，B=25，w=0.2 | — | 0.9089 | 81.38 |
+| bagged probe，B=100，w=0.2 | — | 0.9087 | 81.33 |
 
-- **accuracy：81.16–81.38 vs 80.61**，B=50 的配对 bootstrap：
-  Δacc = **+0.70 个百分点**，95% CI **[+0.19, +1.27]**，p=0.0028；
-- **AUC：+0.0006**，95% CI [−0.0012, +0.0024]，p=0.27 → **排序没变**；
-- 结论：bagging 的收益主要是**概率平滑/校准**，不是排序；
-- **w 不能从 support 选**：8 个 OOF support 上 decoder 几乎饱和，
-  15 个池全部选到 w=0；所以 w=0.2 沿用原协议，w=0.3 只作敏感性，不宣称。
+- **prevalence-free：BCP 79.25 vs 79.39，反而略低**（p=0.63，6/15 胜）；
+- AUC +0.0006（p=0.54），**不显著**；
+- 81.16 只在**假设 40.7%** 时成立；这不是方法增益，是阈值假设；
+- **w 不能从 support 选**：8 个 OOF support 上 decoder 饱和，
+  15 个池全选 w=0；w=0.2 沿用原协议。
 
-### 4.3 归因对照：温度校准 vs bagging
+### 4.3 Prevalence 敏感性（最重要的修正）
 
-| 设定 | AUC | prior acc |
+| 假设 prevalence π | 单 probe acc | BCP acc |
+|---|---|---|
+| 0.10 | 74.65 | 73.47 |
+| 0.20 | 80.61 | 80.00 |
+| 0.30 | 82.11 | **82.39** |
+| 0.40 | 80.80 | 81.31 |
+| 0.50 | 79.39 | 79.58 |
+| 0.60 | 76.95 | 76.06 |
+| 0.70 | 72.58 | 71.31 |
+
+- accuracy 在 **73.5–82.4** 之间随假设 prevalence 变化；
+- π=0.30 比 π=0.407 更高：连“40.7%”也不是最优阈值；
+- BCP 只在 π≈0.30–0.50 略好，其他区间更差；
+- **81.16/81.38 不能当 SOTA**；任何 accuracy 必须报 assumed prevalence
+  和敏感性曲线。
+
+### 4.4 归因对照：温度校准 vs bagging
+
+| 设定 | AUC | prior acc（假设 40.7%） |
 |---|---|---|
 | 单 probe | **0.9076** | 80.61 |
 | 单 probe + OOF 温度（a≈0.40） | 0.9045 | **81.22** |
-| bagged probe（B=50） | **0.9081** | **81.16** |
+| bagged probe（B=50） | **0.9082** | **81.16** |
 
-- 单纯温度校准也能把 acc 拉到 81.22，但 **AUC 掉到 0.9045**；
-- bagging 同时做“概率平滑 + 方差降低”，acc 到 81.16–81.38，AUC 保持 0.908；
-- 所以 bagging 比“只调温度”更可取。
+- 两者都依赖 prior；温度版 AUC 掉到 0.9045，bagging 保持 0.9082；
+- 但 bagging 的收益仍是**校准/阈值**，不是排序。
+
+### 4.5 prevalence-free 校准也失败
+
+| 方法 | acc@0.5 | AUC |
+|---|---|---|
+| BCP 原概率 | 79.25 | 0.9082 |
+| BCP + English OOF Platt | 79.44 | 0.9069 |
+| BCP + English OOF 阈值平移 | 79.39 | — |
+
+- 用英文 OOF 学阈值/校准再迁移，**没有提升**；
+- 说明跨语言概率校准本身不迁移；prior 的“提升”只是碰巧接近测试分布。
 
 ---
 
 ## 5. 解释与边界
 
-- **为什么 bagging 有效**：英文方向 split-half 只有 0.235/0.270，方差大；
-  bagging 平均 50 个方向，降低方差；
+- **为什么 bagging 在 probe 上有效**：英文方向 split-half 只有 0.235/0.270，
+  方差大；bagging 平均 50 个方向，降低方差；
+- **为什么 bagging 到 decoder 上没有稳健增益**：decoder 已经吃掉了稳定的
+  英文信号；bagging 让 probe 更准，但也让它更像 decoder，互补性下降；
 - **为什么中文不能 bagging**：8 个点重采样后有效样本更少，方向更不稳
   （`bag_zh` 0.767/0.752，低于单方向）；
 - **为什么 ORA 失败**：正交化把 8 点噪声放大；诊断说“方向正交”，
@@ -160,18 +188,26 @@ score = s_en + λ s_perp,  λ ∈ {0, .25, .5, .75, 1, 1.5, 2}
 - **为什么 probe 更准但融合更差**：decoder 已经吃掉了稳定的英文信号；
   bagging/random subspace 让 probe 更准，但也让它更像 decoder，
   **互补性下降**。融合增益来自“不同错误”，不是“更高单独 AUC”。
-- **边界**：15 池不独立；acc 增益是校准效应；AUC 未显著提升；
+- **边界**：15 池不独立；prevalence-free 没有增益；AUC 未显著提升；
   support 只有 8 点，无法可靠选择融合权重；仍不使用测试输入。
+- **prevalence 不是方法**：prior 校准把 accuracy 从 73.5 拉到 82.4 都可以，
+  取决于假设；不能把它当 SOTA。
 
-## 6. 建议
+## 6. 建议（修正版）
 
-- **主结果（按 accuracy）**：CSB-16 p16 + bagged combined probe（B=50，w=0.2）
-  + prior = **81.16 / 0.9081**；B=25/100 给 81.33–81.38 / 0.9087–0.9089。
-- **按 AUC**：仍是 **0.9076–0.9089**，没有显著提升；不要把 acc 的 +0.7 点
-  说成排序提升。
-- **方法命名建议**：**Bagged Cross-Lingual Probe (BCP)**：
-  bag English + 8-shot support，固定 0.5/0.5 / 固定融合权重，prior 校准。
-- **下一步真正可能提升 AUC 的方向**：不是“更准的 probe”，而是
-  **与 decoder 错误不重叠的 probe**（residual/error-focused boosting、
-  decoder 的 English 交叉拟合残差、或更多中文临床标签）。
+- **主结果只报 prevalence-free**：
+  - **单 probe：79.39 / 0.9076**；
+  - **BCP：79.25 / 0.9082**；
+  - 两者差异不显著（acc p=0.63，AUC p=0.54）。
+- **prior 校准只作敏感性分析**：明确写 assumed prevalence，
+  并给 0.10–0.70 的曲线；不要用 81.16/81.38 当 headline。
+- **BCP 的定位**：校准变体 / 负结果，不是稳健 SOTA；
+  它说明“bagging 让 probe 更准，但 decoder 融合吃不到”。
+- **下一步真正可能提升 AUC 的方向**：
+  - **error-focused / residual probe**：专门学 decoder 错在哪，
+    而不是再提高 probe 单独 AUC；
+  - 需要 decoder 的 English 交叉拟合残差（要重训 16×5 折，成本高）；
+  - 或更多中文**临床**标签（56-shot 86.06/0.929）。
 - 85% 仍不可达：AUC 0.908 → acc 上限约 83%；需要 56-shot 或外部临床中文数据。
+- **评估规范**：以后所有 accuracy 必须同时报
+  `acc@0.5`、`AUC`、`assumed prevalence` 和敏感性；否则数字不可比。

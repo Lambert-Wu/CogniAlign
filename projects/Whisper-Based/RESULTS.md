@@ -1955,36 +1955,47 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
   与 decoder 的误差重叠更多，互补性下降；
 - prior acc 更高是阈值/校准效应，不是排序提升。
 
-**关键正结果：bagging 联合 probe（English + 8 support）**
+**bagging 联合 probe（English + 8 support）：prevalence-free 没有增益**
 
-| 设定 | acc@0.5 | AUC | prior acc |
+| 设定 | acc@0.5 | AUC | prior acc（假设 40.7%） |
 |---|---|---|---|
-| 单 probe，w=0.2 | 79.39 | 0.9076 | 80.61 |
-| **bagged combined，B=50，w=0.2** | **79.58** | **0.9081** | **81.16** |
-| bagged combined，B=25，w=0.2 | — | 0.9089 | **81.38** |
-| bagged combined，B=100，w=0.2 | — | 0.9087 | **81.33** |
-| bagged combined，w=0.3 | — | 0.9095 | 81.22 |
+| 单 probe，w=0.2 | **79.39** | 0.9076 | 80.61 |
+| bagged combined，B=50，w=0.2 | 79.25 | 0.9082 | 81.16 |
+| bagged combined，B=25，w=0.2 | — | 0.9089 | 81.38 |
+| bagged combined，B=100，w=0.2 | — | 0.9087 | 81.33 |
 
-- **准确率新 SOTA（同协议）**：**81.16–81.38 / 0.9081–0.9089**，高于
-  80.61 / 0.9076；
-- B=50 配对 bootstrap：Δacc **+0.70 个百分点**，95% CI **[+0.19, +1.27]**，
-  p=0.0028；ΔAUC **+0.0006**，95% CI [−0.0012, +0.0024]，p=0.27；
-- **AUC 没有显著提升**；收益是概率平滑/校准，不是排序；
-- **w 不能从 8 support 选**：OOF support 上 decoder 饱和，15 池全选 w=0；
-  w=0.2 沿用原协议，w=0.3 只作敏感性，不宣称；
-- B=25/50/100 × 3 seeds 稳定：prior acc 0.8116–0.8138，AUC 0.9081–0.9089。
+- **prevalence-free：79.25 vs 79.39，BCP 反而略低**（p=0.63，6/15 胜）；
+- AUC +0.0006（p=0.54），**不显著**；
+- prior acc 81.16 只在**假设 40.7%**时成立；见下面敏感性。
 
-**归因对照**
+**Prevalence 敏感性（这轮最重要的结论）**
 
-| 设定 | AUC | prior acc |
+| 假设 prevalence π | 单 probe acc | BCP acc |
 |---|---|---|
-| 单 probe | **0.9076** | 80.61 |
-| 单 probe + OOF 温度（a≈0.40） | 0.9045 | **81.22** |
-| bagged combined（B=50） | **0.9081** | **81.16** |
+| 0.10 | 74.65 | 73.47 |
+| 0.20 | 80.61 | 80.00 |
+| 0.30 | 82.11 | **82.39** |
+| 0.40 | 80.80 | 81.31 |
+| 0.50 | 79.39 | 79.58 |
+| 0.60 | 76.95 | 76.06 |
+| 0.70 | 72.58 | 71.31 |
 
-- 单纯温度校准也能到 81.22，但 AUC 掉到 0.9045；
-- bagging 同时做“概率平滑 + 降方差”，acc 到 81.16–81.38，AUC 保持 0.908；
-- **bagging 比只调温度更可取**。
+- **accuracy 在 73.5–82.4 之间随假设 prevalence 变化**；
+- π=0.30 比 π=0.407 更高，说明“40.7%”也不是最优阈值；
+- BCP 只在 π≈0.30–0.50 略好，其他区间更差；
+- **不能把 81.16 当 SOTA**；这是阈值假设，不是方法增益；
+- 任何 accuracy 都必须报 assumed prevalence + 敏感性曲线。
+
+**prevalence-free 校准也失败**
+
+| 方法 | acc@0.5 | AUC |
+|---|---|---|
+| BCP 原概率 | 79.25 | 0.9082 |
+| BCP + English OOF Platt | 79.44 | 0.9069 |
+| BCP + English OOF 阈值平移 | 79.39 | — |
+
+- 用英文 OOF 学阈值/校准再迁移，**没有提升**；
+- 说明跨语言概率校准本身不迁移，prior 的“提升”只是碰巧接近测试分布。
 
 **其他负结果**
 
@@ -1994,14 +2005,15 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
 - 三方融合（decoder + 原 probe + bagged probe）：最好 0.9076，
   bagged 没有额外互补信息。
 
-**结论**
+**结论（修正）**
 
-- 诊断导出的有效对策是 **Bagged Cross-Lingual Probe (BCP)**：
-  bag English + 8-shot support，固定融合权重，prior 校准；
-- 它提升 **accuracy**（80.61→81.16–81.38），AUC 基本不变；
-- **probe 更准不等于融合更好**：融合增益来自“不同错误”，
-  不是更高单独 AUC；下一步应做 error-focused/residual probe，
-  而不是继续 bagging。
+- BCP 是**校准变体**，不是稳健 SOTA：
+  - prevalence-free 79.25 / 0.9082，vs p16f 79.39 / 0.9076；
+  - 加 prior 才到 81.16，但改假设就掉/涨；
+- **主指标应报 AUC + acc@0.5**；prior 只作敏感性；
+- **probe 更准 ≠ 融合更好**：融合增益来自“不同错误”，
+  不是更高单独 AUC；下一步应做 error-focused/residual probe；
+- **prevalence 不可靠，不要用它刷 accuracy。**
 
 ### 5.64 结论
 
