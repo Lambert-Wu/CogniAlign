@@ -449,10 +449,12 @@
 ### 外部 8 条中文 HC（2026-10-25）
 
 - AISHELL 4 speakers；外部 HC（朗读，非临床标签）追加训练；15 池单 decoder。
-- 8 条 ×10：72.77/0.865；**32 条 ×1：76.29/0.865**；no-external 76.9/0.882。
-- 降权重救回 3.5 acc，但仍低于 baseline，AUC -0.017；域偏移仍在。
-- 不是 strict 8-shot（16+ 标签）；不做 CSB-16 外部版；数据域/标签质量 > 数量。
-- `external_hc_features.py`、`multipool_decoder.py --external-hc`；RESULTS 5.55。
+- 8 条 ×10：72.77/0.865；32 条 ×1：76.29/0.865；no-external 76.9/0.882。
+- **32 条 AdaIN ×1（对齐 4 HC support 均值/方差）：77.09/0.8686**；
+  acc 略高于 baseline，但 AUC 仍 -0.013。
+- AdaIN 只能对齐一/二阶统计，改不了朗读→自发；不做 CSB 外部版。
+- 不是 strict 8-shot（16+ 标签）；数据域/标签质量 > 数量。
+- `external_hc_features.py`、`multipool_adain.py`；RESULTS 5.55。
 
 ### 未完成
 
