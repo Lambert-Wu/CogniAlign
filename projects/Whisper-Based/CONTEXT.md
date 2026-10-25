@@ -456,6 +456,14 @@
 - 不是 strict 8-shot（16+ 标签）；数据域/标签质量 > 数量。
 - `external_hc_features.py`、`multipool_adain.py`；RESULTS 5.55。
 
+### 8 support 扰动（2026-10-25）
+
+- 每个 support 段 4 变体：time/freq mask、noise、scale；1× 低权重；15 池单 decoder。
+- **73.52/0.8594** vs no-aug 76.9/0.882；负。
+- 同分布扰动不产生新受试者/病理信息；augmentation 线关闭。
+- 数据侧已试 Mixup/LPM-Aug/外部 HC/AdaIN/SpecAug，全负。
+- `multipool_aug.py`；RESULTS 5.56。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
