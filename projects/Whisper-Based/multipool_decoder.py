@@ -137,7 +137,7 @@ def main():
     if args.ftp:
         suffix += "_ftp"
     if args.external_hc:
-        suffix += "_ext8"
+        suffix += f"_ext8r{args.external_repeat}"
     path = os.path.join(C.logs_dir(), "results", f"multipool_decoder{suffix}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2)

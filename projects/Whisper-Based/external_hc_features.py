@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import glob
 import os
 import tarfile
@@ -25,6 +26,9 @@ DEV = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--per-speaker", type=int, default=2)
+    args = ap.parse_args()
     wdir = os.path.join(ROOT, "wav")
     os.makedirs(wdir, exist_ok=True)
     for name in COMPLETE:
@@ -47,13 +51,13 @@ def main():
             if sum(len(b) for b in buf) >= 30 * SR * 2:
                 break
         x = np.concatenate(buf)
-        for k in range(2):
-            s = k * 30 * SR
-            seg = x[s:s + 30 * SR]
+        for k in range(args.per_speaker):
+            st = k * 30 * SR
+            seg = x[st:st + 30 * SR]
             if len(seg) < 30 * SR:
                 seg = np.pad(seg, (0, 30 * SR - len(seg)))
             segs.append(seg)
-            uids.append(f"ext_hc{si*2+k:03d}")
+            uids.append(f"ext_hc{si*args.per_speaker+k:03d}")
     feats = []
     for seg in segs:
         inp = fe(seg, sampling_rate=SR, return_tensors="pt")
