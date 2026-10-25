@@ -555,6 +555,11 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 - w 不能从 support 选（OOF 全选 w=0）；w=0.2 沿用原协议。
 - `countermeasures.py`、`bag_combined*.py`、`probe_temp.py`、
   `COUNTERMEASURES.md`；RESULTS 5.63。
+- **error-focused / residual probe 也负**：
+  - 英文 5 折线性 surrogate：residual 0.8992、hard 0.9073、gate 0.9036；
+  - CSB support 误差：hard 0.9078（β 无影响）、ridge 0.8993；
+  - **CSB 在 8 support 上几乎全对，没有 error 可学**；surrogate 错误不迁移；
+  - 这条线关闭；`error_focused_probe.py`、`error_focused_csb.py`；RESULTS 5.64。
 
 ### 未完成
 
@@ -596,6 +601,7 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 | `probe_temp.py` | 单 probe 温度校准对照 |
 | `triple_fusion.py` / `gated_probe.py` | 三方 / 门控融合负结果 |
 | `COUNTERMEASURES.md` | 对策完整报告 |
+| `error_focused_probe.py` / `error_focused_csb.py` | 残差/难例/误差门控（负结果） |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |

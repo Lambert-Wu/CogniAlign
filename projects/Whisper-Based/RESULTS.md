@@ -2015,7 +2015,29 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
   不是更高单独 AUC；下一步应做 error-focused/residual probe；
 - **prevalence 不可靠，不要用它刷 accuracy。**
 
-### 5.64 结论
+### 5.64 Error-focused / residual probe：也负
+
+> 目标：不追求 probe 单独更准，而是专门学 decoder 错在哪。
+> `error_focused_probe.py`（英文 5 折线性 OOF surrogate）+
+> `error_focused_csb.py`（直接用 CSB 的 leave-pair-out support 误差）。
+
+| 方法 | 最好 AUC | acc@0.5 | 对照 |
+|---|---|---|---|
+| p16f baseline | **0.9076** | **79.39** | — |
+| residual Ridge（英文 surrogate） | 0.8992 | 79.95 | 负 |
+| hard-example 加权（英文 surrogate） | 0.9073 | 79.39 | 打平 |
+| error gate（英文 surrogate） | 0.9036 | 79.67 | 负 |
+| residual Ridge（CSB support 误差） | 0.8993 | 79.48 | 负 |
+| hard-example 加权（CSB support 误差） | 0.9078 | 79.30 | 打平 |
+
+- **CSB 在 8 个 support 上几乎全对**：`r = y - p_oof` 接近 0，
+  hard-example 权重 β 从 0.5 到 4 结果完全一样——**没有 error 可学**；
+- 英文 surrogate 的错和 CSB 在中文上的错**不重叠**；
+- residual 方向越强越差（α 增大 AUC 掉到 0.89）；
+- 结论：**error-focused / residual probe 这条线关闭**；
+  不是“没调好”，是 8 个 support 上没有足够错误信号。
+
+### 5.65 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
