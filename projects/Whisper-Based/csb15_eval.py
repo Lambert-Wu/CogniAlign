@@ -6,10 +6,12 @@
   p16  = 16 模型平均
   p16f = 0.8*p16 + 0.2*layer16 probe
   support threshold / prior / quantile 对照
+`--prevalence` 默认 0.5（不使用测试标签）；prior/quantile 只作敏感性分析。
 输出 csb15_eval.json / csb15_eval.csv
 """
 from __future__ import annotations
 
+import argparse
 import glob
 import json
 import os
@@ -40,6 +42,10 @@ def best_thr(p, y):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--prevalence", type=float, default=0.5,
+                    help="假设的目标患病率；默认 0.5（不使用测试标签）")
+    args = ap.parse_args()
     uids_zh, Xz, yz = Z.load_features(size="medium", layer=16, lang="zh")
     uids_en, Xe, ye = Z.load_features(size="medium", layer=16, lang="en")
     idx = {u: i for i, u in enumerate(uids_zh)}
@@ -103,7 +109,7 @@ def main():
         ysup = np.array([lab[s] for s in support])
         psup = np.array([sup_cf[s] for s in support])
         th = best_thr(psup, ysup)
-        prev = float(y.mean())
+        prev = float(args.prevalence)
         thq = float(np.quantile(p16f, 1 - prev))
 
         for tag, p in [("p16", p16), ("p16f", p16f)]:
