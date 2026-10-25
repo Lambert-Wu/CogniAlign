@@ -3,6 +3,37 @@
 > 用途：上下文被压缩/新会话时，先读这份文件接上进度。
 > 详细数字与实验记录见 `RESULTS.md`；论文骨架见 `PAPER.md`。
 
+## 当前 SOTA 与可写的创新点（2026-10-25）
+
+**Strict 8-shot（4 AD + 4 HC，15 池，subject-level）**
+
+| 方法 | acc | AUC |
+|---|---|---|
+| 单 decoder | 76.90 | 0.882 |
+| CSB-16 p16 | 79.48 | 0.8996 |
+| **CSB-16 + layer16 probe（p16f）** | **79.39** | **0.9076** |
+| **p16f + prior（已知 40.7% prevalence）** | **80.61** | **0.9076** |
+| p16f + OOF 温度 + prior（探索） | 81.46 | 0.9076 |
+| 56-shot（标签曲线） | 86.06 | 0.9289 |
+
+**可写的贡献（按可信度排序）**
+
+1. **15 池 subject-level strict 8-shot 协议**：同一方法在 15 个支持池上
+   acc 57–85，单池结果不可引用；必须报池均值/方差。
+2. **成对类别均衡集成（CSB）消融**：p1 74.66 → p4 76.24 → p8 79.08 → p16 79.48；
+   增益来自“成对均衡 + 多对集成”，8 对已饱和（16 对不是必须）。
+3. **跨语言 AD 方向共享（分析）**：纯英文 LR 零样本在中文 L24 达 **AUC 0.805**，
+   8 个中文标签只加到 0.833；说明 Whisper 表征里有语言共享的 AD 方向，
+   strict 8-shot 主要做校准/轻微微调。这是最有“科学发现”味的一条。
+4. **跨语言 probe + decoder 融合**：L16 探针把 AUC 从 0.8996 提到 0.9076；
+   纯英文探针融合 AUC 0.9083，但阈值错位、acc 只有 78.97（prior 后）。
+5. **prevalence-aware 校准**：队列 prevalence 61/150=40.7% → acc 79.39→80.61。
+6. **系统负结果**：外部朗读 HC、AdaIN、SpecAugment、Mixup、FTP、adapter、
+   from-scratch mel-MAE、其他模态、gated/residual fusion 全部没有超过。
+
+**还没解决**：strict 8-shot 85% 不可达（AUC 0.9076 的 acc 上限约 83%）；
+85 只能靠 56-shot（86.06）或外部**临床**中文 AD 数据。
+
 ## 0. 旧记忆（已压缩）
 
 ### 任务与约束
@@ -464,6 +495,21 @@
 - 数据侧已试 Mixup/LPM-Aug/外部 HC/AdaIN/SpecAug，全负。
 - `multipool_aug.py`；RESULTS 5.56。
 
+### 创新点补强 / 诊断（2026-10-25）
+
+- **CSB-N 消融**：p1 74.66/0.8619 → p4 76.24/0.8861 → p8 79.08/0.8955 →
+  p16 79.48/0.8996；**8 对已饱和**，16 对不是必须。`csb15_ablation.py`、RESULTS 5.57。
+- **英文零样本 AD 方向**：纯英文 LR 在中文 L24 **AUC 0.805**、L16 0.774；
+  8 support 联合只到 0.833；AD 方向基本跨语言共享。`en_direction_scan.py`、RESULTS 5.58。
+- **probe 层/拼接扫描**：L16 仍最适合融合（0.9076）；L24 0.8952；L16+L24 0.9016。
+- **mask-aware / std 池化**：L16m 0.8272 vs 0.8316；拼 std probe 单独 0.8497 但融合
+  0.8997；无增益。`masked_pool_features.py`、`masked_probe_scan.py`、RESULTS 5.59。
+- **OOF 温度校准**：留对 support 拟合 a≈0.51 + 已知 prevalence →
+  acc **0.8146**/AUC 0.9076（9/15 胜，p=0.138，探索，不入 SOTA）。
+  `anchor_calib.py`、`calib_final.py`、RESULTS 5.60。
+- **纯英文探针 + decoder**：AUC 0.9083（w=0.3），但 acc 74.65；prior 后 78.97，
+  不如联合 probe。`fusion_extra.py`、`zero_anchor.py`。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。
@@ -489,6 +535,12 @@
 | `srm_pool.py` | SRM 模型池（16 个 AD×HC 丢弃对） |
 | `srm15_resume.sh` | 15 池 CSB-16 续跑（worker 0/1/2） |
 | `csb15_eval.py` / `csb15_fusion.py` | 15 池 p16/p16f/阈值/prior + 多层融合 |
+| `csb15_ablation.py` | CSB-N 消融（p1/p4/p8/p16） |
+| `en_direction_scan.py` | 英文零样本 AD 方向 / 各层跨语言 probe |
+| `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
+| `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
+| `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
+| `fusion_extra.py` / `zero_anchor.py` | 纯英文/中文 probe 融合对照 |
 | `srm_weight.py` | SRM 权重（交叉拟合风险 + 结构图 + LOSO λ） |
 | `srm_en_pool.py` | 英文留出验证池（4 个对角 SSB 模型） |
 | `srm_en_weight.py` | 英文 SRM 权重（47 个英文受试者） |
