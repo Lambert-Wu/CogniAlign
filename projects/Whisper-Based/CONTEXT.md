@@ -446,6 +446,15 @@
 - 当前 strict 8-shot SOTA：**15 池 CSB-16 p16f 0.7939/0.9076；prior 0.8080/0.9076**。
 - 结论：8-shot 加结构/加 prompt 都是负；85 需 56-shot/外部数据。
 
+### 外部 8 条中文 HC（2026-10-25）
+
+- AISHELL 4 speakers ×2 段 30s = 8 条外部 HC（朗读语料，非临床标签）。
+- 追加到 enc_train/rows_train；15 池单 decoder，external HC ×10。
+- **72.77/0.865** vs no-external 76.9/0.882；**-4.1 acc**。
+- 不是 strict 8-shot（16 标签）；域不匹配，朗读 HC 让模型偏 HC。
+- 不做 CSB-16 外部版；数据域/标签质量 > 数量。
+- `external_hc_features.py`、`multipool_decoder.py --external-hc`；RESULTS 5.55。
+
 ### 未完成
 
 - rank 消融：rank=4（2.9M）跑到 seed1 时被停；rank=16 未跑。

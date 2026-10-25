@@ -45,6 +45,8 @@ def main():
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--num-workers", type=int, default=4)
     ap.add_argument("--ftp", action="store_true")
+    ap.add_argument("--external-hc", default="")
+    ap.add_argument("--external-repeat", type=int, default=10)
     args = ap.parse_args()
 
     subs = Z.load_subjects()
@@ -80,6 +82,7 @@ def main():
                         num_workers=args.num_workers)
 
     en_gids = hub.gids_for_uids(C.load_labels("train")["uid"].tolist())
+    ext_gids = hub.gids_for_uids([u for u in args.external_hc.split(",") if u]) if args.external_hc else []
     out = {"protocol": {"n_support": 8, "seeds": args.seeds, "epochs": args.epochs,
                         "pools": args.pools, "start": args.start, "end": end},
            "per_pool": []}
@@ -92,7 +95,7 @@ def main():
         sup_gids = hub.gids_for_uids(sup_recs)
         test_recs = [r for s in test for r in rec_of[s].split(";")]
         eval_gids = hub.gids_for_uids(test_recs)
-        train_gids = en_gids + sup_gids * 40
+        train_gids = en_gids + sup_gids * 40 + ext_gids * args.external_repeat
         print(f"[{pid}] support={support} train={len(train_gids)} eval={len(eval_gids)}",
               flush=True)
 
@@ -133,6 +136,8 @@ def main():
     suffix = "" if (args.start == 1 and end == args.pools) else f"_{args.start}_{end}"
     if args.ftp:
         suffix += "_ftp"
+    if args.external_hc:
+        suffix += "_ext8"
     path = os.path.join(C.logs_dir(), "results", f"multipool_decoder{suffix}.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2)
