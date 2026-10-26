@@ -573,6 +573,12 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
   - **不跑 15 池，ConvNeXt 线关闭**；
   - `convnext_features.py` / `convnext_probe.py` / `convnext_finetune_pilot.py`；
     RESULTS 5.66。
+- **MELD-lite 也负**：5s log-mel + 小 CNN + VQ(K=32) + attention + 分类，
+  联合训练；pool010 55.63/0.6541，融合 0.8710 < p16 0.8755；
+  不跑 15 池。MELD 是 LibriSpeech 960h 级训练，我们 ~1h + 8 shot
+  无法公平检验；和 mel-MAE/ConvNeXt 同量级。`meld_lite.py`；RESULTS 5.67。
+- **Whisper+VQ 目标对齐**：帧级 1500×1024 + VQ + attention，
+  pilot 结果待补；`whisper_vq.py`。
 
 ### 未完成
 
@@ -617,6 +623,8 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 | `error_focused_probe.py` / `error_focused_csb.py` | 残差/难例/误差门控（负结果） |
 | `text_probe.py` / `text_probe_extra.py` | XLM-R 独立文本 probe（负结果） |
 | `convnext_features.py` / `convnext_probe.py` / `convnext_finetune_pilot.py` | ConvNeXt log-mel（负结果） |
+| `meld_lite.py` | MELD-lite：mel + VQ + 分类联合训练（负结果） |
+| `whisper_vq.py` | Whisper 帧级 + VQ 目标对齐（pilot） |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
