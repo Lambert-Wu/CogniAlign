@@ -2148,7 +2148,32 @@ English + 8 support，20 epochs：
 - **不能把 0.654/0.704 当成“MELD 不行”的证据**，只能说明“从零训不行”；
 - 要公平检验 MELD，需要它的权重或 960h 预训练，成本远超当前项目。
 
-### 5.68 结论
+### 5.68 Whisper + MELD-style VQ target-alignment adapter：pilot 正
+
+> `whisper_meld_pilot.py` / `whisper_meld_15pool.py`。
+> Whisper encoder **冻结**；取 layer16 帧级 1500×1024；
+> 残差 adapter：1024→64 → VQ(K=32,d=64) → 64→1024；
+> attention pooling + 分类头；**adapter + VQ + 分类器联合训练**
+> （BCE + commitment），English 全量 + 8 support（权重 40）。
+
+**pool010 pilot**
+
+| 设定 | acc | AUC |
+|---|---|---|
+| p16（decoder） | 78.87 | 0.8755 |
+| **Whisper + MELD adapter** | 75.35 | **0.8836** |
+| p16 + adapter w=0.1 | 79.58 | 0.8817 |
+| p16 + adapter w=0.2 | 80.28 | 0.8958 |
+| **p16 + adapter w=0.3** | **81.69** | **0.9028** |
+
+- adapter 单独 0.8836 > p16 0.8755；
+- 融合 w=0.3 到 **0.9028 / 81.69**，高于单池 p16；
+- 这是目前**唯一一个在 pilot 上正的目标对齐分支**；
+- 但单池不能说明问题，正在跑 **15 池**（3 workers）；
+- 如果 15 池均值能超过 p16f 0.9076，再考虑 3-way（p16 + layer16 probe + adapter）
+  和保存逐受试者概率。
+
+### 5.69 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里
