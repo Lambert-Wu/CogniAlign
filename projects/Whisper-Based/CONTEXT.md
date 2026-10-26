@@ -577,8 +577,10 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
   联合训练；pool010 55.63/0.6541，融合 0.8710 < p16 0.8755；
   不跑 15 池。MELD 是 LibriSpeech 960h 级训练，我们 ~1h + 8 shot
   无法公平检验；和 mel-MAE/ConvNeXt 同量级。`meld_lite.py`；RESULTS 5.67。
-- **Whisper+VQ 目标对齐**：帧级 1500×1024 + VQ + attention，
-  pilot 结果待补；`whisper_vq.py`。
+- **Whisper+VQ 目标对齐也负**：帧级 1500×1024 + VQ + attention，
+  pool010 66.20/0.7042；融合 0.8687 < p16 0.8755；loss 0.619→0.078 过拟合。
+  `whisper_vq.py`；RESULTS 5.67。MELD 思路合理，但没有权重/960h 数据，
+  无法公平检验；不能把 0.654/0.704 当成“MELD 不行”。
 
 ### 未完成
 

@@ -2124,9 +2124,29 @@ ConvNeXt-tiny 全量微调，English 569 段 + 8 support 段（权重 40），5 
 
 **Whisper 中间表征上的轻量 VQ 目标对齐（`whisper_vq.py`）**
 
-- 帧级 1500×1024 → proj + Conv1d + VQ + attention + 分类；English + 8 support；
-- pool010 pilot 结果待补；
-- 如果仍 <0.8，则“VQ 目标对齐”这条线也关闭。
+帧级 1500×1024 → proj + Conv1d + VQ（K=32,d=64）+ attention + 分类；
+English + 8 support，20 epochs：
+
+| 设定 | acc | AUC |
+|---|---|---|
+| pool010 p16 | 78.87 | **0.8755** |
+| Whisper + VQ | 66.20 | **0.7042** |
+| p16 + VQ w=0.1 | 78.87 | 0.8687 |
+
+- 训练 loss **0.619→0.078**，测试 AUC 0.704：严重过拟合；
+- 比线性 probe（0.834）差很多：**VQ + attention 在 8 shot 上丢信息**；
+- 融合 0.8687 < p16 0.8755，负；
+- **VQ 目标对齐这条线关闭**。
+
+**结论**
+
+- MELD 的“联合优化/目标对齐”思路合理，但在这个数据上**无法公平检验**：
+  - 没有公开权重；
+  - 从零训 mel encoder 需要 960h 级数据，我们只有 ~1h + 8 shot；
+  - mel-MAE（10h 0.679 / 53h 0.669）、ConvNeXt（0.619）、MELD-lite（0.654）、
+    Whisper+VQ（0.704）全部同一量级；
+- **不能把 0.654/0.704 当成“MELD 不行”的证据**，只能说明“从零训不行”；
+- 要公平检验 MELD，需要它的权重或 960h 预训练，成本远超当前项目。
 
 ### 5.68 结论
 
