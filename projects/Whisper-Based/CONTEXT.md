@@ -588,6 +588,12 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 - **Whisper+VQ 目标对齐（冻结最终层）负**：帧级 1500×1024 + VQ + attention，
   pool010 66.20/0.7042；融合 0.8687 < p16 0.8755；loss 0.619→0.078 过拟合。
   `whisper_vq.py`；RESULTS 5.67。
+- **Swin/ESERNet 也负**：frozen 单独 0.6968；Swin w=0.1 融合 0.9037
+  （vs p16 +0.0041，12/15，p=0.0555，边缘）；Swin+Whisper L16 0.9080
+  但换成 Whisper 最终层掉到 0.8961 < p16——增益来自 L16 选层，不是 Swin；
+  pool010 fine-tune 0.6835，融合 0.8733 < p16 0.8755；不跑 15 池。
+  `swin_features.py` / `swin_probe.py` / `swin_final_probe.py` /
+  `swin_finetune_pilot.py`；RESULTS 5.70。
 - **Whisper + MELD adapter（layer16）：pilot 正，15 池中性**：
   encoder 冻结，layer16 帧级 → 1024→64→VQ→64→1024 残差 + attention + 分类，
   adapter+VQ+分类器联合训练；pool010 adapter 0.8836 > p16 0.8755，
@@ -641,7 +647,8 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 | `convnext_features.py` / `convnext_probe.py` / `convnext_finetune_pilot.py` | ConvNeXt log-mel（负结果） |
 | `meld_lite.py` | MELD-lite：mel + VQ + 分类联合训练（负结果） |
 | `whisper_vq.py` | Whisper 最终层 + VQ（负） |
-| `whisper_meld_pilot.py` / `whisper_meld_15pool.py` | Whisper layer16 + MELD VQ adapter（pilot 正） |
+| `whisper_meld_pilot.py` / `whisper_meld_15pool.py` | Whisper layer16 + MELD VQ adapter（15 池中性） |
+| `swin_features.py` / `swin_probe.py` / `swin_final_probe.py` / `swin_finetune_pilot.py` | Swin/ESERNet（负结果） |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
