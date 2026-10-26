@@ -10,17 +10,17 @@
 | 方法 | acc@0.5 | AUC |
 |---|---|---|
 | 单 decoder | 76.90 | 0.882 |
-| CSB-16 p16 | 79.48 | 0.8996 |
-| **CSB-16 + layer16 probe（p16f，no prior）** | **79.39** | **0.9076** |
-| **BCP（no prior）** | **79.25** | **0.9082** |
-| p16f + prior（**假设** 40.7%） | 80.61* | 0.9076 |
-| BCP + prior（**假设** 40.7%） | 81.16* | 0.9081 |
-| BCP + prior（**假设** 30%） | 82.39* | 0.9081 |
+| **CSB-16 p16** | **79.48** | **0.8996** |
+| **嵌套 LOSO 选层（每池用自己 8 support）** | **79.58** | **0.8998** |
+| 固定 L16 probe（p16f，**选层乐观**） | 79.39 | 0.9076* |
+| BCP（no prior） | 79.25 | 0.9082* |
+| p16f + prior（假设 40.7%） | 80.61* | 0.9076* |
 | 56-shot（标签曲线） | 86.06 | 0.9289 |
 
-> **`*` prevalence-dependent，不是稳健 SOTA。** assumed prevalence 从 0.10 到 0.70，
-> accuracy 在 **73.5–82.4** 之间变化；0.5 阈值下 BCP 79.25 vs p16f 79.39
-> （p=0.63），**没有增益**。主指标应报 **AUC + acc@0.5**；prior 只作敏感性分析。
+> **`*` 选层/校准乐观，不是严格 SOTA。** 嵌套 LOSO 只选到 L16 3/15 次；
+> 固定 L16 vs 嵌套 AUC **+0.0078，12/15 胜，p=0.0095**——0.9076 是选层偏差。
+> 严格 8-shot 的诚实结果：**约 0.900 AUC / 79.5 acc@0.5**。
+> prevalence 0.10–0.70 会让 acc 在 73.5–82.4 间变化；prior 只作敏感性。
 
 **可写的贡献（按可信度排序）**
 
@@ -39,8 +39,10 @@
    结论：**迁移不是靠共享方向**；英文方向可迁移，但不是中文会学到的方向；
    可迁移的是英文方向 + 共享类可分几何，8-shot 是小角度关键修正。
    详见 `DIRECTION_PROOF.md`、RESULTS 5.62。
-4. **跨语言 probe + decoder 融合**：L16 探针把 AUC 从 0.8996 提到 0.9076；
-   纯英文探针融合 AUC 0.9083，但阈值错位、acc 只有 78.97（prior 后）。
+4. **跨语言 probe + decoder 融合（已审计，不能当稳健增益）**：
+   固定 L16 把 AUC 从 0.8996 提到 0.9076，但嵌套 LOSO 只选到 L16 3/15 次，
+   嵌套 AUC 0.8998（与 p16 打平）；固定 L16 vs 嵌套 +0.0078（p=0.0095），
+   说明 0.9076 主要是选层乐观偏差。诚实结果约 **0.900 / 79.5**。
 5. **prevalence-aware 校准**：队列 prevalence 61/150=40.7% → acc 79.39→80.61。
 6. **BCP（Bagged Cross-Lingual Probe）**：对 English + 8 support 的联合 probe
    做 50 次 bootstrap，平均概率，w=0.2 接 decoder。
@@ -490,7 +492,10 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 - p16 **0.7948/0.8996**；p16f **0.7939/0.9076**；
   p16f+prior **0.8080/0.9076**；p16+prior **0.8099/0.8996**；
   quantile 0.8235/0.9076（transductive）；support threshold 0.7826（过拟合）。
-- 15 池 AUC 比之前 0.8941 +0.0135；**新 SOTA 0.9076 / 80.8 acc**。
+- 15 池 AUC 比之前 0.8941 +0.0135；当时记为 0.9076 / 80.8 acc。
+- **2026-10-26 审计：p16f 的 0.9076 有选层乐观偏差；**
+  **嵌套 LOSO 0.8998，p16 0.8996；严格 8-shot 约 0.900 / 79.5。**
+  见 RESULTS 5.69、`nested_layer_selection.py`。
 - 4 池 80.63/0.890 是 favorable subset；不再单独 headline。
 - 85 未到（需 AUC 0.925；quantile 82.35）。
 - `csb15_eval.py`、`csb15_fusion.py`、`srm15_resume.sh`；RESULTS 5.52。
@@ -500,7 +505,8 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 - FTP 全量 0.7676/0.791；FTP64 单 pair 81.69/0.891，但 **15 池 70.47/0.828**；
 - encoder bottleneck adapter64（pool001 pair0）**74.65/0.851**，no-adapter 81.69/0.883；
 - 多层 probe 0.9029 < layer16 0.9076；gate/residual 多模态负；support threshold 0.7826。
-- 当前 strict 8-shot SOTA：**15 池 CSB-16 p16f 0.7939/0.9076；prior 0.8080/0.9076**。
+- 当前 strict 8-shot（审计后）：**p16 0.8996 / 嵌套 LOSO 0.8998**；
+  p16f 0.9076 是固定 L16 的乐观值，不能当严格 SOTA。
 - 结论：8-shot 加结构/加 prompt 都是负；85 需 56-shot/外部数据。
 
 ### 外部 8 条中文 HC（2026-10-25）
@@ -527,7 +533,9 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
   p16 79.48/0.8996；**8 对已饱和**，16 对不是必须。`csb15_ablation.py`、RESULTS 5.57。
 - **英文零样本 AD 方向**：纯英文 LR 在中文 L24 **AUC 0.805**、L16 0.774；
   8 support 联合只到 0.833；AD 方向基本跨语言共享。`en_direction_scan.py`、RESULTS 5.58。
-- **probe 层/拼接扫描**：L16 仍最适合融合（0.9076）；L24 0.8952；L16+L24 0.9016。
+- **probe 层/拼接扫描（测试集诊断，非选层依据）**：L16 融合 0.9076；
+  L24 0.8952；L16+L24 0.9016。**审计后：这是测试集上的比较，不能用来选层**；
+  严格嵌套 LOSO 选到 L16 仅 3/15，嵌套 AUC 0.8998（RESULTS 5.69）。
 - **mask-aware / std 池化**：L16m 0.8272 vs 0.8316；拼 std probe 单独 0.8497 但融合
   0.8997；无增益。`masked_pool_features.py`、`masked_probe_scan.py`、RESULTS 5.59。
 - **OOF 温度校准**：留对 support 拟合 a≈0.51 + 已知 prevalence →
