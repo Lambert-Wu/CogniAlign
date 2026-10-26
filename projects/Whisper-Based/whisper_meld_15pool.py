@@ -41,7 +41,11 @@ def main():
         r = json.load(open(p))
         b = base[pool]
         y = np.array(b["y"])
-        p16f = 0.8 * np.array(b["p_dec"]) + 0.2 * np.array(b["p_feat"])
+        # CSB-16 p16 (16 pair models), not the single decoder in fusion_layer16
+        p16_csb = np.mean([np.array(json.load(open(os.path.join(
+            C.logs_dir(), "results", f"srm_pool_{pool}_pair{i}.json")))["models"][0]["test_p"])
+            for i in range(16)], 0)
+        p16f = 0.8 * p16_csb + 0.2 * np.array(b["p_feat"])
         a_f, u_f = met(y, p16f)
         rows.append({"pool": pool,
                      "meld_acc": r["meld"]["acc"], "meld_auc": r["meld"]["auc"],

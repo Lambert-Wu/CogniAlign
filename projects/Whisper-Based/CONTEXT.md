@@ -580,10 +580,12 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 - **Whisper+VQ 目标对齐（冻结最终层）负**：帧级 1500×1024 + VQ + attention，
   pool010 66.20/0.7042；融合 0.8687 < p16 0.8755；loss 0.619→0.078 过拟合。
   `whisper_vq.py`；RESULTS 5.67。
-- **Whisper + MELD adapter（layer16，pilot 正）**：
+- **Whisper + MELD adapter（layer16）：pilot 正，15 池中性**：
   encoder 冻结，layer16 帧级 → 1024→64→VQ→64→1024 残差 + attention + 分类，
-  adapter+VQ+分类器联合训练；pool010 adapter **0.8836** > p16 0.8755，
-  融合 w=0.3 **0.9028/81.69**。15 池正在跑；如果均值 >0.9076 再考虑 3-way。
+  adapter+VQ+分类器联合训练；pool010 adapter 0.8836 > p16 0.8755，
+  融合 w=0.3 0.9028；但 **15 池 adapter 仅 0.8039**，
+  融合 w=0.3 0.9088 vs p16f 0.9076（+0.0011，7/15，p=0.76）——
+  **不显著，不采用**；pilot 的正是 pool010 p16 偏低造成的。
   `whisper_meld_pilot.py` / `whisper_meld_15pool.py`；RESULTS 5.68。
 
 ### 未完成

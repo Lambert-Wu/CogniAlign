@@ -2156,22 +2156,32 @@ English + 8 support，20 epochs：
 > attention pooling + 分类头；**adapter + VQ + 分类器联合训练**
 > （BCE + commitment），English 全量 + 8 support（权重 40）。
 
-**pool010 pilot**
+**pool010 pilot 看起来正**
 
 | 设定 | acc | AUC |
 |---|---|---|
 | p16（decoder） | 78.87 | 0.8755 |
-| **Whisper + MELD adapter** | 75.35 | **0.8836** |
-| p16 + adapter w=0.1 | 79.58 | 0.8817 |
-| p16 + adapter w=0.2 | 80.28 | 0.8958 |
-| **p16 + adapter w=0.3** | **81.69** | **0.9028** |
+| Whisper + MELD adapter | 75.35 | 0.8836 |
+| p16 + adapter w=0.3 | 81.69 | 0.9028 |
 
-- adapter 单独 0.8836 > p16 0.8755；
-- 融合 w=0.3 到 **0.9028 / 81.69**，高于单池 p16；
-- 这是目前**唯一一个在 pilot 上正的目标对齐分支**；
-- 但单池不能说明问题，正在跑 **15 池**（3 workers）；
-- 如果 15 池均值能超过 p16f 0.9076，再考虑 3-way（p16 + layer16 probe + adapter）
-  和保存逐受试者概率。
+**15 池：回到中性/负**
+
+| 设定 | acc | AUC |
+|---|---|---|
+| p16（CSB-16） | 79.48 | 0.8996 |
+| **p16f（CSB + layer16 probe）** | **79.39** | **0.9076** |
+| MELD adapter | 69.95 | 0.8039 |
+| p16 + adapter w=0.1 | 79.72 | 0.9042 |
+| p16 + adapter w=0.2 | 79.91 | 0.9071 |
+| p16 + adapter w=0.3 | **79.95** | **0.9088** |
+
+- **fuse0.3 vs p16f：AUC +0.0011，7/15 胜，p=0.763**——不显著；
+- adapter 单独 0.8039，低于 layer16 probe 0.8338；
+- 融合只比 p16f 高 0.001，低于单池 pilot 的 +0.027；
+- **pilot 的“正”是 pool010 的 p16 偏低（0.8755）造成的**，15 池回到中性；
+- 不采用；**MELD-style VQ adapter 在 Whisper 上不优于现有 layer16 probe**。
+- 教训：又一个单池看起来正、15 池打平的例子；以后 pilot 必须直接报
+  “pilot vs 15 池均值”的差距。
 
 ### 5.69 结论
 
