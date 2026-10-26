@@ -2059,7 +2059,46 @@ oracle top5（按真实 acc）也只有 **81.83 / 0.876**；最高单池 83.10 /
   错误与 decoder 重叠，融合只会加噪；
 - **文本分支关闭**；`logs/features/text_xlmr/` 缓存保留可复现。
 
-### 5.66 结论
+### 5.66 ConvNeXt（log-mel 当图像）：frozen 负，fine-tune 待定
+
+> `convnext_features.py` / `convnext_probe.py` / `convnext_finetune_pilot.py`。
+> 本地 `models/convnext-tiny-224`（ImageNet 预训练，110MB）。
+> 每个 30s 段：128 mel × 3000 帧 → dB → [0,1] → resize 224×224 → 3 通道 →
+> ConvNeXt-tiny 冻结 pooler 768 维；subject 平均。
+
+**Frozen 特征 + 线性 probe（15 池）**
+
+| 特征 | probe 单独 AUC | +decoder 最好 AUC |
+|---|---|---|
+| Whisper L16（原） | 0.8338 | **0.9078** |
+| ConvNeXt frozen | **0.6307** | 0.8954 |
+| ConvNeXt + Whisper 拼接 | 0.8201 | 0.9034 |
+
+- ConvNeXt frozen 单独只有 **0.6307**：ImageNet 特征不等于语音 AD 特征；
+- 拼接反而比 Whisper 单独低（0.8201 vs 0.8338），说明 ConvNeXt 特征主要是噪声；
+- 融合任何权重都低于 0.9076；
+- **frozen ConvNeXt 不采用**。
+
+**Fine-tune pilot（pool010）**
+
+ConvNeXt-tiny 全量微调，English 569 段 + 8 support 段（权重 40），5 epochs：
+
+| 设定 | acc | AUC |
+|---|---|---|
+| pool010 p16（decoder） | 78.87 | **0.8755** |
+| ConvNeXt fine-tune | 59.86 | **0.6190** |
+| p16 + ConvNeXt w=0.1 | 80.28 | 0.8603 |
+| p16 + ConvNeXt w=0.2 | 80.28 | 0.8605 |
+
+- 训练 loss 从 **0.679 → 0.258**，但测试 AUC 只有 0.619：**严重过拟合**；
+- 融合后 AUC 0.8605 < p16 的 0.8755，**加噪**；
+- 远低于 0.75 的继续门槛，**不跑 15 池**；
+- **ConvNeXt（frozen + fine-tune）这条线关闭**：
+  - ImageNet 特征不适配 log-mel；
+  - 224×224 resize 破坏时频结构；
+  - 577 段训练样本太少，全量微调过拟合。
+
+### 5.67 结论
 
 - **8-shot 准确率高度依赖“哪 8 个人”**：固定这批 8 人 85.21%（10 seeds），15 批随机
   平均 **76.90±4.81**（AUC 0.882±0.038）；按患病率卡阈值 80.94±3.40。15 批里

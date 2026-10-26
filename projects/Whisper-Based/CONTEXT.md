@@ -564,6 +564,15 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
   p16 + 文本 w=0.01/0.1 = 0.8986/0.8932，门控最好 0.8980，
   全部低于 0.9076。音频表征已含语言信息，文本更噪且不互补；
   `text_probe.py` / `text_probe_extra.py`；RESULTS 5.65。
+- **ConvNeXt frozen + fine-tune 都负**：
+  - frozen probe 单独 0.6307；拼接 Whisper 0.8201（低于 0.8338）；
+    融合最好 0.8954 < 0.9076；
+  - pool010 fine-tune（English + 8 support，5ep）loss 0.679→0.258，
+    但测试 **0.6190/0.5986**；融合 0.8605 < p16 0.8755；
+  - ImageNet 特征不适配 log-mel，224×224 破坏时频结构，577 段太少；
+  - **不跑 15 池，ConvNeXt 线关闭**；
+  - `convnext_features.py` / `convnext_probe.py` / `convnext_finetune_pilot.py`；
+    RESULTS 5.66。
 
 ### 未完成
 
@@ -607,6 +616,7 @@ decoder 融合增益来自“不同错误”，不是更高单独 AUC。
 | `COUNTERMEASURES.md` | 对策完整报告 |
 | `error_focused_probe.py` / `error_focused_csb.py` | 残差/难例/误差门控（负结果） |
 | `text_probe.py` / `text_probe_extra.py` | XLM-R 独立文本 probe（负结果） |
+| `convnext_features.py` / `convnext_probe.py` / `convnext_finetune_pilot.py` | ConvNeXt log-mel（负结果） |
 | `probe_layer_scan.py` | probe 层/拼接 + 融合扫描 |
 | `masked_pool_features.py` / `masked_probe_scan.py` | mask-aware mean/std 池化 |
 | `anchor_calib.py` / `calib_final.py` / `calib_order.py` | OOF support 温度/锚点校准 |
